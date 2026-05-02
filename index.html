@@ -1,0 +1,1437 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Connected Notes</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#161b22" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="CNotes" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" />
+
+  <style>
+    /* ===== RESET & BASE ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+    body {
+      font-family: 'Noto Sans JP', sans-serif;
+      background: #0d1117;
+      color: #c9d1d9;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* ===== CSS VARIABLES ===== */
+    :root {
+      --bg:        #0d1117;
+      --surface:   #161b22;
+      --border:    #21262d;
+      --border2:   #30363d;
+      --muted:     #484f58;
+      --subtle:    #8b949e;
+      --text:      #c9d1d9;
+      --bright:    #e6edf3;
+      --blue:      #58a6ff;
+      --green:     #3fb950;
+      --orange:    #f0883e;
+      --red:       #f85149;
+      --purple:    #a371f7;
+      --safe-top:  env(safe-area-inset-top, 0px);
+      --safe-bot:  env(safe-area-inset-bottom, 0px);
+    }
+
+    /* ===== LAYOUT ===== */
+    #app {
+      display: flex;
+      height: 100vh;
+      height: 100dvh;
+      overflow: hidden;
+    }
+
+    /* ===== SIDEBAR ===== */
+    #sidebar {
+      width: 260px;
+      min-width: 260px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.25s ease;
+      z-index: 100;
+    }
+
+    .sidebar-header {
+      padding: calc(14px + var(--safe-top)) 14px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .app-title {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--blue);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .app-title-icon {
+      width: 20px; height: 20px;
+      background: linear-gradient(135deg, var(--blue), var(--purple));
+      border-radius: 5px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px;
+    }
+
+    .sync-indicator {
+      margin-left: auto;
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-weight: 500;
+      letter-spacing: 0;
+    }
+    .sync-indicator.synced  { background: #3fb95022; color: var(--green); }
+    .sync-indicator.syncing { background: #58a6ff22; color: var(--blue); }
+    .sync-indicator.offline { background: #f0883e22; color: var(--orange); }
+    .sync-indicator.error   { background: #f8514922; color: var(--red); }
+
+    .new-btn {
+      width: 100%;
+      padding: 8px 10px;
+      background: transparent;
+      border: 1px solid var(--border2);
+      border-radius: 6px;
+      color: var(--subtle);
+      font-size: 13px;
+      cursor: pointer;
+      display: flex; align-items: center; gap: 6px;
+      transition: all 0.15s;
+      font-family: inherit;
+    }
+    .new-btn:hover { background: var(--border); color: var(--text); border-color: #58a6ff44; }
+
+    .search-wrap {
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .search-box {
+      width: 100%;
+      padding: 7px 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+      font-family: inherit;
+      transition: border-color 0.15s;
+    }
+    .search-box:focus { border-color: #58a6ff55; }
+    .search-box::placeholder { color: var(--muted); }
+
+    .notes-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px 0;
+    }
+    .notes-list::-webkit-scrollbar { width: 4px; }
+    .notes-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+    .note-item {
+      padding: 9px 14px;
+      cursor: pointer;
+      display: flex; align-items: center; gap: 8px;
+      transition: background 0.1s;
+      position: relative;
+      border-left: 2px solid transparent;
+    }
+    .note-item:hover { background: #1c2128; }
+    .note-item.active { background: #1f2d3d; border-left-color: var(--blue); }
+
+    .note-icon { font-size: 11px; color: var(--muted); flex-shrink: 0; }
+    .note-item.active .note-icon { color: var(--blue); }
+
+    .note-title {
+      font-size: 13px;
+      color: var(--subtle);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      flex: 1;
+    }
+    .note-item.active .note-title { color: var(--text); font-weight: 500; }
+
+    .del-btn {
+      opacity: 0;
+      background: none; border: none;
+      color: var(--muted); cursor: pointer;
+      font-size: 15px; padding: 0 2px;
+      transition: all 0.1s; flex-shrink: 0;
+    }
+    .note-item:hover .del-btn { opacity: 1; }
+    .del-btn:hover { color: var(--red); }
+
+    .sidebar-footer {
+      border-top: 1px solid var(--border);
+      padding: 12px 14px calc(12px + var(--safe-bot));
+    }
+    .footer-label {
+      font-size: 10px; font-weight: 600; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 6px;
+    }
+    .footer-btns { display: flex; flex-direction: column; gap: 5px; }
+
+    .export-btn {
+      width: 100%; padding: 6px 10px;
+      background: transparent; border: 1px solid var(--border);
+      border-radius: 5px; color: var(--muted);
+      font-size: 11px; cursor: pointer;
+      display: flex; align-items: center; gap: 6px;
+      transition: all 0.15s; font-family: inherit;
+    }
+    .export-btn:hover { background: var(--border); color: var(--text); border-color: var(--border2); }
+    .export-btn .ico { color: var(--green); font-weight: 700; }
+
+    /* ===== MAIN ===== */
+    #main {
+      flex: 1;
+      display: flex; flex-direction: column;
+      overflow: hidden;
+      background: var(--bg);
+      min-width: 0;
+    }
+
+    .toolbar {
+      padding: calc(10px + var(--safe-top)) 16px 10px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 8px;
+      background: var(--bg);
+    }
+
+    .menu-btn {
+      display: none;
+      background: none; border: none;
+      color: var(--subtle); font-size: 20px; cursor: pointer;
+      padding: 0 4px; flex-shrink: 0;
+    }
+
+    .title-input {
+      flex: 1; background: transparent; border: none;
+      font-size: 17px; font-weight: 600; color: var(--bright);
+      outline: none; font-family: inherit; min-width: 0;
+    }
+    .title-input::placeholder { color: var(--muted); }
+
+    .mode-btn {
+      padding: 5px 11px; border-radius: 5px;
+      font-size: 12px; cursor: pointer;
+      border: 1px solid var(--border2);
+      background: transparent; color: var(--subtle);
+      font-family: inherit; transition: all 0.15s; flex-shrink: 0;
+      white-space: nowrap;
+    }
+    .mode-btn.on { background: var(--border); color: var(--blue); border-color: #58a6ff44; }
+    .mode-btn:hover { background: var(--border); color: var(--text); }
+
+    .divider { width: 1px; height: 18px; background: var(--border); flex-shrink: 0; }
+
+    .content-wrap {
+      flex: 1; display: flex; overflow: hidden;
+    }
+
+    .editor-pane { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+
+    textarea#editor {
+      flex: 1; padding: 24px 32px;
+      background: transparent; border: none;
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px; line-height: 1.85;
+      resize: none; outline: none; overflow-y: auto;
+    }
+    textarea#editor::-webkit-scrollbar { width: 5px; }
+    textarea#editor::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+    #preview {
+      flex: 1; overflow-y: auto; padding: 24px 32px;
+      display: none;
+    }
+    #preview::-webkit-scrollbar { width: 5px; }
+    #preview::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+    /* ===== MARKDOWN STYLES ===== */
+    .md h1 { font-size: 22px; font-weight: 700; color: var(--bright); margin-bottom: 14px; line-height: 1.3; }
+    .md h2 { font-size: 17px; font-weight: 600; color: var(--text); margin: 20px 0 10px; border-bottom: 1px solid var(--border); padding-bottom: 5px; }
+    .md h3 { font-size: 15px; font-weight: 600; color: var(--text); margin: 14px 0 7px; }
+    .md p  { font-size: 14px; line-height: 1.85; color: var(--subtle); margin-bottom: 8px; }
+    .md .list-item { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; color: var(--subtle); margin: 3px 0 3px 8px; }
+    .md .bullet { color: var(--blue); font-size: 9px; margin-top: 7px; flex-shrink: 0; }
+    .md .check-row { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--subtle); margin: 3px 0 3px 8px; }
+    .md .check-icon { font-size: 12px; width: 16px; flex-shrink: 0; }
+    .md .check-icon.done { color: var(--green); }
+    .md .check-icon.todo { color: var(--muted); }
+    .md .done-text { text-decoration: line-through; color: var(--muted); }
+    .md .spacer { height: 8px; }
+    .md code { font-family: 'JetBrains Mono', monospace; font-size: 12px; background: #1c2128; color: var(--orange); padding: 1px 5px; border-radius: 3px; }
+
+    .wiki-link {
+      cursor: pointer; border-radius: 3px; padding: 1px 4px;
+      font-size: 13px; transition: all 0.15s;
+    }
+    .wiki-link.exists { color: var(--blue); background: #58a6ff11; border-bottom: 1px solid #58a6ff44; }
+    .wiki-link.exists:hover { background: #58a6ff22; border-bottom-color: var(--blue); }
+    .wiki-link.new { color: var(--orange); background: #f0883e11; border-bottom: 1px dashed #f0883e44; }
+    .wiki-link.new:hover { background: #f0883e22; }
+
+    /* ===== BACKLINKS PANEL ===== */
+    #backlinks-panel {
+      width: 210px; min-width: 210px;
+      border-left: 1px solid var(--border);
+      background: var(--surface);
+      overflow-y: auto; padding: 14px;
+    }
+    #backlinks-panel::-webkit-scrollbar { width: 4px; }
+    #backlinks-panel::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+    .panel-label {
+      font-size: 10px; font-weight: 600; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 10px;
+    }
+
+    .bl-item {
+      padding: 8px 10px; border-radius: 6px; cursor: pointer;
+      margin-bottom: 4px; border: 1px solid transparent; transition: all 0.15s;
+    }
+    .bl-item:hover { background: #1c2128; border-color: var(--border); }
+    .bl-name { font-size: 12px; color: var(--blue); margin-bottom: 3px; }
+    .bl-preview { font-size: 11px; color: var(--muted); line-height: 1.5; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
+    .no-bl { font-size: 11px; color: var(--muted); text-align: center; margin-top: 16px; opacity: 0.5; }
+
+    .ol-item {
+      padding: 5px 8px; border-radius: 4px; cursor: pointer;
+      font-size: 12px; color: var(--blue);
+      display: flex; align-items: center; gap: 5px; transition: background 0.1s;
+    }
+    .ol-item:hover { background: #1c2128; }
+    .ol-new { color: var(--orange); font-size: 10px; }
+
+    /* ===== META BAR ===== */
+    .meta-bar {
+      padding: 5px 32px;
+      border-top: 1px solid var(--border);
+      font-size: 10px; color: var(--muted);
+      display: flex; gap: 14px;
+      padding-bottom: calc(5px + var(--safe-bot));
+    }
+
+    /* ===== EMPTY STATE ===== */
+    #empty {
+      display: none;
+      flex-direction: column; align-items: center; justify-content: center;
+      height: 100%; gap: 12px; color: var(--muted);
+    }
+    .empty-ico { font-size: 40px; opacity: 0.2; }
+    .empty-txt { font-size: 14px; }
+    .empty-btn {
+      padding: 8px 18px; background: var(--surface);
+      border: 1px solid var(--border2); border-radius: 6px;
+      color: var(--subtle); font-size: 13px; cursor: pointer;
+      font-family: inherit; transition: all 0.15s;
+    }
+    .empty-btn:hover { background: var(--border); color: var(--blue); }
+
+    /* ===== TOAST ===== */
+    #toast {
+      position: fixed; bottom: calc(24px + var(--safe-bot)); left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--surface); border: 1px solid var(--border2);
+      color: var(--text); padding: 8px 18px; border-radius: 8px;
+      font-size: 13px; opacity: 0; transition: all 0.25s;
+      pointer-events: none; z-index: 999; white-space: nowrap;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ===== AI PANEL ===== */
+    #ai-panel {
+      border-top: 1px solid var(--border);
+      background: #0d1117;
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease;
+    }
+    #ai-panel.open { max-height: 500px; overflow-y: auto; }
+    #ai-panel::-webkit-scrollbar { width: 4px; }
+    #ai-panel::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+    .ai-panel-inner { padding: 14px 20px 16px; }
+
+    .ai-section-title {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--purple); margin-bottom: 8px;
+      display: flex; align-items: center; gap: 6px;
+    }
+
+    .ai-keywords {
+      display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px;
+    }
+
+    .ai-kw {
+      padding: 3px 10px; border-radius: 20px; font-size: 12px;
+      cursor: pointer; transition: all 0.15s; border: 1px solid;
+    }
+    .ai-kw.exists  { color: var(--blue);   background: #58a6ff11; border-color: #58a6ff44; }
+    .ai-kw.new     { color: var(--orange); background: #f0883e11; border-color: #f0883e44; }
+    .ai-kw.exists:hover { background: #58a6ff22; }
+    .ai-kw.new:hover    { background: #f0883e22; }
+    .ai-kw.inserted { opacity: 0.4; cursor: default; text-decoration: line-through; }
+
+    .ai-summary {
+      font-size: 13px; color: var(--subtle); line-height: 1.75;
+      background: var(--surface); border-radius: 6px; padding: 10px 14px;
+      border: 1px solid var(--border); margin-bottom: 14px;
+    }
+
+    .ai-related { display: flex; flex-direction: column; gap: 4px; }
+    .ai-rel-item {
+      padding: 6px 10px; border-radius: 6px; cursor: pointer;
+      border: 1px solid var(--border); font-size: 12px; color: var(--blue);
+      display: flex; align-items: center; gap: 6px; transition: all 0.15s;
+    }
+    .ai-rel-item:hover { background: var(--surface); border-color: var(--border2); }
+
+    .ai-insert-all {
+      margin-top: 12px; width: 100%; padding: 7px;
+      background: #a371f711; border: 1px solid #a371f744;
+      border-radius: 6px; color: var(--purple); font-size: 12px;
+      cursor: pointer; font-family: inherit; transition: all 0.15s;
+    }
+    .ai-insert-all:hover { background: #a371f722; }
+
+    /* ===== SETTINGS MODAL ===== */
+    #settings-modal {
+      display: none; position: fixed; inset: 0;
+      background: #00000080; z-index: 200;
+      align-items: center; justify-content: center;
+    }
+    #settings-modal.open { display: flex; }
+
+    .settings-box {
+      background: var(--surface); border: 1px solid var(--border2);
+      border-radius: 12px; padding: 24px; width: 360px; max-width: 90vw;
+    }
+
+    .settings-title {
+      font-size: 15px; font-weight: 700; color: var(--bright);
+      margin-bottom: 6px; display: flex; align-items: center; gap: 8px;
+    }
+
+    .settings-desc {
+      font-size: 12px; color: var(--subtle); margin-bottom: 16px; line-height: 1.6;
+    }
+
+    .settings-label { font-size: 11px; color: var(--muted); margin-bottom: 5px; font-weight: 600; }
+
+    .settings-input {
+      width: 100%; padding: 8px 12px;
+      background: var(--bg); border: 1px solid var(--border2);
+      border-radius: 6px; color: var(--text); font-size: 13px;
+      outline: none; font-family: 'JetBrains Mono', monospace;
+      transition: border-color 0.15s; margin-bottom: 14px;
+    }
+    .settings-input:focus { border-color: #a371f755; }
+
+    .settings-link {
+      font-size: 11px; color: var(--blue); display: block;
+      margin-bottom: 16px; text-decoration: none;
+    }
+    .settings-link:hover { text-decoration: underline; }
+
+    .settings-btns { display: flex; gap: 8px; justify-content: flex-end; }
+    .settings-cancel {
+      padding: 7px 16px; background: transparent; border: 1px solid var(--border2);
+      border-radius: 6px; color: var(--subtle); font-size: 13px;
+      cursor: pointer; font-family: inherit;
+    }
+    .settings-save {
+      padding: 7px 16px; background: #a371f722; border: 1px solid #a371f744;
+      border-radius: 6px; color: var(--purple); font-size: 13px;
+      cursor: pointer; font-family: inherit; font-weight: 600;
+      transition: all 0.15s;
+    }
+    .settings-save:hover { background: #a371f733; }
+
+    .ai-btn {
+      padding: 5px 11px; border-radius: 5px; font-size: 12px; cursor: pointer;
+      border: 1px solid #a371f744; background: #a371f711; color: var(--purple);
+      font-family: inherit; transition: all 0.15s; flex-shrink: 0;
+      display: flex; align-items: center; gap: 5px; white-space: nowrap;
+    }
+    .ai-btn:hover { background: #a371f722; border-color: #a371f766; }
+    .ai-btn.loading { opacity: 0.6; cursor: wait; }
+
+    /* ===== MOBILE ===== */
+    @media (max-width: 680px) {
+      #sidebar {
+        position: fixed; top: 0; left: 0; bottom: 0;
+        transform: translateX(-100%);
+        box-shadow: 4px 0 24px #00000060;
+      }
+      #sidebar.open { transform: translateX(0); }
+      #overlay {
+        display: none; position: fixed; inset: 0;
+        background: #00000060; z-index: 99;
+      }
+      #overlay.show { display: block; }
+      .menu-btn { display: block; }
+      #backlinks-panel { display: none; }
+      textarea#editor { padding: 20px 18px; font-size: 14px; }
+      #preview { padding: 20px 18px; }
+      .meta-bar { padding: 4px 18px calc(4px + var(--safe-bot)); font-size: 10px; gap: 10px; }
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  </script>
+</head>
+<body>
+
+<!-- ===== SETTINGS MODAL ===== -->
+<div id="settings-modal">
+  <div class="settings-box">
+    <div class="settings-title">✦ Gemini AI 設定</div>
+    <div class="settings-desc">
+      Gemini APIキーを設定すると、ノートの内容を自動解析して<br>
+      キーワード抽出・要約・関連ノートの提案ができます。
+    </div>
+    <div class="settings-label">Gemini API キー</div>
+    <input class="settings-input" id="gemini-key-input" type="password" placeholder="AIzaSy..." style="margin-bottom: 12px;" />
+    
+    <div class="settings-label">モデル選択</div>
+    <select class="settings-input" id="gemini-model-input" style="margin-bottom: 12px;">
+      <option value="gemini-flash-lite-latest">Gemini Flash-Lite Latest</option>
+      <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+      <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+      <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash Exp</option>
+    </select>
+    
+    <div class="settings-label" style="display:flex; justify-content:space-between;">
+      <span>Temperature (0.0〜1.4)</span>
+      <span id="gemini-temp-val" style="color:var(--text);font-family:'JetBrains Mono', monospace;">0.1</span>
+    </div>
+    <input type="range" id="gemini-temp-slider" min="0" max="1.4" step="0.1" value="0.1" style="width:100%; margin-bottom: 12px; cursor:pointer;" oninput="document.getElementById('gemini-temp-val').textContent=this.value" />
+
+    <div class="settings-label" style="display:flex; justify-content:space-between;">
+      <span>最大文字数 (Tokens: 200〜4000)</span>
+      <span id="gemini-tokens-val" style="color:var(--text);font-family:'JetBrains Mono', monospace;">1024</span>
+    </div>
+    <input type="range" id="gemini-tokens-slider" min="200" max="4000" step="100" value="1024" style="width:100%; margin-bottom: 20px; cursor:pointer;" oninput="document.getElementById('gemini-tokens-val').textContent=this.value" />
+
+    <a class="settings-link" href="https://aistudio.google.com/app/apikey" target="_blank">
+      → Google AI Studio でAPIキーを取得する（無料）
+    </a>
+    <div class="settings-btns">
+      <button class="settings-cancel" onclick="closeSettings()">キャンセル</button>
+      <button class="settings-save" onclick="saveSettings()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== IMPORT MODAL ===== -->
+<div id="import-modal" style="display:none; position:fixed; inset:0; background:#00000080; z-index:200; align-items:center; justify-content:center;">
+  <div class="settings-box">
+    <div class="settings-title">📥 ノートの取り込み</div>
+    <div class="settings-desc">
+      GoogleドキュメントのURLやローカルのPDFからテキストを抽出してノートを作成します。
+    </div>
+
+    <div class="settings-label">1. 入力元</div>
+    <div style="margin-bottom: 12px; display:flex; flex-direction:column;">
+      <input class="settings-input" id="import-url-input" type="text" placeholder="GoogleドキュメントのURL..." style="margin-bottom:4px;" />
+      <div style="text-align:center; color:var(--muted); font-size:11px; margin-bottom:4px;">または</div>
+      <input class="settings-input" id="import-file-input" type="file" accept=".pdf" style="margin-bottom:0; padding:6px; cursor:pointer;" />
+    </div>
+
+    <div class="settings-label">2. 取り込みモード</div>
+    <select class="settings-input" id="import-mode-input" style="margin-bottom: 16px;">
+      <option value="raw">そのまま取り込む</option>
+      <option value="summarize">要約して取り込む</option>
+      <option value="keypoints">キーポイントを抽出</option>
+    </select>
+    
+    <div class="settings-btns">
+      <button class="settings-cancel" onclick="closeImportModal()">キャンセル</button>
+      <button class="settings-save" id="import-run-btn" onclick="runImport()">実行</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== OVERLAY (mobile) ===== -->
+<div id="overlay" onclick="closeSidebar()"></div>
+
+<!-- ===== TOAST ===== -->
+<div id="toast"></div>
+
+<!-- ===== APP ===== -->
+<div id="app">
+
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+    <div class="sidebar-header">
+      <div class="app-title">
+        <span class="app-title-icon">◈</span>
+        Connected Notes
+        <span id="sync-dot" class="sync-indicator offline">● オフライン</span>
+      </div>
+      <div style="display:flex; gap:6px;">
+        <button class="new-btn" onclick="createNote()" style="flex:1;">＋ 新規ノート</button>
+        <button class="new-btn" onclick="openImportModal()" style="flex:none; padding:8px 10px;" title="取り込み">📥</button>
+      </div>
+    </div>
+
+    <div class="search-wrap">
+      <input class="search-box" id="search-box" placeholder="ノートを検索..." oninput="renderList()" />
+    </div>
+
+    <div class="notes-list" id="notes-list"></div>
+
+    <div class="sidebar-footer">
+      <div class="footer-label">エクスポート</div>
+      <div class="footer-btns">
+        <button class="export-btn" onclick="downloadCurrentMd()"><span class="ico">↓</span> このノート (.md)</button>
+        <button class="export-btn" onclick="downloadAllMd()"><span class="ico">↓</span> 全ノート (.md)</button>
+        <button class="export-btn" onclick="downloadJSON()"><span class="ico">↓</span> バックアップ (.json)</button>
+        <button class="export-btn" onclick="syncFromServer()" style="margin-top:4px"><span class="ico" style="color:var(--blue)">↻</span> 今すぐ同期</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div id="main">
+    <!-- NOTE EDITOR -->
+    <div id="editor-view" style="display:flex;flex-direction:column;height:100%;overflow:hidden;">
+      <div class="toolbar">
+        <button class="menu-btn" onclick="openSidebar()">☰</button>
+        <input class="title-input" id="title-input" placeholder="タイトル" oninput="onTitleChange()" />
+        <button id="btn-preview" class="mode-btn" onclick="setMode('preview')">プレビュー</button>
+        <button id="btn-edit"    class="mode-btn on" onclick="setMode('edit')">編集</button>
+        <div class="divider"></div>
+        <button class="mode-btn" onclick="downloadCurrentMd()" title="Markdownでダウンロード">↓ MD</button>
+        <div class="divider"></div>
+        <button class="ai-btn" id="ai-analyze-btn" onclick="analyzeWithGemini()" title="GeminiAIで解析">✦ AI解析</button>
+        <button class="mode-btn" onclick="openSettings()" title="AI設定">⚙</button>
+      </div>
+
+      <div class="content-wrap">
+        <div class="editor-pane">
+          <textarea id="editor" placeholder="ここにメモを書きましょう。&#10;[[ノート名]] と書くとリンクになります。" oninput="onContentChange()"></textarea>
+          <div id="preview" class="md"></div>
+        </div>
+        <div id="backlinks-panel"></div>
+      </div>
+
+      <!-- AI PANEL -->
+      <div id="ai-panel">
+        <div class="ai-panel-inner" id="ai-panel-inner"></div>
+      </div>
+
+      <div class="meta-bar" id="meta-bar">
+        <span id="meta-date"></span>
+        <span id="meta-chars"></span>
+        <span id="meta-links"></span>
+      </div>
+    </div>
+
+    <!-- EMPTY STATE -->
+    <div id="empty">
+      <div class="empty-ico">◈</div>
+      <div class="empty-txt">ノートを選択してください</div>
+      <button class="empty-btn" onclick="createNote()">新規ノートを作成</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+//  CONFIG  ← ここにApps ScriptのデプロイURLを貼り付けてください
+// ============================================================
+const API_URL = "https://script.google.com/macros/s/AKfycbwwYN6Cp_qZpUZ-0J8iwaYrGYvAh4RPu1Ggc6RzYTbB8jNorKPX4je2Tp7ZPF011N2t/exec";
+
+// ============================================================
+//  STATE
+// ============================================================
+let notes    = [];
+let activeId = null;
+let mode     = "edit";  // "edit" | "preview"
+let saveTimer = null;
+let isDirty  = false;
+
+// ============================================================
+//  API LAYER
+// ============================================================
+async function apiGet(action) {
+  const res = await fetch(`${API_URL}?action=${action}`, { mode: "cors" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+async function apiPost(body) {
+  const res = await fetch(API_URL, {
+    method: "POST",
+    mode: "cors",
+    headers: { "Content-Type": "text/plain" }, // Apps Script CORS workaround
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+function setSyncStatus(status, label) {
+  const el = document.getElementById("sync-dot");
+  el.className = `sync-indicator ${status}`;
+  el.textContent = `● ${label}`;
+}
+
+// ============================================================
+//  STORAGE (IndexedDB fallback for offline)
+// ============================================================
+const LS_KEY = "cn_notes_cache";
+
+function saveLocal() {
+  try { localStorage.setItem(LS_KEY, JSON.stringify({ notes, activeId })); } catch {}
+}
+
+function loadLocal() {
+  try {
+    const d = JSON.parse(localStorage.getItem(LS_KEY));
+    if (d && d.notes) { notes = d.notes; activeId = d.activeId || null; }
+  } catch {}
+}
+
+// ============================================================
+//  SYNC
+// ============================================================
+async function syncFromServer() {
+  if (!API_URL || API_URL.includes("YOUR_")) {
+    setSyncStatus("offline", "API未設定");
+    return;
+  }
+  setSyncStatus("syncing", "同期中...");
+  try {
+    const data = await apiGet("getNotes");
+    if (data.notes) {
+      notes = data.notes;
+      saveLocal();
+      renderList();
+      if (!activeId && notes.length > 0) selectNote(notes[0].id);
+      if (activeId) renderEditor();
+      setSyncStatus("synced", "同期済");
+      toast("クラウドから読み込みました");
+    }
+  } catch (e) {
+    setSyncStatus("error", "エラー");
+    toast("同期エラー: " + e.message);
+  }
+}
+
+async function pushNote(note) {
+  if (!API_URL || API_URL.includes("YOUR_")) return;
+  setSyncStatus("syncing", "保存中...");
+  try {
+    await apiPost({ action: "saveNote", note });
+    setSyncStatus("synced", "同期済");
+  } catch {
+    setSyncStatus("error", "保存エラー");
+  }
+}
+
+async function pushDelete(id) {
+  if (!API_URL || API_URL.includes("YOUR_")) return;
+  try {
+    await apiPost({ action: "deleteNote", id });
+  } catch {}
+}
+
+// ============================================================
+//  NOTES CRUD
+// ============================================================
+function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
+function createNote(title = "") {
+  const note = {
+    id: genId(),
+    title: title || `新規ノート`,
+    content: title ? `# ${title}\n\n` : `# 新規ノート\n\n`,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  notes.unshift(note);
+  saveLocal();
+  selectNote(note.id);
+  setMode("edit");
+  pushNote(note);
+  renderList();
+  closeSidebar();
+  return note;
+}
+
+function deleteNote(id) {
+  if (!confirm(`このノートを削除しますか？`)) return;
+  notes = notes.filter(n => n.id !== id);
+  if (activeId === id) activeId = notes[0]?.id || null;
+  saveLocal();
+  renderList();
+  renderEditor();
+  pushDelete(id);
+}
+
+function selectNote(id) {
+  activeId = id;
+  saveLocal();
+  renderEditor();
+  renderList();
+  closeSidebar();
+}
+
+function getNote(id) { return notes.find(n => n.id === id); }
+function getActive() { return getNote(activeId); }
+
+// ============================================================
+//  EDITOR EVENTS
+// ============================================================
+function onTitleChange() {
+  const note = getActive();
+  if (!note) return;
+  note.title = document.getElementById("title-input").value;
+  note.updatedAt = Date.now();
+  isDirty = true;
+  renderList();
+  scheduleSave();
+}
+
+function onContentChange() {
+  const note = getActive();
+  if (!note) return;
+  note.content = document.getElementById("editor").value;
+  note.updatedAt = Date.now();
+  isDirty = true;
+  updateMeta();
+  scheduleSave();
+}
+
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveLocal();
+    const note = getActive();
+    if (note) pushNote(note);
+    isDirty = false;
+  }, 1500);
+}
+
+// ============================================================
+//  RENDER
+// ============================================================
+function renderList() {
+  const query = document.getElementById("search-box").value.toLowerCase();
+  const list  = document.getElementById("notes-list");
+  const filtered = notes.filter(n =>
+    n.title.toLowerCase().includes(query) || n.content.toLowerCase().includes(query)
+  );
+  list.innerHTML = filtered.map(n => `
+    <div class="note-item ${n.id === activeId ? "active" : ""}" onclick="selectNote('${n.id}')">
+      <span class="note-icon">◈</span>
+      <span class="note-title">${esc(n.title)}</span>
+      <button class="del-btn" onclick="event.stopPropagation();deleteNote('${n.id}')" title="削除">×</button>
+    </div>
+  `).join("");
+}
+
+function renderEditor() {
+  const note = getActive();
+  const editorView = document.getElementById("editor-view");
+  const emptyEl    = document.getElementById("empty");
+
+  if (!note) {
+    editorView.style.display = "none";
+    emptyEl.style.display = "flex";
+    return;
+  }
+
+  editorView.style.display = "flex";
+  emptyEl.style.display = "none";
+
+  document.getElementById("title-input").value = note.title;
+  document.getElementById("editor").value = note.content;
+
+  renderPreview();
+  renderBacklinks();
+  updateMeta();
+}
+
+function renderPreview() {
+  const note = getActive();
+  if (!note) return;
+  document.getElementById("preview").innerHTML = markdownToHtml(note.content);
+}
+
+function renderBacklinks() {
+  const note = getActive();
+  if (!note) return;
+  const panel = document.getElementById("backlinks-panel");
+
+  const backlinks = notes.filter(n => n.id !== note.id && extractLinks(n.content).includes(note.title));
+  const outlinks  = extractLinks(note.content);
+
+  let html = `<div class="panel-label">バックリンク (${backlinks.length})</div>`;
+  if (backlinks.length === 0) {
+    html += `<div class="no-bl">リンクなし</div>`;
+  } else {
+    html += backlinks.map(n => `
+      <div class="bl-item" onclick="selectNote('${n.id}')">
+        <div class="bl-name">◈ ${esc(n.title)}</div>
+        <div class="bl-preview">${esc(n.content.slice(0, 80))}...</div>
+      </div>
+    `).join("");
+  }
+
+  if (outlinks.length > 0) {
+    html += `<div class="panel-label" style="margin-top:16px">リンク先 (${outlinks.length})</div>`;
+    html += outlinks.map(t => {
+      const exists = notes.find(n => n.title === t);
+      return `<div class="ol-item" onclick="handleWikiLink('${esc(t)}')">
+        <span>→</span><span>${esc(t)}</span>
+        ${!exists ? `<span class="ol-new">新規</span>` : ""}
+      </div>`;
+    }).join("");
+  }
+
+  panel.innerHTML = html;
+}
+
+function updateMeta() {
+  const note = getActive();
+  if (!note) return;
+  document.getElementById("meta-date").textContent  = "更新: " + new Date(note.updatedAt).toLocaleString("ja-JP");
+  document.getElementById("meta-chars").textContent = "文字数: " + note.content.length;
+  document.getElementById("meta-links").textContent = "リンク: " + extractLinks(note.content).length;
+}
+
+// ============================================================
+//  MODE TOGGLE
+// ============================================================
+function setMode(m) {
+  mode = m;
+  const editor  = document.getElementById("editor");
+  const preview = document.getElementById("preview");
+  const btnE    = document.getElementById("btn-edit");
+  const btnP    = document.getElementById("btn-preview");
+
+  if (m === "edit") {
+    editor.style.display  = "block";
+    preview.style.display = "none";
+    btnE.classList.add("on");
+    btnP.classList.remove("on");
+    editor.focus();
+  } else {
+    renderPreview();
+    editor.style.display  = "none";
+    preview.style.display = "block";
+    btnP.classList.add("on");
+    btnE.classList.remove("on");
+  }
+}
+
+// ============================================================
+//  MARKDOWN RENDERER
+// ============================================================
+function extractLinks(content) {
+  return (content.match(/\[\[([^\]]+)\]\]/g) || []).map(m => m.slice(2, -2));
+}
+
+function handleWikiLink(title) {
+  const target = notes.find(n => n.title === title);
+  if (target) { selectNote(target.id); }
+  else { createNote(title); }
+}
+window.handleWikiLink = handleWikiLink;
+
+function renderInline(text) {
+  // [[links]]
+  text = text.replace(/\[\[([^\]]+)\]\]/g, (_, t) => {
+    const exists = notes.find(n => n.title === t);
+    return `<span class="wiki-link ${exists ? "exists" : "new"}" onclick="handleWikiLink('${esc(t)}')">${esc(t)}</span>`;
+  });
+  // **bold**
+  text = text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  // `code`
+  text = text.replace(/`(.+?)`/g, "<code>$1</code>");
+  return text;
+}
+
+function markdownToHtml(content) {
+  const lines = content.split("\n");
+  return lines.map(line => {
+    if (line.startsWith("# "))   return `<h1>${renderInline(esc0(line.slice(2)))}</h1>`;
+    if (line.startsWith("## "))  return `<h2>${renderInline(esc0(line.slice(3)))}</h2>`;
+    if (line.startsWith("### ")) return `<h3>${renderInline(esc0(line.slice(4)))}</h3>`;
+    if (line.startsWith("- [x] ")) return `<div class="check-row"><span class="check-icon done">✓</span><span class="done-text">${renderInline(esc0(line.slice(6)))}</span></div>`;
+    if (line.startsWith("- [ ] ")) return `<div class="check-row"><span class="check-icon todo">○</span><span>${renderInline(esc0(line.slice(6)))}</span></div>`;
+    if (line.startsWith("- "))    return `<div class="list-item"><span class="bullet">▸</span><span>${renderInline(esc0(line.slice(2)))}</span></div>`;
+    if (line === "---" || line === "***") return `<hr style="border:none;border-top:1px solid var(--border);margin:14px 0">`;
+    if (line === "")                return `<div class="spacer"></div>`;
+    return `<p>${renderInline(esc0(line))}</p>`;
+  }).join("");
+}
+
+// ============================================================
+//  DOWNLOAD / EXPORT
+// ============================================================
+function dlBlob(content, filename, type) {
+  const blob = new Blob([content], { type });
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement("a"), { href: url, download: filename });
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadCurrentMd() {
+  const note = getActive();
+  if (!note) { toast("ノートが選択されていません"); return; }
+  dlBlob(note.content, `${note.title}.md`, "text/markdown;charset=utf-8");
+  toast("ダウンロードしました");
+}
+
+function downloadAllMd() {
+  const text = notes.map(n => `# ${n.title}\n\n${n.content}\n\n---\n`).join("\n");
+  dlBlob(text, `connected-notes-${today()}.md`, "text/markdown;charset=utf-8");
+  toast("全ノートをダウンロードしました");
+}
+
+function downloadJSON() {
+  dlBlob(JSON.stringify({ notes, exportedAt: new Date().toISOString() }, null, 2),
+    `cn-backup-${today()}.json`, "application/json");
+  toast("バックアップをダウンロードしました");
+}
+
+// ============================================================
+//  SIDEBAR (mobile)
+// ============================================================
+function openSidebar()  { document.getElementById("sidebar").classList.add("open"); document.getElementById("overlay").classList.add("show"); }
+function closeSidebar() { document.getElementById("sidebar").classList.remove("open"); document.getElementById("overlay").classList.remove("show"); }
+
+// ============================================================
+//  UTILS
+// ============================================================
+function esc(str)  { return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;"); }
+function esc0(str) { return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function today()   { return new Date().toISOString().slice(0, 10); }
+
+function toast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  setTimeout(() => el.classList.remove("show"), 2500);
+}
+
+// ============================================================
+//  SERVICE WORKER
+// ============================================================
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+
+// ============================================================
+//  SETTINGS
+// ============================================================
+const GEMINI_KEY_LS = "cn_gemini_key";
+const GEMINI_MODEL_LS = "cn_gemini_model";
+const GEMINI_TEMP_LS = "cn_gemini_temp";
+const GEMINI_TOKENS_LS = "cn_gemini_tokens";
+
+function openSettings() {
+  const key = localStorage.getItem(GEMINI_KEY_LS) || "";
+  document.getElementById("gemini-key-input").value = key;
+  
+  document.getElementById("gemini-model-input").value = localStorage.getItem(GEMINI_MODEL_LS) || "gemini-2.0-flash";
+  
+  const temp = localStorage.getItem(GEMINI_TEMP_LS) || "0.1";
+  document.getElementById("gemini-temp-slider").value = temp;
+  document.getElementById("gemini-temp-val").textContent = temp;
+  
+  const tokens = localStorage.getItem(GEMINI_TOKENS_LS) || "1024";
+  document.getElementById("gemini-tokens-slider").value = tokens;
+  document.getElementById("gemini-tokens-val").textContent = tokens;
+
+  document.getElementById("settings-modal").classList.add("open");
+}
+
+function closeSettings() {
+  document.getElementById("settings-modal").classList.remove("open");
+}
+
+function saveSettings() {
+  const key = document.getElementById("gemini-key-input").value.trim();
+  if (key) {
+    localStorage.setItem(GEMINI_KEY_LS, key);
+  } else {
+    localStorage.removeItem(GEMINI_KEY_LS);
+  }
+  
+  localStorage.setItem(GEMINI_MODEL_LS, document.getElementById("gemini-model-input").value);
+  localStorage.setItem(GEMINI_TEMP_LS, document.getElementById("gemini-temp-slider").value);
+  localStorage.setItem(GEMINI_TOKENS_LS, document.getElementById("gemini-tokens-slider").value);
+  
+  toast("AI設定を保存しました ✦");
+  closeSettings();
+}
+
+// モーダル外クリックで閉じる
+document.getElementById("settings-modal").addEventListener("click", function(e) {
+  if (e.target === this) closeSettings();
+});
+
+// ============================================================
+//  GEMINI AI INTEGRATION
+// ============================================================
+let aiResults = null; // { keywords, summary, related }
+
+async function analyzeWithGemini() {
+  const note = getActive();
+  if (!note) { toast("ノートを選択してください"); return; }
+  if (note.content.trim().length < 20) { toast("内容が短すぎます"); return; }
+
+  const apiKey = localStorage.getItem(GEMINI_KEY_LS);
+  if (!apiKey) {
+    toast("まずAPIキーを設定してください ⚙");
+    openSettings();
+    return;
+  }
+
+  const btn = document.getElementById("ai-analyze-btn");
+  btn.classList.add("loading");
+  btn.textContent = "✦ 解析中...";
+
+  // 既存ノートのタイトル一覧（関連提案用）
+  const existingTitles = notes
+    .filter(n => n.id !== note.id)
+    .map(n => n.title)
+    .join("、");
+
+  const prompt = `
+あなたはナレッジベース管理AIです。以下のメモを分析してください。
+
+## メモ内容
+タイトル: ${note.title}
+本文:
+${note.content}
+
+## 既存ノートのタイトル一覧（関連チェック用）
+${existingTitles || "（まだノートがありません）"}
+
+## 出力形式（必ずこのJSON形式のみで返してください）
+{
+  "keywords": ["キーワード1", "キーワード2", "キーワード3", "キーワード4", "キーワード5"],
+  "summary": "このメモの要点を2〜3文で日本語でまとめてください",
+  "related_notes": ["既存ノートタイトル1", "既存ノートタイトル2"],
+  "new_keywords": ["新規に作成すべきキーワード1", "新規に作成すべきキーワード2"]
+}
+
+## 指示
+- keywordsは固有名詞・概念・テーマを5〜8個抽出（名詞のみ）
+- related_notesは既存ノートの中から関連するものだけ（なければ空配列）
+- new_keywordsはkeywordsの中でまだ既存ノートにないもの
+- JSONのみ返す。マークダウンのコードブロック不要
+`;
+
+  try {
+    const model = localStorage.getItem(GEMINI_MODEL_LS) || "gemini-2.0-flash";
+    const temp = parseFloat(localStorage.getItem(GEMINI_TEMP_LS) || "0.1");
+    const maxTokens = parseInt(localStorage.getItem(GEMINI_TOKENS_LS) || "1024", 10);
+
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: temp, maxOutputTokens: maxTokens }
+        })
+      }
+    );
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message || `HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    const raw  = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+    // JSON抽出（```json ... ``` が付いてくることがある）
+    const jsonStr = raw.replace(/```json|```/g, "").trim();
+    aiResults = JSON.parse(jsonStr);
+
+    renderAiPanel(aiResults);
+    document.getElementById("ai-panel").classList.add("open");
+    toast("AI解析が完了しました ✦");
+
+  } catch (e) {
+    toast("エラー: " + e.message);
+    console.error(e);
+  } finally {
+    btn.classList.remove("loading");
+    btn.textContent = "✦ AI解析";
+  }
+}
+
+function renderAiPanel(result) {
+  const existingKws = (result.keywords || []).filter(k =>
+    notes.some(n => n.title === k)
+  );
+  const newKws = result.new_keywords || [];
+  const allKws = [...new Set([...existingKws, ...newKws])];
+
+  let html = "";
+
+  // 要約
+  if (result.summary) {
+    html += `<div class="ai-section-title">✦ AI要約</div>`;
+    html += `<div class="ai-summary">${esc(result.summary)}</div>`;
+  }
+
+  // キーワード
+  if (allKws.length > 0) {
+    html += `<div class="ai-section-title">✦ 抽出キーワード <span style="color:var(--muted);font-size:9px;letter-spacing:0">（クリックでリンク挿入）</span></div>`;
+    html += `<div class="ai-keywords">`;
+    allKws.forEach(kw => {
+      const isExist = notes.some(n => n.title === kw);
+      const alreadyLinked = getActive()?.content.includes(`[[${kw}]]`);
+      html += `<span class="ai-kw ${isExist ? "exists" : "new"} ${alreadyLinked ? "inserted" : ""}"
+        onclick="insertKeyword('${esc(kw)}')"
+        title="${isExist ? "既存ノートへリンク" : "新規ノートとしてリンク"}"
+      >[[${esc(kw)}]]</span>`;
+    });
+    html += `</div>`;
+    html += `<button class="ai-insert-all" onclick="insertAllKeywords()">✦ まとめて全てのキーワードを挿入</button>`;
+  }
+
+  // 関連ノート
+  if (result.related_notes?.length > 0) {
+    html += `<div class="ai-section-title" style="margin-top:14px">✦ 関連ノート</div>`;
+    html += `<div class="ai-related">`;
+    result.related_notes.forEach(title => {
+      const n = notes.find(n => n.title === title);
+      if (n) {
+        html += `<div class="ai-rel-item" onclick="selectNote('${n.id}')">
+          <span>◈</span><span>${esc(title)}</span>
+        </div>`;
+      }
+    });
+    html += `</div>`;
+  }
+
+  document.getElementById("ai-panel-inner").innerHTML = html;
+}
+
+function insertKeyword(kw) {
+  const note = getActive();
+  if (!note) return;
+  if (note.content.includes(`[[${kw}]]`)) {
+    toast(`[[${kw}]] は既に挿入済みです`);
+    return;
+  }
+  // ## キーワード セクションがあればそこに追加、なければ末尾に追加
+  let content = note.content;
+  if (content.includes("## キーワード")) {
+    content = content.replace("## キーワード", `## キーワード\n- [[${kw}]]`);
+  } else {
+    content = content.trimEnd() + `\n\n## キーワード\n- [[${kw}]]`;
+  }
+  note.content = content;
+  note.updatedAt = Date.now();
+  document.getElementById("editor").value = content;
+  saveLocal();
+  scheduleSave();
+  renderBacklinks();
+  updateMeta();
+  if (aiResults) renderAiPanel(aiResults); // 挿入済みマークを更新
+  toast(`[[${kw}]] を挿入しました`);
+}
+
+function insertAllKeywords() {
+  const note = getActive();
+  if (!note || !aiResults) return;
+  const allKws = [...new Set([
+    ...(aiResults.keywords || []),
+    ...(aiResults.new_keywords || [])
+  ])];
+  const toInsert = allKws.filter(kw => !note.content.includes(`[[${kw}]]`));
+  if (toInsert.length === 0) { toast("全て挿入済みです"); return; }
+
+  let content = note.content.trimEnd();
+  if (content.includes("## キーワード")) {
+    const kwLines = toInsert.map(k => `- [[${k}]]`).join("\n");
+    content = content.replace("## キーワード", `## キーワード\n${kwLines}`);
+  } else {
+    const kwLines = toInsert.map(k => `- [[${k}]]`).join("\n");
+    content += `\n\n## キーワード\n${kwLines}`;
+  }
+  note.content = content;
+  note.updatedAt = Date.now();
+  document.getElementById("editor").value = content;
+  saveLocal();
+  scheduleSave();
+  renderBacklinks();
+  updateMeta();
+  renderAiPanel(aiResults);
+  toast(`${toInsert.length}個のキーワードを挿入しました ✦`);
+}
+
+// ============================================================
+//  IMPORT LOGIC
+// ============================================================
+function openImportModal() {
+  document.getElementById("import-url-input").value = "";
+  document.getElementById("import-file-input").value = "";
+  document.getElementById("import-modal").style.display = "flex";
+}
+
+function closeImportModal() {
+  document.getElementById("import-modal").style.display = "none";
+}
+
+async function runImport() {
+  const url = document.getElementById("import-url-input").value.trim();
+  const fileInput = document.getElementById("import-file-input");
+  const mode = document.getElementById("import-mode-input").value;
+  const btn = document.getElementById("import-run-btn");
+
+  if (!url && (!fileInput.files || fileInput.files.length === 0)) {
+    toast("URLまたはファイルを選択してください");
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "処理中...";
+  toast("抽出中...");
+
+  let text = "";
+  let title = "取り込んだノート";
+
+  try {
+    if (url) {
+      if (!API_URL || API_URL.includes("YOUR_")) throw new Error("API URLが設定されていません");
+      const res = await apiPost({ action: "fetchDriveFile", url });
+      if (res.error) throw new Error(res.error);
+      text = res.text;
+      if (res.title) title = res.title;
+    } else {
+      const file = fileInput.files[0];
+      title = file.name.replace(/\.[^/.]+$/, "");
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        text += content.items.map(item => item.str).join(" ") + "\n";
+      }
+    }
+
+    if (!text.trim()) throw new Error("テキストを抽出できませんでした");
+
+    if (mode === "raw") {
+      const note = createNote(title);
+      note.content = `# ${title}\n\n${text}`;
+      note.updatedAt = Date.now();
+      saveLocal();
+      selectNote(note.id);
+      toast("取り込み完了");
+    } else {
+      toast("AI処理中...");
+      const apiKey = localStorage.getItem(GEMINI_KEY_LS);
+      if (!apiKey) {
+        openSettings();
+        throw new Error("AI処理にはAPIキーの設定が必要です");
+      }
+      
+      const model = localStorage.getItem(GEMINI_MODEL_LS) || "gemini-2.0-flash";
+      const temp = parseFloat(localStorage.getItem(GEMINI_TEMP_LS) || "0.1");
+      const maxTokens = parseInt(localStorage.getItem(GEMINI_TOKENS_LS) || "1024", 10);
+
+      let prompt = "";
+      if (mode === "summarize") {
+        prompt = `以下の文章を分かりやすく要約してください。\n\n${text.substring(0, 30000)}`;
+      } else {
+        prompt = `以下の文章から重要なキーポイントを箇条書きで抽出してください。\n\n${text.substring(0, 30000)}`;
+      }
+
+      const aiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: temp, maxOutputTokens: maxTokens }
+          })
+        }
+      );
+      
+      if (!aiRes.ok) {
+        const err = await aiRes.json();
+        throw new Error(err.error?.message || "AI処理に失敗しました");
+      }
+      const data = await aiRes.json();
+      const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+      const note = createNote(title + (mode === "summarize" ? " (要約)" : " (抽出)"));
+      note.content = `# ${note.title}\n\n${aiText}\n\n---\n<details><summary>元のテキストを展開する</summary>\n\n${text}\n</details>`;
+      note.updatedAt = Date.now();
+      saveLocal();
+      selectNote(note.id);
+      toast("取り込みとAI処理が完了しました ✦");
+    }
+    
+    closeImportModal();
+
+  } catch (err) {
+    toast("エラー: " + err.message);
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "実行";
+  }
+}
+
+// ============================================================
+//  INIT
+// ============================================================
+(async function init() {
+  loadLocal();
+
+  if (notes.length === 0) {
+    // デフォルトノートを作成
+    notes = [
+      { id: genId(), title: "ようこそ", content: "# ようこそ Connected Notes へ！\n\n[[使い方]] を見てみましょう。\n\n[[アイデア]] や [[タスク]] にリンクできます。", createdAt: Date.now(), updatedAt: Date.now() },
+      { id: genId(), title: "使い方", content: "# 使い方\n\n- `[[ノート名]]` でリンクを作成\n- リンクをクリックでジャンプ\n- 右パネルでバックリンクを確認\n\n[[ようこそ]] に戻る", createdAt: Date.now(), updatedAt: Date.now() },
+    ];
+    saveLocal();
+  }
+
+  activeId = notes[0]?.id || null;
+  renderList();
+  renderEditor();
+
+  // クラウド同期
+  syncFromServer();
+})();
+</script>
+</body>
+</html>
