@@ -1217,7 +1217,7 @@
     // ============================================================
     //  CONFIG  ← ここにApps ScriptのデプロイURLを貼り付けてください
     // ============================================================
-    const API_URL = "https://script.google.com/macros/s/AKfycbwvgftrWBFWSKUAq3FE9AwP8n2Rez0bMUjQfV_6szBaxOPX3uUzGWhV93X-cO5ngfUj/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbzlhP9SkRT6z8Dpe__khDQTZolQz8jnAqHQ7wpau8qgwCagm38iBg8N3sHEaQWeDvus/exec";
 
     // ============================================================
     //  STATE
@@ -1324,6 +1324,8 @@
         id: genId(),
         title: title || `新規ノート`,
         content: title ? `# ${title}\n\n` : `# 新規ノート\n\n`,
+        summary: "",
+        keywords: "",
         createdAt: Date.now(),
         updatedAt: Date.now(),
       };
@@ -1735,6 +1737,13 @@ ${existingTitles || "（まだノートがありません）"}
         const jsonStr = raw.replace(/```json|```/g, "").trim();
         aiResults = JSON.parse(jsonStr);
 
+        // ノートオブジェクトに保存
+        note.summary = aiResults.summary || "";
+        note.keywords = (aiResults.keywords || []).join(", ");
+        note.updatedAt = Date.now();
+        saveLocal();
+        scheduleSave();
+
         renderAiPanel(aiResults);
         document.getElementById("ai-panel").classList.add("open");
         toast("AI解析が完了しました ✦");
@@ -1864,7 +1873,7 @@ ${existingTitles || "（まだノートがありません）"}
       let content = note.content;
       // 最初の見出し（# タイトル）の直後に挿入を試みる
       const summaryText = `${summaryPrefix}\n> ${aiResults.summary.replace(/\n/g, "\n> ")}\n\n`;
-      
+
       const titleMatch = content.match(/^# .+\n/);
       if (titleMatch) {
         content = content.replace(titleMatch[0], titleMatch[0] + "\n" + summaryText);
@@ -1973,6 +1982,7 @@ ${existingTitles || "（まだノートがありません）"}
 
             const note = createNote(title + (mode === "summarize" ? " (要約)" : mode === "keypoints" ? " (抽出)" : ""));
             note.content = `# ${note.title}\n\n${aiText}`;
+            if (mode === "summarize") note.summary = aiText;
             note.updatedAt = Date.now();
             saveLocal();
             selectNote(note.id);
@@ -2044,6 +2054,7 @@ ${existingTitles || "（まだノートがありません）"}
 
           const note = createNote(title + (mode === "summarize" ? " (要約)" : " (抽出)"));
           note.content = `# ${note.title}\n\n${aiText}\n\n---\n<details><summary>元のテキストを展開する</summary>\n\n${text}\n</details>`;
+          if (mode === "summarize") note.summary = aiText;
           note.updatedAt = Date.now();
           saveLocal();
           selectNote(note.id);
@@ -2070,8 +2081,8 @@ ${existingTitles || "（まだノートがありません）"}
       if (notes.length === 0) {
         // デフォルトノートを作成
         notes = [
-          { id: genId(), title: "ようこそ", content: "# ようこそ Connected Notes へ！\n\n[[使い方]] を見てみましょう。\n\n[[アイデア]] や [[タスク]] にリンクできます。", createdAt: Date.now(), updatedAt: Date.now() },
-          { id: genId(), title: "使い方", content: "# 使い方\n\n- `[[ノート名]]` でリンクを作成\n- リンクをクリックでジャンプ\n- 右パネルでバックリンクを確認\n\n[[ようこそ]] に戻る", createdAt: Date.now(), updatedAt: Date.now() },
+          { id: genId(), title: "ようこそ", content: "# ようこそ Connected Notes へ！\n\n[[使い方]] を見てみましょう。\n\n[[アイデア]] や [[タスク]] にリンクできます。", summary: "", keywords: "", createdAt: Date.now(), updatedAt: Date.now() },
+          { id: genId(), title: "使い方", content: "# 使い方\n\n- `[[ノート名]]` でリンクを作成\n- リンクをクリックでジャンプ\n- 右パネルでバックリンクを確認\n\n[[ようこそ]] に戻る", summary: "", keywords: "", createdAt: Date.now(), updatedAt: Date.now() },
         ];
         saveLocal();
       }
