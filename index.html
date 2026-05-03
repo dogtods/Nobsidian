@@ -1112,11 +1112,16 @@
       </div>
 
       <div class="settings-label">2. 取り込みモード</div>
-      <select class="settings-input" id="import-mode-input" style="margin-bottom: 16px;">
+      <select class="settings-input" id="import-mode-input" style="margin-bottom: 12px;">
         <option value="raw">そのまま取り込む</option>
         <option value="summarize">要約して取り込む</option>
         <option value="keypoints">キーポイントを抽出</option>
       </select>
+
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:20px;">
+        <input type="checkbox" id="import-optimize-title" style="width:16px; height:16px; cursor:pointer;" checked />
+        <label for="import-optimize-title" style="font-size:12px; color:var(--text); cursor:pointer;">AIでタイトルを最適化する</label>
+      </div>
 
       <div class="settings-btns">
         <button class="settings-cancel" onclick="closeImportModal()">キャンセル</button>
@@ -1476,7 +1481,9 @@
     function updateMeta() {
       const note = getActive();
       if (!note) return;
-      document.getElementById("meta-date").textContent = "更新: " + new Date(note.updatedAt).toLocaleString("ja-JP");
+      const createdStr = new Date(note.createdAt).toLocaleString("ja-JP", { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+      const updatedStr = new Date(note.updatedAt).toLocaleString("ja-JP", { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+      document.getElementById("meta-date").innerHTML = `<span>作成: ${createdStr}</span><span style="margin-left:12px">更新: ${updatedStr}</span>`;
       document.getElementById("meta-chars").textContent = "文字数: " + note.content.length;
       document.getElementById("meta-links").textContent = "リンク: " + extractLinks(note.content).length;
     }
@@ -1908,6 +1915,7 @@ ${existingTitles || "（まだノートがありません）"}
       const url = document.getElementById("import-url-input").value.trim();
       const fileInput = document.getElementById("import-file-input");
       const mode = document.getElementById("import-mode-input").value;
+      const optimizeTitle = document.getElementById("import-optimize-title").checked;
       const btn = document.getElementById("import-run-btn");
 
       if (!url && (!fileInput.files || fileInput.files.length === 0)) {
@@ -1924,6 +1932,31 @@ ${existingTitles || "（まだノートがありません）"}
 
       try {
         const apiKey = localStorage.getItem(GEMINI_KEY_LS);
+
+        const model = localStorage.getItem(GEMINI_MODEL_LS) || "gemini-2.0-flash";
+        const temp = parseFloat(localStorage.getItem(GEMINI_TEMP_LS) || "0.1");
+
+        async function fetchAiTitle(content, currentTitle) {
+          if (!apiKey || !optimizeTitle) return currentTitle;
+          try {
+            const prompt = `以下のテキストの内容を最もよく表す、短くて魅力的な日本語のタイトル（20文字以内）を1つだけ提案してください。出力はタイトルのみとし、装飾や説明は不要です。\n\n内容:\n${content.substring(0, 2000)}`;
+            const res = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  contents: [{ parts: [{ text: prompt }] }],
+                  generationConfig: { temperature: 0.5, maxOutputTokens: 60 }
+                })
+              }
+            );
+            if (!res.ok) return currentTitle;
+            const data = await res.json();
+            const aiTitle = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || currentTitle;
+            return aiTitle.replace(/^#\s*/, "").replace(/[\"\']/g, "");
+          } catch { return currentTitle; }
+        }
 
         if (url) {
           if (!API_URL || API_URL.includes("YOUR_")) throw new Error("API URLが設定されていません");
@@ -1980,6 +2013,11 @@ ${existingTitles || "（まだノートがありません）"}
 
             if (!aiText.trim()) throw new Error("AIでもテキストを抽出できませんでした");
 
+            if (optimizeTitle) {
+              toast("タイトルを最適化中...");
+              title = await fetchAiTitle(aiText, title);
+            }
+
             const note = createNote(title + (mode === "summarize" ? " (要約)" : mode === "keypoints" ? " (抽出)" : ""));
             note.content = `# ${note.title}\n\n${aiText}`;
             if (mode === "summarize") note.summary = aiText;
@@ -2008,7 +2046,10 @@ ${existingTitles || "（まだノートがありません）"}
         if (!text.trim()) throw new Error("テキストを抽出できませんでした");
 
         // Google DocのURL取り込み ＋ APIキーなしのPDF取り込み の場合の処理
-        if (mode === "raw") {
+          if (optimizeTitle) {
+            toast("タイトルを最適化中...");
+            title = await fetchAiTitle(text, title);
+          }
           const note = createNote(title);
           note.content = `# ${title}\n\n${text}`;
           note.updatedAt = Date.now();
@@ -2052,6 +2093,10 @@ ${existingTitles || "（まだノートがありません）"}
           const data = await aiRes.json();
           const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
+          if (optimizeTitle) {
+            toast("タイトルを最適化中...");
+            title = await fetchAiTitle(aiText, title);
+          }
           const note = createNote(title + (mode === "summarize" ? " (要約)" : " (抽出)"));
           note.content = `# ${note.title}\n\n${aiText}\n\n---\n<details><summary>元のテキストを展開する</summary>\n\n${text}\n</details>`;
           if (mode === "summarize") note.summary = aiText;
