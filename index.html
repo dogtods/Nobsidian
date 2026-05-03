@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ja">
 
 <head>
@@ -1937,172 +1937,112 @@ ${existingTitles || "（まだノートがありません）"}
 
       try {
         const apiKey = localStorage.getItem(GEMINI_KEY_LS);
+        const importModel = localStorage.getItem(GEMINI_MODEL_LS) || "gemini-2.0-flash";
+        const importTemp = parseFloat(localStorage.getItem(GEMINI_TEMP_LS) || "0.1");
 
-        const model = localStorage.getItem(GEMINI_MODEL_LS) || "gemini-2.0-flash";
-        const temp = parseFloat(localStorage.getItem(GEMINI_TEMP_LS) || "0.1");
-
-        async function fetchAiTitle(content, currentTitle) {
+        // AIタイトル生成ヘルパー（arrow functionで宣言、ブロックスコープ問題を回避）
+        const fetchAiTitle = async (content, currentTitle) => {
           if (!apiKey || !optimizeTitle) return currentTitle;
           try {
-            const prompt = `以下のテキストの内容を最もよく表す、短くて魅力的な日本語のタイトル（20文字以内）を1つだけ提案してください。出力はタイトルのみとし、装飾や説明は不要です。\n\n内容:\n${content.substring(0, 2000)}`;
-            const res = await fetch(
-              `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  contents: [{ parts: [{ text: prompt }] }],
-                  generationConfig: { temperature: 0.5, maxOutputTokens: 60 }
-                })
-              }
+            const tp = `以下のテキストの内容を最もよく表す、短くて魅力的な日本語のタイトル（20文字以内）を1つだけ提案してください。出力はタイトルのみとし、装飾や説明は不要です。\n\n内容:\n${content.substring(0, 2000)}`;
+            const r = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
+              { method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ contents: [{ parts: [{ text: tp }] }], generationConfig: { temperature: 0.5, maxOutputTokens: 60 } }) }
             );
-            if (!res.ok) return currentTitle;
-            const data = await res.json();
-            const aiTitle = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || currentTitle;
-            return aiTitle.replace(/^#\s*/, "").replace(/[\"\']/g, "");
-          } catch { return currentTitle; }
-        }
+            if (!r.ok) return currentTitle;
+            const rd = await r.json();
+            const at = rd.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || currentTitle;
+            return at.replace(/^#\s*/, "").replace(/[\"\']/g, "");
+          } catch (e) { return currentTitle; }
+        };
 
+        // --- GoogleドキュメントURL取り込み ---
         if (url) {
           if (!API_URL || API_URL.includes("YOUR_")) throw new Error("API URLが設定されていません");
-          const res = await apiPost({ action: "fetchDriveFile", url });
-          if (res.error) throw new Error(res.error);
-          text = res.text;
-          if (res.title) title = res.title;
+          const urlRes = await apiPost({ action: "fetchDriveFile", url });
+          if (urlRes.error) throw new Error(urlRes.error);
+          text = urlRes.text;
+          if (urlRes.title) title = urlRes.title;
+
+        // --- ローカルファイル取り込み ---
         } else {
           const file = fileInput.files[0];
           title = file.name.replace(/\.[^/.]+$/, "");
 
-          // --- TXT ---
           if (file.name.endsWith(".txt")) {
             text = await file.text();
 
-          // --- MHTML ---
           } else if (file.name.endsWith(".mhtml")) {
-            const rawText = await file.text();
-            text = rawText
-              .replace(/<style([\s\S]*?)<\/style>/gi, "")
-              .replace(/<script([\s\S]*?)<\/script>/gi, "")
+            const raw = await file.text();
+            text = raw
+              .replace(/<style[\s\S]*?<\/style>/gi, "")
+              .replace(/<script[\s\S]*?<\/script>/gi, "")
               .replace(/<[^>]+>/g, " ")
               .replace(/&nbsp;/g, " ")
-              .replace(/\s+/g, " ")
-              .trim();
+              .replace(/\s+/g, " ").trim();
 
-          // --- DOCX: GeminiのAI解析（APIキーがある場合）---
           } else if (file.name.endsWith(".docx") && apiKey) {
             toast("AIがWordファイルを解析中...");
-            const base64Data = await new Promise((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => resolve(reader.result.split(',')[1]);
-              reader.onerror = reject;
-              reader.readAsDataURL(file);
+            const docxB64 = await new Promise((res, rej) => {
+              const fr = new FileReader(); fr.onload = () => res(fr.result.split(',')[1]); fr.onerror = rej; fr.readAsDataURL(file);
             });
             const docxMime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-            let docxPrompt = "";
-            if (mode === "raw") docxPrompt = "このWordファイルに含まれるすべてのテキストをそのまま抽出してください。";
-            else if (mode === "summarize") docxPrompt = "このWordファイルの内容を分かりやすく要約してください。";
-            else docxPrompt = "このWordファイルから重要なキーポイントを箇条書きで抽出してください。";
-            const maxTokens = Math.max(parseInt(localStorage.getItem(GEMINI_TOKENS_LS) || "2000", 10), 2000);
-            const aiRes = await fetch(
-              `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  contents: [{ parts: [
-                    { text: docxPrompt },
-                    { inlineData: { mimeType: docxMime, data: base64Data } }
-                  ]}],
-                  generationConfig: { temperature: temp, maxOutputTokens: maxTokens }
-                })
-              }
+            let docxPr = mode === "raw" ? "このWordファイルに含まれるすべてのテキストをそのまま抽出してください。"
+              : mode === "summarize" ? "このWordファイルの内容を分かりやすく要約してください。"
+              : "このWordファイルから重要なキーポイントを箇条書きで抽出してください。";
+            const docxMaxTok = Math.max(parseInt(localStorage.getItem(GEMINI_TOKENS_LS) || "2000", 10), 2000);
+            const docxFetchRes = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
+              { method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ contents: [{ parts: [{ text: docxPr }, { inlineData: { mimeType: docxMime, data: docxB64 } }] }],
+                  generationConfig: { temperature: importTemp, maxOutputTokens: docxMaxTok } }) }
             );
-            if (!aiRes.ok) {
-              const err = await aiRes.json();
-              throw new Error(err.error?.message || "Wordファイルの解析に失敗しました");
-            }
-            const docxData = await aiRes.json();
-            const docxText = docxData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+            if (!docxFetchRes.ok) { const de = await docxFetchRes.json(); throw new Error(de.error?.message || "Wordファイルの解析に失敗しました"); }
+            const docxFetchData = await docxFetchRes.json();
+            const docxText = docxFetchData.candidates?.[0]?.content?.parts?.[0]?.text || "";
             if (!docxText.trim()) throw new Error("Wordファイルからテキストを抽出できませんでした");
             if (optimizeTitle) { toast("タイトルを最適化中..."); title = await fetchAiTitle(docxText, title); }
-            const note = createNote(title + (mode === "summarize" ? " (要約)" : mode === "keypoints" ? " (抽出)" : ""));
-            note.content = `# ${note.title}\n\n${docxText}`;
-            if (mode === "summarize") note.summary = docxText;
-            note.updatedAt = Date.now();
-            saveLocal();
-            selectNote(note.id);
-            toast("取り込みが完了しました ✦");
-            closeImportModal();
-            return;
+            const docxNote = createNote(title + (mode === "summarize" ? " (要約)" : mode === "keypoints" ? " (抽出)" : ""));
+            docxNote.content = `# ${docxNote.title}\n\n${docxText}`;
+            if (mode === "summarize") docxNote.summary = docxText;
+            docxNote.updatedAt = Date.now(); saveLocal(); selectNote(docxNote.id);
+            toast("取り込みが完了しました ✦"); closeImportModal(); return;
 
-          // --- PDF（APIキーあり）---
-          } else if (apiKey && !file.name.endsWith(".docx")) {
+          } else if (apiKey) {
             toast("AIがPDFを解析中...");
-            const base64Data = await new Promise((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => resolve(reader.result.split(',')[1]);
-              reader.onerror = reject;
-              reader.readAsDataURL(file);
+            const pdfB64 = await new Promise((res, rej) => {
+              const fr = new FileReader(); fr.onload = () => res(fr.result.split(',')[1]); fr.onerror = rej; fr.readAsDataURL(file);
             });
-
-            const model = localStorage.getItem(GEMINI_MODEL_LS) || "gemini-2.0-flash";
-            const temp = parseFloat(localStorage.getItem(GEMINI_TEMP_LS) || "0.1");
-            const maxTokens = Math.max(parseInt(localStorage.getItem(GEMINI_TOKENS_LS) || "2000", 10), 2000); // PDF解析のため多めに確保
-
-            let prompt = "";
-            if (mode === "raw") prompt = "このPDFに含まれるすべてのテキストをそのまま抽出してください。要約や追加のコメントは一切不要です。";
-            else if (mode === "summarize") prompt = "このPDFの内容を分かりやすく要約してください。";
-            else prompt = "このPDFから重要なキーポイントを箇条書きで抽出してください。";
-
-            const aiRes = await fetch(
-              `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  contents: [{
-                    parts: [
-                      { text: prompt },
-                      { inlineData: { mimeType: "application/pdf", data: base64Data } }
-                    ]
-                  }],
-                  generationConfig: { temperature: temp, maxOutputTokens: maxTokens }
-                })
-              }
+            let pdfPr = mode === "raw" ? "このPDFに含まれるすべてのテキストをそのまま抽出してください。要約や追加のコメントは一切不要です。"
+              : mode === "summarize" ? "このPDFの内容を分かりやすく要約してください。"
+              : "このPDFから重要なキーポイントを箇条書きで抽出してください。";
+            const pdfMaxTok = Math.max(parseInt(localStorage.getItem(GEMINI_TOKENS_LS) || "2000", 10), 2000);
+            const pdfFetchRes = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
+              { method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ contents: [{ parts: [{ text: pdfPr }, { inlineData: { mimeType: "application/pdf", data: pdfB64 } }] }],
+                  generationConfig: { temperature: importTemp, maxOutputTokens: pdfMaxTok } }) }
             );
+            if (!pdfFetchRes.ok) { const pe = await pdfFetchRes.json(); throw new Error(pe.error?.message || "AIによるPDF解析に失敗しました"); }
+            const pdfFetchData = await pdfFetchRes.json();
+            const pdfAiText = pdfFetchData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+            if (!pdfAiText.trim()) throw new Error("AIでもテキストを抽出できませんでした");
+            if (optimizeTitle) { toast("タイトルを最適化中..."); title = await fetchAiTitle(pdfAiText, title); }
+            const pdfNote = createNote(title + (mode === "summarize" ? " (要約)" : mode === "keypoints" ? " (抽出)" : ""));
+            pdfNote.content = `# ${pdfNote.title}\n\n${pdfAiText}`;
+            if (mode === "summarize") pdfNote.summary = pdfAiText;
+            pdfNote.updatedAt = Date.now(); saveLocal(); selectNote(pdfNote.id);
+            toast("取り込みが完了しました ✦"); closeImportModal(); return;
 
-            if (!aiRes.ok) {
-              const err = await aiRes.json();
-              throw new Error(err.error?.message || "AIによるPDF解析に失敗しました");
-            }
-            const data = await aiRes.json();
-            const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
-            if (!aiText.trim()) throw new Error("AIでもテキストを抽出できませんでした");
-
-            if (optimizeTitle) {
-              toast("タイトルを最適化中...");
-              title = await fetchAiTitle(aiText, title);
-            }
-
-            const note = createNote(title + (mode === "summarize" ? " (要約)" : mode === "keypoints" ? " (抽出)" : ""));
-            note.content = `# ${note.title}\n\n${aiText}`;
-            if (mode === "summarize") note.summary = aiText;
-            note.updatedAt = Date.now();
-            saveLocal();
-            selectNote(note.id);
-            toast("取り込みが完了しました ✦");
-            closeImportModal();
-            return; // PDFのAI処理で完結
-          // --- TXT/MHTMLのAPIキーなしパスはすでに上でtextが入る
-          } else if (!file.name.endsWith(".docx")) {
-            // APIキーがない場合のフォールバック（pdf.jsによる簡易抽出）
-            const arrayBuffer = await file.arrayBuffer();
-            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-            for (let i = 1; i <= pdf.numPages; i++) {
-              const page = await pdf.getPage(i);
-              const content = await page.getTextContent();
-              text += content.items.map(item => item.str).join(" ") + "\n";
+          } else {
+            // APIキーなし: pdf.jsによる簡易テキスト抽出
+            const arrBuf = await file.arrayBuffer();
+            const pdfDoc = await pdfjsLib.getDocument({ data: arrBuf }).promise;
+            for (let i = 1; i <= pdfDoc.numPages; i++) {
+              const pg = await pdfDoc.getPage(i);
+              const pgContent = await pg.getTextContent();
+              text += pgContent.items.map(item => item.str).join(" ") + "\n";
             }
             if (!text.trim()) {
               openSettings();
@@ -2111,70 +2051,39 @@ ${existingTitles || "（まだノートがありません）"}
           }
         }
 
+        // テキスト取得後の処理（Google Doc URL / txt / mhtml / APIキーなしPDF）
         if (!text.trim()) throw new Error("テキストを抽出できませんでした");
 
-        // Google DocのURL取り込み ＋ APIキーなしのTXT/MHTML/PDF取り込み の場合の処理
         if (mode === "raw") {
-          if (optimizeTitle) {
-            toast("タイトルを最適化中...");
-            title = await fetchAiTitle(text, title);
-          }
-          const note = createNote(title);
-          note.content = `# ${title}\n\n${text}`;
-          note.updatedAt = Date.now();
-          saveLocal();
-          selectNote(note.id);
+          if (optimizeTitle) { toast("タイトルを最適化中..."); title = await fetchAiTitle(text, title); }
+          const rawNote = createNote(title);
+          rawNote.content = `# ${title}\n\n${text}`;
+          rawNote.updatedAt = Date.now(); saveLocal(); selectNote(rawNote.id);
           toast("取り込み完了");
         } else {
           toast("AI処理中...");
-          if (!apiKey) {
-            openSettings();
-            throw new Error("AI処理にはAPIキーの設定が必要です");
-          }
-
-          const maxTokens2 = parseInt(localStorage.getItem(GEMINI_TOKENS_LS) || "1024", 10);
-
-          let prompt = "";
-          if (mode === "summarize") {
-            prompt = `以下の文章を分かりやすく要約してください。\n\n${text.substring(0, 30000)}`;
-          } else {
-            prompt = `以下の文章から重要なキーポイントを箇条書きで抽出してください。\n\n${text.substring(0, 30000)}`;
-          }
-
-          const aiRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { temperature: temp, maxOutputTokens: maxTokens2 }
-              })
-            }
+          if (!apiKey) { openSettings(); throw new Error("AI処理にはAPIキーの設定が必要です"); }
+          const aiMaxTok = parseInt(localStorage.getItem(GEMINI_TOKENS_LS) || "1024", 10);
+          const aiPr = mode === "summarize"
+            ? `以下の文章を分かりやすく要約してください。\n\n${text.substring(0, 30000)}`
+            : `以下の文章から重要なキーポイントを箇条書きで抽出してください。\n\n${text.substring(0, 30000)}`;
+          const aiFetchRes = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
+            { method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ contents: [{ parts: [{ text: aiPr }] }], generationConfig: { temperature: importTemp, maxOutputTokens: aiMaxTok } }) }
           );
-
-          if (!aiRes.ok) {
-            const err = await aiRes.json();
-            throw new Error(err.error?.message || "AI処理に失敗しました");
-          }
-          const data = await aiRes.json();
-          const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
-          if (optimizeTitle) {
-            toast("タイトルを最適化中...");
-            title = await fetchAiTitle(aiText, title);
-          }
-          const note = createNote(title + (mode === "summarize" ? " (要約)" : " (抽出)"));
-          note.content = `# ${note.title}\n\n${aiText}\n\n---\n<details><summary>元のテキストを展開する</summary>\n\n${text}\n</details>`;
-          if (mode === "summarize") note.summary = aiText;
-          note.updatedAt = Date.now();
-          saveLocal();
-          selectNote(note.id);
+          if (!aiFetchRes.ok) { const ae = await aiFetchRes.json(); throw new Error(ae.error?.message || "AI処理に失敗しました"); }
+          const aiFetchData = await aiFetchRes.json();
+          const processedText = aiFetchData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+          if (optimizeTitle) { toast("タイトルを最適化中..."); title = await fetchAiTitle(processedText, title); }
+          const aiNote = createNote(title + (mode === "summarize" ? " (要約)" : " (抽出)"));
+          aiNote.content = `# ${aiNote.title}\n\n${processedText}\n\n---\n<details><summary>元のテキストを展開する</summary>\n\n${text}\n</details>`;
+          if (mode === "summarize") aiNote.summary = processedText;
+          aiNote.updatedAt = Date.now(); saveLocal(); selectNote(aiNote.id);
           toast("取り込みとAI処理が完了しました ✦");
         }
 
         closeImportModal();
-
 
       } catch (err) {
         toast("エラー: " + err.message);
