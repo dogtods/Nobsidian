@@ -1099,17 +1099,22 @@
     <div class="settings-box">
       <div class="settings-title">📥 ノートの取り込み</div>
       <div class="settings-desc">
-        GoogleドキュメントのURLやローカルのPDFからテキストを抽出してノートを作成します。
+        各種ファイルやGoogleドキュメントからテキストを抽出してノートを作成します。
       </div>
 
       <div class="settings-label">1. 入力元</div>
-      <div style="margin-bottom: 12px; display:flex; flex-direction:column;">
-        <input class="settings-input" id="import-url-input" type="text" placeholder="GoogleドキュメントのURL..."
+      <div style="margin-bottom: 4px; display:flex; flex-direction:column;">
+        <input class="settings-input" id="import-url-input" type="text" placeholder="GoogleドキュメントのURL（例: https://docs.google.com/...）"
           style="margin-bottom:4px;" />
-        <div style="text-align:center; color:var(--muted); font-size:11px; margin-bottom:4px;">または</div>
-        <input class="settings-input" id="import-file-input" type="file" accept=".pdf,.txt,.mhtml"
+        <div style="font-size:10px; color:var(--muted); margin-bottom:8px; padding:0 2px;">
+          ⚠️ GoogleドライブからGoogleドキュメントを選ぶ場合はURLの貼り付けをご利用ください。ファイル選択ではテキストを取得できません。
+        </div>
+        <div style="text-align:center; color:var(--muted); font-size:11px; margin-bottom:4px;">または ローカルファイルを選択</div>
+        <input class="settings-input" id="import-file-input" type="file" accept=".pdf,.txt,.mhtml,.docx"
           style="margin-bottom:0; padding:6px; cursor:pointer;" />
+        <div style="font-size:10px; color:var(--muted); margin-top:4px; padding:0 2px;">対応形式: PDF / テキスト (.txt) / MHTML (.mhtml) / Word (.docx)</div>
       </div>
+      <div style="margin-bottom:12px;"></div>
 
       <div class="settings-label">2. 取り込みモード</div>
       <select class="settings-input" id="import-mode-input" style="margin-bottom: 12px;">
@@ -1968,8 +1973,70 @@ ${existingTitles || "（まだノートがありません）"}
           const file = fileInput.files[0];
           title = file.name.replace(/\.[^/.]+$/, "");
 
-          // APIキーがあれば、AIによる高性能なPDF解析（OCR込み）を行う
-          if (apiKey) {
+          // --- TXT ---
+          if (file.name.endsWith(".txt")) {
+            text = await file.text();
+
+          // --- MHTML ---
+          } else if (file.name.endsWith(".mhtml")) {
+            const rawText = await file.text();
+            text = rawText
+              .replace(/<style([\s\S]*?)<\/style>/gi, "")
+              .replace(/<script([\s\S]*?)<\/script>/gi, "")
+              .replace(/<[^>]+>/g, " ")
+              .replace(/&nbsp;/g, " ")
+              .replace(/\s+/g, " ")
+              .trim();
+
+          // --- DOCX: GeminiのAI解析（APIキーがある場合）---
+          } else if (file.name.endsWith(".docx") && apiKey) {
+            toast("AIがWordファイルを解析中...");
+            const base64Data = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result.split(',')[1]);
+              reader.onerror = reject;
+              reader.readAsDataURL(file);
+            });
+            const docxMime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            let docxPrompt = "";
+            if (mode === "raw") docxPrompt = "このWordファイルに含まれるすべてのテキストをそのまま抽出してください。";
+            else if (mode === "summarize") docxPrompt = "このWordファイルの内容を分かりやすく要約してください。";
+            else docxPrompt = "このWordファイルから重要なキーポイントを箇条書きで抽出してください。";
+            const maxTokens = Math.max(parseInt(localStorage.getItem(GEMINI_TOKENS_LS) || "2000", 10), 2000);
+            const aiRes = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  contents: [{ parts: [
+                    { text: docxPrompt },
+                    { inlineData: { mimeType: docxMime, data: base64Data } }
+                  ]}],
+                  generationConfig: { temperature: temp, maxOutputTokens: maxTokens }
+                })
+              }
+            );
+            if (!aiRes.ok) {
+              const err = await aiRes.json();
+              throw new Error(err.error?.message || "Wordファイルの解析に失敗しました");
+            }
+            const docxData = await aiRes.json();
+            const docxText = docxData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+            if (!docxText.trim()) throw new Error("Wordファイルからテキストを抽出できませんでした");
+            if (optimizeTitle) { toast("タイトルを最適化中..."); title = await fetchAiTitle(docxText, title); }
+            const note = createNote(title + (mode === "summarize" ? " (要約)" : mode === "keypoints" ? " (抽出)" : ""));
+            note.content = `# ${note.title}\n\n${docxText}`;
+            if (mode === "summarize") note.summary = docxText;
+            note.updatedAt = Date.now();
+            saveLocal();
+            selectNote(note.id);
+            toast("取り込みが完了しました ✦");
+            closeImportModal();
+            return;
+
+          // --- PDF（APIキーあり）---
+          } else if (apiKey && !file.name.endsWith(".docx")) {
             toast("AIがPDFを解析中...");
             const base64Data = await new Promise((resolve, reject) => {
               const reader = new FileReader();
@@ -2027,20 +2094,8 @@ ${existingTitles || "（まだノートがありません）"}
             toast("取り込みが完了しました ✦");
             closeImportModal();
             return; // PDFのAI処理で完結
-          } else if (file.name.endsWith(".txt")) {
-            text = await file.text();
-          } else if (file.name.endsWith(".mhtml")) {
-            const rawText = await file.text();
-            // MHTMLの簡易的な文字抽出（HTMLタグとMIMEヘッダーを除去）
-            text = rawText
-              .replace(/<style([\s\S]*?)<\/style>/gi, "")
-              .replace(/<script([\s\S]*?)<\/script>/gi, "")
-              .replace(/<[^>]+>/g, " ")
-              .replace(/&nbsp;/g, " ")
-              .replace(/\s+/g, " ")
-              .replace(/Content-Type:[\s\S]*?boundary=.*?\n/gi, "")
-              .trim();
-          } else {
+          // --- TXT/MHTMLのAPIキーなしパスはすでに上でtextが入る
+          } else if (!file.name.endsWith(".docx")) {
             // APIキーがない場合のフォールバック（pdf.jsによる簡易抽出）
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
