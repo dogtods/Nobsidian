@@ -140,7 +140,7 @@
       border: 1px solid var(--border2);
       border-radius: 6px;
       color: var(--subtle);
-      font-size: 13px;
+      font-size: 12px;
       cursor: pointer;
       display: flex;
       align-items: center;
@@ -287,7 +287,7 @@
       border: 1px solid var(--border);
       border-radius: 5px;
       color: var(--subtle);
-      font-size: 11px;
+      font-size: 12px;
       cursor: pointer;
       display: flex;
       align-items: center;
@@ -347,6 +347,44 @@
       outline: none;
       font-family: inherit;
       min-width: 0;
+    }
+
+    .title-wrap {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      min-width: 0;
+    }
+
+    #ai-title-btn {
+      background: none;
+      border: none;
+      color: var(--purple);
+      cursor: pointer;
+      font-size: 14px;
+      opacity: 0.5;
+      transition: all 0.2s;
+      padding: 0 8px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #ai-title-btn:hover {
+      opacity: 1;
+      transform: scale(1.1);
+    }
+
+    #ai-title-btn.loading {
+      animation: ai-spin 1.5s linear infinite;
+      pointer-events: none;
+      opacity: 0.8;
+    }
+
+    @keyframes ai-spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
     }
 
     .title-input::placeholder {
@@ -680,7 +718,7 @@
       border: 1px solid var(--border2);
       border-radius: 6px;
       color: var(--subtle);
-      font-size: 13px;
+      font-size: 12px;
       cursor: pointer;
       font-family: inherit;
       transition: all 0.15s;
@@ -939,7 +977,7 @@
       border: 1px solid var(--border2);
       border-radius: 6px;
       color: var(--subtle);
-      font-size: 13px;
+      font-size: 12px;
       cursor: pointer;
       font-family: inherit;
     }
@@ -950,7 +988,7 @@
       border: 1px solid #a371f744;
       border-radius: 6px;
       color: var(--purple);
-      font-size: 13px;
+      font-size: 12px;
       cursor: pointer;
       font-family: inherit;
       font-weight: 600;
@@ -1212,7 +1250,10 @@
       <div id="editor-view" style="display:flex;flex-direction:column;height:100%;overflow:hidden;">
         <div class="toolbar">
           <button class="menu-btn" onclick="openSidebar()">☰</button>
-          <input class="title-input" id="title-input" placeholder="タイトル" oninput="onTitleChange()" />
+          <div class="title-wrap">
+            <input class="title-input" id="title-input" placeholder="タイトル" oninput="onTitleChange()" />
+            <button id="ai-title-btn" onclick="optimizeTitleWithAI()" title="AIでタイトルを提案">✦</button>
+          </div>
           <button id="btn-preview" class="mode-btn" onclick="setMode('preview')">プレビュー</button>
           <button id="btn-edit" class="mode-btn on" onclick="setMode('edit')">編集</button>
           <div class="divider"></div>
@@ -1755,6 +1796,60 @@
     // ============================================================
     let aiResults = null; // { keywords, summary, related }
 
+    async function optimizeTitleWithAI() {
+      const note = getActive();
+      if (!note) return;
+      if (note.content.trim().length < 10) { toast("本文が短すぎてタイトルを生成できません"); return; }
+
+      const apiKey = localStorage.getItem(GEMINI_KEY_LS);
+      if (!apiKey) {
+        toast("まずAPIキーを設定してください ⚙");
+        openSettings();
+        return;
+      }
+
+      const btn = document.getElementById("ai-title-btn");
+      btn.classList.add("loading");
+
+      try {
+        const model = localStorage.getItem(GEMINI_MODEL_LS) || "gemini-2.0-flash";
+        const promptTemplate = getPrompt("TITLE");
+        const prompt = promptTemplate.replace("{content}", note.content.substring(0, 3000));
+
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: { temperature: 0.7, maxOutputTokens: 60 }
+            })
+          }
+        );
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        let newTitle = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+        
+        if (newTitle) {
+          // 余計な装飾を削る
+          newTitle = newTitle.replace(/^#\s*/, "").replace(/[\"\'「」]/g, "").trim();
+          document.getElementById("title-input").value = newTitle;
+          note.title = newTitle;
+          note.updatedAt = Date.now();
+          saveLocal();
+          pushNote(note);
+          renderList();
+          toast("タイトルを最適化しました ✦");
+        }
+      } catch (e) {
+        toast("タイトル生成エラー: " + e.message);
+      } finally {
+        btn.classList.remove("loading");
+      }
+    }
+
     async function analyzeWithGemini() {
       const note = getActive();
       if (!note) { toast("ノートを選択してください"); return; }
@@ -2094,7 +2189,7 @@ ${existingTitles || "（まだノートがありません）"}
             const docxNote = createNote(title + (mode === "summarize" ? " (要約)" : mode === "keypoints" ? " (抽出)" : ""));
             docxNote.content = `# ${docxNote.title}\n\n${docxText}`;
             if (mode === "summarize") docxNote.summary = docxText;
-            docxNote.updatedAt = Date.now(); saveLocal(); selectNote(docxNote.id);
+            docxNote.updatedAt = Date.now(); saveLocal(); pushNote(docxNote); selectNote(docxNote.id);
             toast("取り込みが完了しました ✦"); closeImportModal(); return;
 
           } else if (apiKey) {
@@ -2120,7 +2215,7 @@ ${existingTitles || "（まだノートがありません）"}
             const pdfNote = createNote(title + (mode === "summarize" ? " (要約)" : mode === "keypoints" ? " (抽出)" : ""));
             pdfNote.content = `# ${pdfNote.title}\n\n${pdfAiText}`;
             if (mode === "summarize") pdfNote.summary = pdfAiText;
-            pdfNote.updatedAt = Date.now(); saveLocal(); selectNote(pdfNote.id);
+            pdfNote.updatedAt = Date.now(); saveLocal(); pushNote(pdfNote); selectNote(pdfNote.id);
             toast("取り込みが完了しました ✦"); closeImportModal(); return;
 
           } else {
@@ -2146,7 +2241,7 @@ ${existingTitles || "（まだノートがありません）"}
           if (optimizeTitle) { toast("タイトルを最適化中..."); title = await fetchAiTitle(text, title); }
           const rawNote = createNote(title);
           rawNote.content = `# ${title}\n\n${text}`;
-          rawNote.updatedAt = Date.now(); saveLocal(); selectNote(rawNote.id);
+          rawNote.updatedAt = Date.now(); saveLocal(); pushNote(rawNote); selectNote(rawNote.id);
           toast("取り込み完了");
         } else {
           toast("AI処理中...");
@@ -2167,7 +2262,7 @@ ${existingTitles || "（まだノートがありません）"}
           const aiNote = createNote(title + (mode === "summarize" ? " (要約)" : " (抽出)"));
           aiNote.content = `# ${aiNote.title}\n\n${processedText}\n\n---\n<details><summary>元のテキストを展開する</summary>\n\n${text}\n</details>`;
           if (mode === "summarize") aiNote.summary = processedText;
-          aiNote.updatedAt = Date.now(); saveLocal(); selectNote(aiNote.id);
+          aiNote.updatedAt = Date.now(); saveLocal(); pushNote(aiNote); selectNote(aiNote.id);
           toast("取り込みとAI処理が完了しました ✦");
         }
 
