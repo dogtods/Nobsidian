@@ -594,6 +594,17 @@
       background: #f0883e22;
     }
 
+    .wiki-link.empty-node {
+      color: var(--muted);
+      background: transparent;
+      border-bottom: 1px dotted var(--muted);
+    }
+
+    .wiki-link.empty-node:hover {
+      background: #8b949e22;
+      color: var(--text);
+    }
+
     /* ===== BACKLINKS PANEL ===== */
     #backlinks-panel {
       width: 210px;
@@ -845,6 +856,12 @@
       color: var(--blue);
       background: #58a6ff11;
       border-color: #58a6ff44;
+    }
+
+    .ai-kw.empty-node {
+      color: var(--muted);
+      background: transparent;
+      border-color: var(--border2);
     }
 
     .ai-kw.new {
@@ -1512,19 +1529,28 @@
     // ============================================================
     //  RENDER
     // ============================================================
+    function isNoteEmpty(note) {
+      if (!note || !note.content) return true;
+      // 見出し（# タイトル）を除去した上で、意味のある文字が残っているか判定
+      const pureContent = note.content.replace(new RegExp(`^#\\s*${esc(note.title)}`), '').trim();
+      return pureContent.length === 0;
+    }
+
     function renderList() {
       const query = document.getElementById("search-box").value.toLowerCase();
       const list = document.getElementById("notes-list");
       const filtered = notes.filter(n =>
         n.title.toLowerCase().includes(query) || n.content.toLowerCase().includes(query)
       );
-      list.innerHTML = filtered.map(n => `
+      list.innerHTML = filtered.map(n => {
+        const isEmpty = isNoteEmpty(n);
+        return `
     <div class="note-item ${n.id === activeId ? "active" : ""}" onclick="selectNote('${n.id}')">
-      <span class="note-icon">◈</span>
-      <span class="note-title">${esc(n.title)}</span>
+      <span class="note-icon">${isEmpty ? '◇' : '◈'}</span>
+      <span class="note-title" style="${isEmpty ? 'color: var(--muted);' : ''}">${esc(n.title)}</span>
       <button class="del-btn" onclick="event.stopPropagation();deleteNote('${n.id}')" title="削除">×</button>
     </div>
-  `).join("");
+  `}).join("");
     }
 
     function renderEditor() {
@@ -1579,8 +1605,9 @@
         html += `<div class="panel-label" style="margin-top:16px">リンク先 (${outlinks.length})</div>`;
         html += outlinks.map(t => {
           const exists = notes.find(n => n.title === t);
+          const isEmpty = exists ? isNoteEmpty(exists) : false;
           return `<div class="ol-item" onclick="handleWikiLink('${esc(t)}')">
-        <span>→</span><span>${esc(t)}</span>
+        <span>→</span><span style="${isEmpty ? 'color:var(--muted)' : ''}">${esc(t)}</span>
         ${!exists ? `<span class="ol-new">新規</span>` : ""}
       </div>`;
         }).join("");
@@ -1641,8 +1668,12 @@
     function renderInline(text) {
       // [[links]]
       text = text.replace(/\[\[([^\]]+)\]\]/g, (_, t) => {
-        const exists = notes.find(n => n.title === t);
-        return `<span class="wiki-link ${exists ? "exists" : "new"}" onclick="handleWikiLink('${esc(t)}')">${esc(t)}</span>`;
+        const target = notes.find(n => n.title === t);
+        const exists = !!target;
+        const isEmpty = target ? isNoteEmpty(target) : false;
+        let cls = exists ? "exists" : "new";
+        if (isEmpty) cls = "empty-node";
+        return `<span class="wiki-link ${cls}" onclick="handleWikiLink('${esc(t)}')">${esc(t)}</span>`;
       });
       // **bold**
       text = text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
@@ -2022,8 +2053,9 @@ ${existingTitles || "（まだノートがありません）"}
         result.related_notes.forEach(title => {
           const n = notes.find(n => n.title === title);
           if (n) {
-            html += `<div class="ai-rel-item" onclick="selectNote('${n.id}')">
-          <span>◈</span><span>${esc(title)}</span>
+            const isEmpty = isNoteEmpty(n);
+            html += `<div class="ai-rel-item" onclick="selectNote('${n.id}')" style="${isEmpty ? 'color:var(--muted)' : ''}">
+          <span>${isEmpty ? '◇' : '◈'}</span><span>${esc(title)}</span>
         </div>`;
           }
         });
