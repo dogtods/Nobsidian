@@ -2364,13 +2364,13 @@ ${existingTitles || "（まだノートがありません）"}
     function renderSuggest() {
       let html = "";
       if (suggestItems.length === 0) {
-        html = `<div class="suggest-item ${suggestIndex === 0 ? 'selected' : ''}" onmousedown="event.preventDefault(); applySuggest()">
+        html = `<div class="suggest-item ${suggestIndex === 0 ? 'selected' : ''}" onclick="applySuggest()">
           <span class="suggest-icon">◈</span>
           <span>新規作成: [[${esc(suggestQuery)}]]</span>
         </div>`;
       } else {
         html = suggestItems.map((t, i) => `
-          <div class="suggest-item ${i === suggestIndex ? 'selected' : ''}" onmousedown="event.preventDefault(); applySuggest(${i})">
+          <div class="suggest-item ${i === suggestIndex ? 'selected' : ''}" onclick="applySuggest(${i})">
             <span class="suggest-icon">◈</span>
             <span>${esc(t)}</span>
           </div>
@@ -2457,10 +2457,8 @@ ${existingTitles || "（まだノートがありません）"}
       }
     });
 
-    document.addEventListener("click", (e) => {
-      if (e.target !== editorEl && !suggestBox.contains(e.target)) {
-        closeSuggest();
-      }
+    editorEl.addEventListener("blur", () => {
+      setTimeout(closeSuggest, 200);
     });
 
     // ============================================================
