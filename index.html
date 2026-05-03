@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 
 <head>
@@ -1088,7 +1088,36 @@
       </a>
       <div class="settings-btns">
         <button class="settings-cancel" onclick="closeSettings()">キャンセル</button>
+        <button class="settings-save" onclick="openPromptSettings()" style="background:#58a6ff11;border-color:#58a6ff44;color:var(--blue)">📝 プロンプト設定</button>
         <button class="settings-save" onclick="saveSettings()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== PROMPT SETTINGS MODAL ===== -->
+  <div id="prompt-settings-modal" style="display:none; position:fixed; inset:0; background:#00000090; z-index:210; align-items:flex-start; justify-content:center; overflow-y:auto; padding:20px;">
+    <div class="settings-box" style="width:600px; max-width:95vw; margin:auto;">
+      <div class="settings-title">📝 プロンプト設定</div>
+      <div class="settings-desc">
+        各AI機能で使用するプロンプトを編集できます。<code style="font-size:11px;background:#1c2128;padding:1px 4px;border-radius:3px;">{content}</code> はメモの本文に置き換えられます。
+      </div>
+
+      <div class="settings-label" style="margin-top:4px;">タイトル最適化プロンプト</div>
+      <textarea class="settings-input" id="prompt-title-input" rows="3" style="font-family:'JetBrains Mono',monospace;font-size:11px;resize:vertical;"></textarea>
+
+      <div class="settings-label">AI解析プロンプト（キーワード・要約・関連ノート）</div>
+      <textarea class="settings-input" id="prompt-analyze-input" rows="10" style="font-family:'JetBrains Mono',monospace;font-size:11px;resize:vertical;"></textarea>
+
+      <div class="settings-label">取り込み：要約プロンプト</div>
+      <textarea class="settings-input" id="prompt-import-summarize-input" rows="3" style="font-family:'JetBrains Mono',monospace;font-size:11px;resize:vertical;"></textarea>
+
+      <div class="settings-label">取り込み：キーポイント抽出プロンプト</div>
+      <textarea class="settings-input" id="prompt-import-keypoints-input" rows="3" style="font-family:'JetBrains Mono',monospace;font-size:11px;resize:vertical;"></textarea>
+
+      <div class="settings-btns" style="margin-top:8px;">
+        <button class="settings-cancel" onclick="resetPrompts()" style="color:var(--orange)">🔄 デフォルトに戻す</button>
+        <button class="settings-cancel" onclick="closePromptSettings()">キャンセル</button>
+        <button class="settings-save" onclick="savePromptSettings()">保存</button>
       </div>
     </div>
   </div>
@@ -1618,6 +1647,60 @@
     }
 
     // ============================================================
+    //  PROMPT SETTINGS
+    // ============================================================
+    const PK = {
+      TITLE:             "cn_prompt_title",
+      ANALYZE:           "cn_prompt_analyze",
+      IMPORT_SUMMARIZE:  "cn_prompt_import_summarize",
+      IMPORT_KEYPOINTS:  "cn_prompt_import_keypoints",
+    };
+
+    const DEFAULT_PROMPTS = {
+      TITLE: `以下のテキストの内容を最もよく表す、短くて魅力的な日本語のタイトル（20文字以内）を1つだけ提案してください。出力はタイトルのみとし、装飾や説明は不要です。\n\n内容:\n{content}`,
+      ANALYZE: `あなたはナレッジベース管理AIです。以下のメモを分析してください。\n\n## メモ内容\nタイトル: {title}\n本文:\n{content}\n\n## 既存ノートのタイトル一覧（関連チェック用）\n{existingTitles}\n\n## 出力形式（必ずこのJSON形式のみで返してください）\n{\n  "keywords": ["キーワード1", "キーワード2", "キーワード3", "キーワード4", "キーワード5"],\n  "summary": "このメモの要点を2〜3文で日本語でまとめてください",\n  "related_notes": ["既存ノートタイトル1", "既存ノートタイトル2"],\n  "new_keywords": ["新規に作成すべきキーワード1", "新規に作成すべきキーワード2"]\n}\n\n## 指示\n- keywordsは固有名詞・概念・テーマを5〜8個抽出（名詞のみ）\n- related_notesは既存ノートの中から関連するものだけ（なければ空配列）\n- new_keywordsはkeywordsの中でまだ既存ノートにないもの\n- JSONのみ返す。マークダウンのコードブロック不要`,
+      IMPORT_SUMMARIZE: `以下の文章を分かりやすく要約してください。\n\n{content}`,
+      IMPORT_KEYPOINTS: `以下の文章から重要なキーポイントを箇条書きで抽出してください。\n\n{content}`,
+    };
+
+    function getPrompt(key) {
+      return localStorage.getItem(PK[key]) || DEFAULT_PROMPTS[key];
+    }
+
+    function openPromptSettings() {
+      document.getElementById("prompt-title-input").value = getPrompt("TITLE");
+      document.getElementById("prompt-analyze-input").value = getPrompt("ANALYZE");
+      document.getElementById("prompt-import-summarize-input").value = getPrompt("IMPORT_SUMMARIZE");
+      document.getElementById("prompt-import-keypoints-input").value = getPrompt("IMPORT_KEYPOINTS");
+      document.getElementById("prompt-settings-modal").style.display = "flex";
+      closeSettings();
+    }
+
+    function closePromptSettings() {
+      document.getElementById("prompt-settings-modal").style.display = "none";
+    }
+
+    function savePromptSettings() {
+      localStorage.setItem(PK.TITLE, document.getElementById("prompt-title-input").value);
+      localStorage.setItem(PK.ANALYZE, document.getElementById("prompt-analyze-input").value);
+      localStorage.setItem(PK.IMPORT_SUMMARIZE, document.getElementById("prompt-import-summarize-input").value);
+      localStorage.setItem(PK.IMPORT_KEYPOINTS, document.getElementById("prompt-import-keypoints-input").value);
+      toast("プロンプト設定を保存しました ✦");
+      closePromptSettings();
+    }
+
+    function resetPrompts() {
+      if (!confirm("全てのプロンプトをデフォルトに戻しますか？")) return;
+      Object.keys(PK).forEach(k => localStorage.removeItem(PK[k]));
+      openPromptSettings();
+      toast("プロンプトをリセットしました");
+    }
+
+    document.getElementById("prompt-settings-modal").addEventListener("click", function(e) {
+      if (e.target === this) closePromptSettings();
+    });
+
+    // ============================================================
     //  SETTINGS
     // ============================================================
     const GEMINI_KEY_LS = "cn_gemini_key";
@@ -1944,17 +2027,17 @@ ${existingTitles || "（まだノートがありません）"}
         const fetchAiTitle = async (content, currentTitle) => {
           if (!apiKey || !optimizeTitle) return currentTitle;
           try {
-            const tp = `以下のテキストの内容を最もよく表す、短くて魅力的な日本語のタイトル（20文字以内）を1つだけ提案してください。出力はタイトルのみとし、装飾や説明は不要です。\n\n内容:\n${content.substring(0, 2000)}`;
+            const tp = getPrompt("TITLE").replace("{content}", content.substring(0, 2000));
             const r = await fetch(
               `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
               { method: "POST", headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ contents: [{ parts: [{ text: tp }] }], generationConfig: { temperature: 0.5, maxOutputTokens: 60 } }) }
             );
-            if (!r.ok) return currentTitle;
+            if (!r.ok) { toast("タイトル生成API呼び出し失敗"); return currentTitle; }
             const rd = await r.json();
             const at = rd.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || currentTitle;
             return at.replace(/^#\s*/, "").replace(/[\"\']/g, "");
-          } catch (e) { return currentTitle; }
+          } catch (e) { toast("タイトル生成エラー: " + e.message); return currentTitle; }
         };
 
         // --- GoogleドキュメントURL取り込み ---
@@ -1964,6 +2047,11 @@ ${existingTitles || "（まだノートがありません）"}
           if (urlRes.error) throw new Error(urlRes.error);
           text = urlRes.text;
           if (urlRes.title) title = urlRes.title;
+          // URLからの取り込みは即座にタイトルをAI最適化する
+          if (optimizeTitle && apiKey) {
+            toast("タイトルをAIが考えています...");
+            title = await fetchAiTitle(text, title);
+          }
 
         // --- ローカルファイル取り込み ---
         } else {
@@ -2065,8 +2153,8 @@ ${existingTitles || "（まだノートがありません）"}
           if (!apiKey) { openSettings(); throw new Error("AI処理にはAPIキーの設定が必要です"); }
           const aiMaxTok = parseInt(localStorage.getItem(GEMINI_TOKENS_LS) || "1024", 10);
           const aiPr = mode === "summarize"
-            ? `以下の文章を分かりやすく要約してください。\n\n${text.substring(0, 30000)}`
-            : `以下の文章から重要なキーポイントを箇条書きで抽出してください。\n\n${text.substring(0, 30000)}`;
+            ? getPrompt("IMPORT_SUMMARIZE").replace("{content}", text.substring(0, 30000))
+            : getPrompt("IMPORT_KEYPOINTS").replace("{content}", text.substring(0, 30000));
           const aiFetchRes = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
             { method: "POST", headers: { "Content-Type": "application/json" },
