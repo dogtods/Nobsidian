@@ -1761,6 +1761,7 @@ ${existingTitles || "（まだノートがありません）"}
       if (result.summary) {
         html += `<div class="ai-section-title">✦ AI要約</div>`;
         html += `<div class="ai-summary">${esc(result.summary)}</div>`;
+        html += `<button class="ai-insert-all" onclick="insertSummary()" style="margin-top:0; margin-bottom:12px; background:#58a6ff11; border-color:#58a6ff44; color:var(--blue)">✦ 要約をノートの先頭に挿入</button>`;
       }
 
       // キーワード
@@ -1849,6 +1850,36 @@ ${existingTitles || "（まだノートがありません）"}
       updateMeta();
       renderAiPanel(aiResults);
       toast(`${toInsert.length}個のキーワードを挿入しました ✦`);
+    }
+
+    function insertSummary() {
+      const note = getActive();
+      if (!note || !aiResults || !aiResults.summary) return;
+
+      const summaryPrefix = `> [!NOTE] AI要約 (${new Date().toLocaleDateString("ja-JP")})`;
+      if (note.content.includes(summaryPrefix)) {
+        if (!confirm("既に要約が挿入されているようです。再度挿入しますか？")) return;
+      }
+
+      let content = note.content;
+      // 最初の見出し（# タイトル）の直後に挿入を試みる
+      const summaryText = `${summaryPrefix}\n> ${aiResults.summary.replace(/\n/g, "\n> ")}\n\n`;
+      
+      const titleMatch = content.match(/^# .+\n/);
+      if (titleMatch) {
+        content = content.replace(titleMatch[0], titleMatch[0] + "\n" + summaryText);
+      } else {
+        content = summaryText + content;
+      }
+
+      note.content = content;
+      note.updatedAt = Date.now();
+      document.getElementById("editor").value = content;
+      saveLocal();
+      scheduleSave();
+      renderPreview();
+      updateMeta();
+      toast("要約を挿入しました ✦");
     }
 
     // ============================================================
