@@ -1107,7 +1107,7 @@
         <input class="settings-input" id="import-url-input" type="text" placeholder="GoogleドキュメントのURL..."
           style="margin-bottom:4px;" />
         <div style="text-align:center; color:var(--muted); font-size:11px; margin-bottom:4px;">または</div>
-        <input class="settings-input" id="import-file-input" type="file" accept=".pdf"
+        <input class="settings-input" id="import-file-input" type="file" accept=".pdf,.txt,.mhtml"
           style="margin-bottom:0; padding:6px; cursor:pointer;" />
       </div>
 
@@ -2027,6 +2027,19 @@ ${existingTitles || "（まだノートがありません）"}
             toast("取り込みが完了しました ✦");
             closeImportModal();
             return; // PDFのAI処理で完結
+          } else if (file.name.endsWith(".txt")) {
+            text = await file.text();
+          } else if (file.name.endsWith(".mhtml")) {
+            const rawText = await file.text();
+            // MHTMLの簡易的な文字抽出（HTMLタグとMIMEヘッダーを除去）
+            text = rawText
+              .replace(/<style([\s\S]*?)<\/style>/gi, "")
+              .replace(/<script([\s\S]*?)<\/script>/gi, "")
+              .replace(/<[^>]+>/g, " ")
+              .replace(/&nbsp;/g, " ")
+              .replace(/\s+/g, " ")
+              .replace(/Content-Type:[\s\S]*?boundary=.*?\n/gi, "")
+              .trim();
           } else {
             // APIキーがない場合のフォールバック（pdf.jsによる簡易抽出）
             const arrayBuffer = await file.arrayBuffer();
