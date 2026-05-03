@@ -2113,7 +2113,8 @@ ${existingTitles || "（まだノートがありません）"}
 
         if (!text.trim()) throw new Error("テキストを抽出できませんでした");
 
-        // Google DocのURL取り込み ＋ APIキーなしのPDF取り込み の場合の処理
+        // Google DocのURL取り込み ＋ APIキーなしのTXT/MHTML/PDF取り込み の場合の処理
+        if (mode === "raw") {
           if (optimizeTitle) {
             toast("タイトルを最適化中...");
             title = await fetchAiTitle(text, title);
@@ -2131,9 +2132,7 @@ ${existingTitles || "（まだノートがありません）"}
             throw new Error("AI処理にはAPIキーの設定が必要です");
           }
 
-          const model = localStorage.getItem(GEMINI_MODEL_LS) || "gemini-2.0-flash";
-          const temp = parseFloat(localStorage.getItem(GEMINI_TEMP_LS) || "0.1");
-          const maxTokens = parseInt(localStorage.getItem(GEMINI_TOKENS_LS) || "1024", 10);
+          const maxTokens2 = parseInt(localStorage.getItem(GEMINI_TOKENS_LS) || "1024", 10);
 
           let prompt = "";
           if (mode === "summarize") {
@@ -2149,7 +2148,7 @@ ${existingTitles || "（まだノートがありません）"}
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { temperature: temp, maxOutputTokens: maxTokens }
+                generationConfig: { temperature: temp, maxOutputTokens: maxTokens2 }
               })
             }
           );
@@ -2175,6 +2174,7 @@ ${existingTitles || "（まだノートがありません）"}
         }
 
         closeImportModal();
+
 
       } catch (err) {
         toast("エラー: " + err.message);
