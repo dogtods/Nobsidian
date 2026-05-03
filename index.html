@@ -753,6 +753,39 @@
       transform: translateX(-50%) translateY(0);
     }
 
+    /* ===== SUGGEST BOX ===== */
+    #suggest-box {
+      display: none;
+      position: fixed;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      z-index: 1000;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      max-width: 300px;
+      min-width: 200px;
+      overflow: hidden;
+    }
+
+    .suggest-item {
+      padding: 8px 12px;
+      font-size: 13px;
+      color: #c9d1d9;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .suggest-item:hover, .suggest-item.selected {
+      background: #1f2d3d;
+    }
+
+    .suggest-icon {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
     /* ===== AI PANEL ===== */
     #ai-panel {
       border-top: 1px solid var(--border);
@@ -1207,6 +1240,9 @@
 
   <!-- ===== TOAST ===== -->
   <div id="toast"></div>
+
+  <!-- ===== SUGGEST BOX ===== -->
+  <div id="suggest-box"></div>
 
   <!-- ===== APP ===== -->
   <div id="app">
@@ -2276,6 +2312,156 @@ ${existingTitles || "（まだノートがありません）"}
         btn.textContent = "実行";
       }
     }
+
+    // ============================================================
+    //  SUGGEST FEATURE
+    // ============================================================
+    const suggestBox = document.getElementById("suggest-box");
+    const editorEl = document.getElementById("editor");
+    let suggestQuery = "";
+    let suggestItems = [];
+    let suggestIndex = -1;
+    let suggestStartPos = -1;
+
+    function closeSuggest() {
+      suggestBox.style.display = "none";
+      suggestStartPos = -1;
+    }
+
+    function updateSuggestPosition() {
+      const div = document.createElement('div');
+      const style = div.style;
+      const computed = window.getComputedStyle(editorEl);
+
+      style.whiteSpace = 'pre-wrap';
+      style.wordWrap = 'break-word';
+      style.position = 'absolute';
+      style.visibility = 'hidden';
+      
+      const props = ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'boxSizing', 'width'];
+      props.forEach(p => style[p] = computed[p]);
+
+      div.textContent = editorEl.value.substring(0, editorEl.selectionEnd);
+      const span = document.createElement('span');
+      span.textContent = '.';
+      div.appendChild(span);
+      document.body.appendChild(div);
+
+      const caretTop = span.offsetTop;
+      const caretLeft = span.offsetLeft;
+      const lh = parseInt(computed.lineHeight) || 20;
+
+      document.body.removeChild(div);
+
+      const rect = editorEl.getBoundingClientRect();
+      const top = rect.top - editorEl.scrollTop + caretTop + lh;
+      const left = rect.left - editorEl.scrollLeft + caretLeft;
+
+      suggestBox.style.top = top + "px";
+      suggestBox.style.left = left + "px";
+    }
+
+    function renderSuggest() {
+      let html = "";
+      if (suggestItems.length === 0) {
+        html = `<div class="suggest-item ${suggestIndex === 0 ? 'selected' : ''}" onmousedown="event.preventDefault(); applySuggest()">
+          <span class="suggest-icon">◈</span>
+          <span>新規作成: [[${esc(suggestQuery)}]]</span>
+        </div>`;
+      } else {
+        html = suggestItems.map((t, i) => `
+          <div class="suggest-item ${i === suggestIndex ? 'selected' : ''}" onmousedown="event.preventDefault(); applySuggest(${i})">
+            <span class="suggest-icon">◈</span>
+            <span>${esc(t)}</span>
+          </div>
+        `).join("");
+      }
+      suggestBox.innerHTML = html;
+      suggestBox.style.display = "block";
+    }
+
+    function applySuggest(index = suggestIndex) {
+      if (suggestStartPos === -1) return;
+      
+      const val = editorEl.value;
+      const pos = editorEl.selectionStart;
+      const before = val.slice(0, suggestStartPos);
+      
+      // Look for a closing ]] if user already typed it
+      let after = val.slice(pos);
+      if (after.startsWith("]]")) {
+        after = after.slice(2);
+      }
+      
+      let insertText = "";
+      if (suggestItems.length === 0 || index < 0 || index >= suggestItems.length) {
+        insertText = `[[${suggestQuery}]] `;
+      } else {
+        insertText = `[[${suggestItems[index]}]] `;
+      }
+
+      editorEl.value = before + insertText + after;
+      const newPos = before.length + insertText.length;
+      editorEl.setSelectionRange(newPos, newPos);
+      
+      onContentChange();
+      closeSuggest();
+      editorEl.focus();
+    }
+
+    editorEl.addEventListener("input", (e) => {
+      const val = editorEl.value;
+      const pos = editorEl.selectionStart;
+      
+      const textBefore = val.slice(0, pos);
+      const lastOpen = textBefore.lastIndexOf("[[");
+      const lastClose = textBefore.lastIndexOf("]]");
+
+      if (lastOpen !== -1 && lastOpen >= lastClose) {
+        const query = textBefore.slice(lastOpen + 2);
+        if (query.includes("\n")) {
+          closeSuggest();
+          return;
+        }
+
+        suggestQuery = query;
+        suggestStartPos = lastOpen;
+        suggestItems = notes.map(n => n.title).filter(t => t.toLowerCase().startsWith(query.toLowerCase())).slice(0, 8);
+        suggestIndex = 0;
+        
+        renderSuggest();
+        updateSuggestPosition();
+      } else {
+        closeSuggest();
+      }
+    });
+
+    editorEl.addEventListener("keydown", (e) => {
+      if (suggestBox.style.display === "none" || suggestBox.style.display === "") return;
+
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        const len = suggestItems.length || 1;
+        suggestIndex = (suggestIndex + 1) % len;
+        renderSuggest();
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        const len = suggestItems.length || 1;
+        suggestIndex = (suggestIndex - 1 + len) % len;
+        renderSuggest();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        applySuggest();
+      } else if (e.key === "Escape") {
+        closeSuggest();
+      }
+    });
+
+    document.addEventListener("click", (e) => {
+      if (e.target !== editorEl && !suggestBox.contains(e.target)) {
+        closeSuggest();
+      }
+    });
 
     // ============================================================
     //  INIT
