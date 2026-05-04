@@ -1270,9 +1270,32 @@
           style="font-size:12px; color:var(--text); cursor:pointer;">AIでタイトルを最適化する</label>
       </div>
 
+      <!-- ▼ 新しく追加されたスプレッドシート連携用UI ▼ -->
+      <div class="settings-label" style="margin-top: 16px; border-top: 1px solid var(--border); padding-top: 16px;">
+        3. スプレッドシートから選択して取り込み
+      </div>
+      <input class="settings-input" id="import-sheet-name" type="text" value="highlights" placeholder="シート名"
+        style="margin-bottom:8px;" />
+
+      <button class="settings-save" onclick="fetchSheetData()"
+        style="width:100%; background:transparent; border-color:var(--border2); color:var(--text); margin-bottom: 8px;">
+        未処理のデータ一覧を取得
+      </button>
+
+      <!-- 選択リスト表示領域 -->
+      <div id="sheet-preview-list"
+        style="max-height:200px; overflow-y:auto; margin-bottom:12px; display:none; border:1px solid var(--border); border-radius:6px; padding:8px; background:var(--bg);">
+      </div>
+
+      <button id="sheet-import-btn" class="settings-save" onclick="importSelectedItems()"
+        style="width:100%; background:#23863622; border-color:#23863644; color:#7ee787; margin-bottom: 20px; display:none;">
+        選択した項目を取り込む
+      </button>
+      <!-- ▲ ここまで ▲ -->
+
       <div class="settings-btns">
-        <button class="settings-cancel" onclick="closeImportModal()">キャンセル</button>
-        <button class="settings-save" id="import-run-btn" onclick="runImport()">実行</button>
+        <button class="settings-cancel" onclick="closeImportModal()">閉じる</button>
+        <button class="settings-save" id="import-run-btn" onclick="runImport()">ファイルを実行</button>
       </div>
     </div>
   </div>
@@ -1375,7 +1398,7 @@
     // ============================================================
     //  CONFIG  ← ここにApps ScriptのデプロイURLを貼り付けてください
     // ============================================================
-    const API_URL = "https://script.google.com/macros/s/AKfycbyej0pU8jNg3l4Q3t3fOlHSn5RDP3B547IszW-yVXYzTe2yDU8Q62ZjKHmlpbPVxBra/exec";
+    const API_URL = "デプロイ";
 
     // ============================================================
     //  STATE
@@ -2465,7 +2488,138 @@ ${existingTitles || "（まだノートがありません）"}
         btn.textContent = "実行";
       }
     }
+    // ▼▼▼ ここから追加部分を丸ごと貼り付ける ▼▼▼
+    let pendingSheetItems = [];
 
+    async function fetchSheetData() {
+      const sheetName = document.getElementById("import-sheet-name").value.trim();
+      if (!sheetName) return toast("シート名を入力してください");
+
+      toast("一覧を取得中...");
+      try {
+        const res = await apiPost({ action: "fetchUnprocessedHighlights", sheetName });
+        if (!res.success) throw new Error(res.error);
+
+        pendingSheetItems = res.items;
+        if (pendingSheetItems.length === 0) {
+          toast("未処理のデータはありません");
+          document.getElementById("sheet-preview-list").style.display = "none";
+          document.getElementById("sheet-import-btn").style.display = "none";
+          return;
+        }
+
+        const listEl = document.getElementById("sheet-preview-list");
+        listEl.innerHTML = pendingSheetItems.map((item, idx) => `
+          <label style="display:flex; align-items:flex-start; gap:8px; padding:6px; border-bottom:1px solid var(--border2); cursor:pointer;">
+            <input type="checkbox" class="sheet-item-cb" value="${idx}" style="margin-top:3px;">
+            <div style="flex:1; min-width:0;">
+              <div style="font-size:12px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(item.title)}</div>
+              <div style="font-size:10px; color:var(--muted); line-height:1.4; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">${esc(item.highlights)}</div>
+            </div>
+          </label>
+        `).join("");
+
+        listEl.style.display = "block";
+        document.getElementById("sheet-import-btn").style.display = "block";
+        toast(`${pendingSheetItems.length}件の未処理データを取得しました`);
+      } catch (e) {
+        toast("エラー: " + e.message);
+      }
+    }
+
+    async function importSelectedItems() {
+      const checkboxes = document.querySelectorAll(".sheet-item-cb:checked");
+      if (checkboxes.length === 0) return toast("項目が選択されていません");
+
+      const optimizeTitle = document.getElementById("import-optimize-title").checked;
+      const apiKey = localStorage.getItem(GEMINI_KEY_LS);
+      const importModel = localStorage.getItem(GEMINI_MODEL_LS) || "gemini-2.0-flash";
+
+      const btn = document.getElementById("sheet-import-btn");
+      btn.disabled = true;
+      btn.textContent = "処理中...";
+
+      const selectedItems = Array.from(checkboxes).map(cb => pendingSheetItems[cb.value]);
+      const rowIndices = selectedItems.map(item => item.rowIndex);
+      const newNotes = [];
+
+      try {
+        for (let i = 0; i < selectedItems.length; i++) {
+          const item = selectedItems[i];
+          toast(`AI処理中... (${i + 1}/${selectedItems.length})`);
+
+          let dateStr = "";
+          if (item.saved_at) {
+            const d = new Date(item.saved_at);
+            dateStr = isNaN(d) ? item.saved_at : d.toLocaleString("ja-JP");
+          }
+
+          let content = `# ${item.title}\n\n${item.highlights}`;
+          if (dateStr) content += `\n\n---\n**保存日時:** ${dateStr}`;
+
+          let title = item.title;
+
+          // APIキーがあり、最適化ONならGeminiでタイトル生成
+          if (optimizeTitle && apiKey) {
+            try {
+              const tp = getPrompt("TITLE").replace("{content}", content.substring(0, 2000));
+              const r = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
+                {
+                  method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ contents: [{ parts: [{ text: tp }] }], generationConfig: { temperature: 0.5, maxOutputTokens: 60 } })
+                }
+              );
+              if (r.ok) {
+                const rd = await r.json();
+                const at = rd.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+                if (at) title = at.replace(/^#\s*/, "").replace(/[\"\']/g, "");
+              }
+            } catch (e) { console.error("Title AI error", e); }
+          }
+
+          // タイトルを確定してコンテンツを再構築
+          content = `# ${title}\n\n${item.highlights}`;
+          if (dateStr) content += `\n\n---\n**保存日時:** ${dateStr}`;
+
+          const note = {
+            id: genId(),
+            title: title,
+            content: content,
+            summary: "",
+            keywords: item.tags || "",
+            sourceUrl: item.url || "",
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          };
+
+          notes.unshift(note);
+          newNotes.push(note);
+        }
+
+        toast("クラウドへ保存中...");
+        await apiPost({ action: "saveAll", notes: notes });
+        await apiPost({ action: "markHighlightsProcessed", sheetName: document.getElementById("import-sheet-name").value.trim(), rowIndices: rowIndices });
+
+        saveLocal();
+        selectNote(newNotes[0].id);
+        renderList();
+
+        toast(`${newNotes.length}件のノートを取り込みました ✦`);
+        closeImportModal();
+
+        // UIリセット
+        document.getElementById("sheet-preview-list").style.display = "none";
+        btn.style.display = "none";
+
+      } catch (err) {
+        toast("エラー: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "選択した項目を取り込む";
+      }
+    }
+    // ▲▲▲ ここまで追加部分 ▲▲▲
     // ============================================================
     //  SUGGEST FEATURE
     // ============================================================
