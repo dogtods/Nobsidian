@@ -385,8 +385,13 @@
     }
 
     @keyframes ai-spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
+      0% {
+        transform: rotate(0deg);
+      }
+
+      100% {
+        transform: rotate(360deg);
+      }
     }
 
     .title-input::placeholder {
@@ -779,7 +784,7 @@
       border: 1px solid #30363d;
       border-radius: 6px;
       z-index: 1000;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
       max-width: 300px;
       min-width: 200px;
       overflow: hidden;
@@ -795,7 +800,8 @@
       gap: 8px;
     }
 
-    .suggest-item:hover, .suggest-item.selected {
+    .suggest-item:hover,
+    .suggest-item.selected {
       background: #1f2d3d;
     }
 
@@ -1186,31 +1192,38 @@
       </a>
       <div class="settings-btns">
         <button class="settings-cancel" onclick="closeSettings()">キャンセル</button>
-        <button class="settings-save" onclick="openPromptSettings()" style="background:#58a6ff11;border-color:#58a6ff44;color:var(--blue)">📝 プロンプト設定</button>
+        <button class="settings-save" onclick="openPromptSettings()"
+          style="background:#58a6ff11;border-color:#58a6ff44;color:var(--blue)">📝 プロンプト設定</button>
         <button class="settings-save" onclick="saveSettings()">保存</button>
       </div>
     </div>
   </div>
 
   <!-- ===== PROMPT SETTINGS MODAL ===== -->
-  <div id="prompt-settings-modal" style="display:none; position:fixed; inset:0; background:#00000090; z-index:210; align-items:flex-start; justify-content:center; overflow-y:auto; padding:20px;">
+  <div id="prompt-settings-modal"
+    style="display:none; position:fixed; inset:0; background:#00000090; z-index:210; align-items:flex-start; justify-content:center; overflow-y:auto; padding:20px;">
     <div class="settings-box" style="width:600px; max-width:95vw; margin:auto;">
       <div class="settings-title">📝 プロンプト設定</div>
       <div class="settings-desc">
-        各AI機能で使用するプロンプトを編集できます。<code style="font-size:11px;background:#1c2128;padding:1px 4px;border-radius:3px;">{content}</code> はメモの本文に置き換えられます。
+        各AI機能で使用するプロンプトを編集できます。<code
+          style="font-size:11px;background:#1c2128;padding:1px 4px;border-radius:3px;">{content}</code> はメモの本文に置き換えられます。
       </div>
 
       <div class="settings-label" style="margin-top:4px;">タイトル最適化プロンプト</div>
-      <textarea class="settings-input" id="prompt-title-input" rows="3" style="font-family:'JetBrains Mono',monospace;font-size:11px;resize:vertical;"></textarea>
+      <textarea class="settings-input" id="prompt-title-input" rows="3"
+        style="font-family:'JetBrains Mono',monospace;font-size:11px;resize:vertical;"></textarea>
 
       <div class="settings-label">AI解析プロンプト（キーワード・要約・関連ノート）</div>
-      <textarea class="settings-input" id="prompt-analyze-input" rows="10" style="font-family:'JetBrains Mono',monospace;font-size:11px;resize:vertical;"></textarea>
+      <textarea class="settings-input" id="prompt-analyze-input" rows="10"
+        style="font-family:'JetBrains Mono',monospace;font-size:11px;resize:vertical;"></textarea>
 
       <div class="settings-label">取り込み：要約プロンプト</div>
-      <textarea class="settings-input" id="prompt-import-summarize-input" rows="3" style="font-family:'JetBrains Mono',monospace;font-size:11px;resize:vertical;"></textarea>
+      <textarea class="settings-input" id="prompt-import-summarize-input" rows="3"
+        style="font-family:'JetBrains Mono',monospace;font-size:11px;resize:vertical;"></textarea>
 
       <div class="settings-label">取り込み：キーポイント抽出プロンプト</div>
-      <textarea class="settings-input" id="prompt-import-keypoints-input" rows="3" style="font-family:'JetBrains Mono',monospace;font-size:11px;resize:vertical;"></textarea>
+      <textarea class="settings-input" id="prompt-import-keypoints-input" rows="3"
+        style="font-family:'JetBrains Mono',monospace;font-size:11px;resize:vertical;"></textarea>
 
       <div class="settings-btns" style="margin-top:8px;">
         <button class="settings-cancel" onclick="resetPrompts()" style="color:var(--orange)">🔄 デフォルトに戻す</button>
@@ -1231,15 +1244,16 @@
 
       <div class="settings-label">1. 入力元</div>
       <div style="margin-bottom: 4px; display:flex; flex-direction:column;">
-        <input class="settings-input" id="import-url-input" type="text" placeholder="GoogleドキュメントのURL（例: https://docs.google.com/...）"
-          style="margin-bottom:4px;" />
+        <input class="settings-input" id="import-url-input" type="text"
+          placeholder="GoogleドキュメントのURL（例: https://docs.google.com/...）" style="margin-bottom:4px;" />
         <div style="font-size:10px; color:var(--muted); margin-bottom:8px; padding:0 2px;">
           ⚠️ GoogleドライブからGoogleドキュメントを選ぶ場合はURLの貼り付けをご利用ください。ファイル選択ではテキストを取得できません。
         </div>
         <div style="text-align:center; color:var(--muted); font-size:11px; margin-bottom:4px;">または ローカルファイルを選択</div>
         <input class="settings-input" id="import-file-input" type="file" accept=".pdf,.txt,.mhtml,.docx"
           style="margin-bottom:0; padding:6px; cursor:pointer;" />
-        <div style="font-size:10px; color:var(--muted); margin-top:4px; padding:0 2px;">対応形式: PDF / テキスト (.txt) / MHTML (.mhtml) / Word (.docx)</div>
+        <div style="font-size:10px; color:var(--muted); margin-top:4px; padding:0 2px;">対応形式: PDF / テキスト (.txt) / MHTML
+          (.mhtml) / Word (.docx)</div>
       </div>
       <div style="margin-bottom:12px;"></div>
 
@@ -1252,7 +1266,8 @@
 
       <div style="display:flex; align-items:center; gap:8px; margin-bottom:20px;">
         <input type="checkbox" id="import-optimize-title" style="width:16px; height:16px; cursor:pointer;" checked />
-        <label for="import-optimize-title" style="font-size:12px; color:var(--text); cursor:pointer;">AIでタイトルを最適化する</label>
+        <label for="import-optimize-title"
+          style="font-size:12px; color:var(--text); cursor:pointer;">AIでタイトルを最適化する</label>
       </div>
 
       <div class="settings-btns">
@@ -1360,7 +1375,7 @@
     // ============================================================
     //  CONFIG  ← ここにApps ScriptのデプロイURLを貼り付けてください
     // ============================================================
-    const API_URL = "https://script.google.com/macros/s/AKfycbzlhP9SkRT6z8Dpe__khDQTZolQz8jnAqHQ7wpau8qgwCagm38iBg8N3sHEaQWeDvus/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbxpuWkQlo_99g4fvyYsAmK-m7s9hmTEMNgY1ckxxA9c4TEL1pwxJqOEyHfwi1wLfrUY/exec";
 
     // ============================================================
     //  STATE
@@ -1469,6 +1484,7 @@
         content: title ? `# ${title}\n\n` : `# 新規ノート\n\n`,
         summary: "",
         keywords: "",
+        sourceUrl: "",
         createdAt: Date.now(),
         updatedAt: Date.now(),
       };
@@ -1552,7 +1568,16 @@
       const filtered = notes.filter(n =>
         n.title.toLowerCase().includes(query) || n.content.toLowerCase().includes(query)
       );
-      list.innerHTML = filtered.map(n => {
+      const uniqueNotes = [];
+      const seenIds = new Set();
+      filtered.forEach(n => {
+        if (!seenIds.has(n.id)) {
+          seenIds.add(n.id);
+          uniqueNotes.push(n);
+        }
+      });
+
+      list.innerHTML = uniqueNotes.map(n => {
         const isEmpty = isNoteEmpty(n);
         return `
     <div class="note-item ${n.id === activeId ? "active" : ""}" onclick="selectNote('${n.id}')">
@@ -1768,10 +1793,10 @@
     //  PROMPT SETTINGS
     // ============================================================
     const PK = {
-      TITLE:             "cn_prompt_title",
-      ANALYZE:           "cn_prompt_analyze",
-      IMPORT_SUMMARIZE:  "cn_prompt_import_summarize",
-      IMPORT_KEYPOINTS:  "cn_prompt_import_keypoints",
+      TITLE: "cn_prompt_title",
+      ANALYZE: "cn_prompt_analyze",
+      IMPORT_SUMMARIZE: "cn_prompt_import_summarize",
+      IMPORT_KEYPOINTS: "cn_prompt_import_keypoints",
     };
 
     const DEFAULT_PROMPTS = {
@@ -1814,7 +1839,7 @@
       toast("プロンプトをリセットしました");
     }
 
-    document.getElementById("prompt-settings-modal").addEventListener("click", function(e) {
+    document.getElementById("prompt-settings-modal").addEventListener("click", function (e) {
       if (e.target === this) closePromptSettings();
     });
 
@@ -1908,7 +1933,7 @@
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         let newTitle = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-        
+
         if (newTitle) {
           // 余計な装飾を削る
           newTitle = newTitle.replace(/^#\s*/, "").replace(/[\"\'「」]/g, "").trim();
@@ -2072,6 +2097,16 @@ ${existingTitles || "（まだノートがありません）"}
         html += `</div>`;
       }
 
+      // ソースリンク
+      const note = getActive();
+      if (note && note.sourceUrl) {
+        html += `<div class="ai-section-title" style="margin-top:14px">✦ ソース元</div>`;
+        html += `<div class="ai-summary" style="font-size:11px; word-break:break-all; margin-bottom:8px;">
+          <a href="${esc(note.sourceUrl)}" target="_blank" style="color:var(--blue); text-decoration:none;">${esc(note.sourceUrl)}</a>
+        </div>`;
+        html += `<button class="ai-insert-all" onclick="insertSourceLink()" style="margin-top:0; background:#58a6ff11; border-color:#58a6ff44; color:var(--blue)">✦ 記事へのリンクを挿入</button>`;
+      }
+
       document.getElementById("ai-panel-inner").innerHTML = html;
     }
 
@@ -2159,6 +2194,25 @@ ${existingTitles || "（まだノートがありません）"}
       toast("要約を挿入しました ✦");
     }
 
+    function insertSourceLink() {
+      const note = getActive();
+      if (!note || !note.sourceUrl) return;
+
+      const linkText = `\n\n--- \n**ソース元:** [${note.title}](${note.sourceUrl})`;
+      if (note.content.includes(note.sourceUrl)) {
+        if (!confirm("既にリンクが挿入されているようです。再度挿入しますか？")) return;
+      }
+
+      note.content = note.content.trimEnd() + linkText;
+      note.updatedAt = Date.now();
+      document.getElementById("editor").value = note.content;
+      saveLocal();
+      scheduleSave();
+      renderPreview();
+      updateMeta();
+      toast("ソースリンクを挿入しました ✦");
+    }
+
     // ============================================================
     //  IMPORT LOGIC
     // ============================================================
@@ -2203,8 +2257,10 @@ ${existingTitles || "（まだノートがありません）"}
             const tp = getPrompt("TITLE").replace("{content}", content.substring(0, 2000));
             const r = await fetch(
               `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
-              { method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ contents: [{ parts: [{ text: tp }] }], generationConfig: { temperature: 0.5, maxOutputTokens: 60 } }) }
+              {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ contents: [{ parts: [{ text: tp }] }], generationConfig: { temperature: 0.5, maxOutputTokens: 60 } })
+              }
             );
             if (!r.ok) { toast("タイトル生成API呼び出し失敗"); return currentTitle; }
             const rd = await r.json();
@@ -2225,8 +2281,18 @@ ${existingTitles || "（まだノートがありません）"}
             toast("タイトルをAIが考えています...");
             title = await fetchAiTitle(text, title);
           }
+          const newNote = createNote(title);
+          newNote.content = `# ${title}\n\n${text}`;
+          newNote.sourceUrl = url;
+          newNote.updatedAt = Date.now();
+          saveLocal();
+          pushNote(newNote);
+          selectNote(newNote.id);
+          toast("取り込みが完了しました ✦");
+          closeImportModal();
+          return;
 
-        // --- ローカルファイル取り込み ---
+          // --- ローカルファイル取り込み ---
         } else {
           const file = fileInput.files[0];
           title = file.name.replace(/\.[^/.]+$/, "");
@@ -2251,13 +2317,17 @@ ${existingTitles || "（まだノートがありません）"}
             const docxMime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
             let docxPr = mode === "raw" ? "このWordファイルに含まれるすべてのテキストをそのまま抽出してください。"
               : mode === "summarize" ? "このWordファイルの内容を分かりやすく要約してください。"
-              : "このWordファイルから重要なキーポイントを箇条書きで抽出してください。";
+                : "このWordファイルから重要なキーポイントを箇条書きで抽出してください。";
             const docxMaxTok = Math.max(parseInt(localStorage.getItem(GEMINI_TOKENS_LS) || "2000", 10), 2000);
             const docxFetchRes = await fetch(
               `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
-              { method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ contents: [{ parts: [{ text: docxPr }, { inlineData: { mimeType: docxMime, data: docxB64 } }] }],
-                  generationConfig: { temperature: importTemp, maxOutputTokens: docxMaxTok } }) }
+              {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  contents: [{ parts: [{ text: docxPr }, { inlineData: { mimeType: docxMime, data: docxB64 } }] }],
+                  generationConfig: { temperature: importTemp, maxOutputTokens: docxMaxTok }
+                })
+              }
             );
             if (!docxFetchRes.ok) { const de = await docxFetchRes.json(); throw new Error(de.error?.message || "Wordファイルの解析に失敗しました"); }
             const docxFetchData = await docxFetchRes.json();
@@ -2277,13 +2347,17 @@ ${existingTitles || "（まだノートがありません）"}
             });
             let pdfPr = mode === "raw" ? "このPDFに含まれるすべてのテキストをそのまま抽出してください。要約や追加のコメントは一切不要です。"
               : mode === "summarize" ? "このPDFの内容を分かりやすく要約してください。"
-              : "このPDFから重要なキーポイントを箇条書きで抽出してください。";
+                : "このPDFから重要なキーポイントを箇条書きで抽出してください。";
             const pdfMaxTok = Math.max(parseInt(localStorage.getItem(GEMINI_TOKENS_LS) || "2000", 10), 2000);
             const pdfFetchRes = await fetch(
               `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
-              { method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ contents: [{ parts: [{ text: pdfPr }, { inlineData: { mimeType: "application/pdf", data: pdfB64 } }] }],
-                  generationConfig: { temperature: importTemp, maxOutputTokens: pdfMaxTok } }) }
+              {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  contents: [{ parts: [{ text: pdfPr }, { inlineData: { mimeType: "application/pdf", data: pdfB64 } }] }],
+                  generationConfig: { temperature: importTemp, maxOutputTokens: pdfMaxTok }
+                })
+              }
             );
             if (!pdfFetchRes.ok) { const pe = await pdfFetchRes.json(); throw new Error(pe.error?.message || "AIによるPDF解析に失敗しました"); }
             const pdfFetchData = await pdfFetchRes.json();
@@ -2330,8 +2404,10 @@ ${existingTitles || "（まだノートがありません）"}
             : getPrompt("IMPORT_KEYPOINTS").replace("{content}", text.substring(0, 30000));
           const aiFetchRes = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
-            { method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ contents: [{ parts: [{ text: aiPr }] }], generationConfig: { temperature: importTemp, maxOutputTokens: aiMaxTok } }) }
+            {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ contents: [{ parts: [{ text: aiPr }] }], generationConfig: { temperature: importTemp, maxOutputTokens: aiMaxTok } })
+            }
           );
           if (!aiFetchRes.ok) { const ae = await aiFetchRes.json(); throw new Error(ae.error?.message || "AI処理に失敗しました"); }
           const aiFetchData = await aiFetchRes.json();
@@ -2379,7 +2455,7 @@ ${existingTitles || "（まだノートがありません）"}
       style.wordWrap = 'break-word';
       style.position = 'absolute';
       style.visibility = 'hidden';
-      
+
       const props = ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'boxSizing', 'width'];
       props.forEach(p => style[p] = computed[p]);
 
@@ -2424,17 +2500,17 @@ ${existingTitles || "（まだノートがありません）"}
 
     function applySuggest(index = suggestIndex) {
       if (suggestStartPos === -1) return;
-      
+
       const val = editorEl.value;
       const pos = editorEl.selectionStart;
       const before = val.slice(0, suggestStartPos);
-      
+
       // Look for a closing ]] if user already typed it
       let after = val.slice(pos);
       if (after.startsWith("]]")) {
         after = after.slice(2);
       }
-      
+
       let insertText = "";
       if (suggestItems.length === 0 || index < 0 || index >= suggestItems.length) {
         insertText = `[[${suggestQuery}]] `;
@@ -2445,7 +2521,7 @@ ${existingTitles || "（まだノートがありません）"}
       editorEl.value = before + insertText + after;
       const newPos = before.length + insertText.length;
       editorEl.setSelectionRange(newPos, newPos);
-      
+
       onContentChange();
       closeSuggest();
       editorEl.focus();
@@ -2454,7 +2530,7 @@ ${existingTitles || "（まだノートがありません）"}
     editorEl.addEventListener("input", (e) => {
       const val = editorEl.value;
       const pos = editorEl.selectionStart;
-      
+
       const textBefore = val.slice(0, pos);
       const lastOpen = textBefore.lastIndexOf("[[");
       const lastClose = textBefore.lastIndexOf("]]");
@@ -2470,7 +2546,7 @@ ${existingTitles || "（まだノートがありません）"}
         suggestStartPos = lastOpen;
         suggestItems = notes.map(n => n.title).filter(t => t.toLowerCase().startsWith(query.toLowerCase())).slice(0, 8);
         suggestIndex = 0;
-        
+
         renderSuggest();
         updateSuggestPosition();
       } else {
