@@ -1439,6 +1439,9 @@
       setSyncStatus("syncing", "同期中...");
       try {
         const data = await apiGet("getNotes");
+        if (data.error) {
+          throw new Error(data.error);
+        }
         if (data.notes) {
           notes = data.notes;
           saveLocal();
@@ -1450,7 +1453,8 @@
         }
       } catch (e) {
         setSyncStatus("error", "エラー");
-        toast("同期エラー: " + e.message);
+        toast("同期失敗: " + e.message);
+        console.error("Sync Error:", e);
       }
     }
 
