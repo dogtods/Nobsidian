@@ -1375,7 +1375,7 @@
     // ============================================================
     //  CONFIG  ← ここにApps ScriptのデプロイURLを貼り付けてください
     // ============================================================
-    const API_URL = "https://script.google.com/macros/s/AKfycbx6PhS_mUUofCTtYPJ8MBJONlhH5m1cw5lAH_FY5uxQD5UZ9ffP3w8FWVbIcDpdobbI/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbyej0pU8jNg3l4Q3t3fOlHSn5RDP3B547IszW-yVXYzTe2yDU8Q62ZjKHmlpbPVxBra/exec";
 
     // ============================================================
     //  STATE
@@ -2108,7 +2108,10 @@ ${existingTitles || "（まだノートがありません）"}
         html += `<div class="ai-summary" style="font-size:11px; word-break:break-all; margin-bottom:8px;">
           <a href="${esc(note.sourceUrl)}" target="_blank" style="color:var(--blue); text-decoration:none;">${esc(note.sourceUrl)}</a>
         </div>`;
-        html += `<button class="ai-insert-all" onclick="insertSourceLink()" style="margin-top:0; background:#58a6ff11; border-color:#58a6ff44; color:var(--blue)">✦ 記事へのリンクを挿入</button>`;
+        html += `<div style="display:flex; gap:8px; flex-direction:column;">
+          <button class="ai-insert-all" onclick="insertSourceLink()" style="margin-top:0; background:#58a6ff11; border-color:#58a6ff44; color:var(--blue)">✦ 記事へのリンクを挿入</button>
+          <button class="ai-insert-all" onclick="saveArticleContent()" style="margin-top:0; background:#23863622; border-color:#23863666; color:#7ee787">✦ 記事の内容をノートに保存</button>
+        </div>`;
       }
 
       document.getElementById("ai-panel-inner").innerHTML = html;
@@ -2215,6 +2218,34 @@ ${existingTitles || "（まだノートがありません）"}
       renderPreview();
       updateMeta();
       toast("ソースリンクを挿入しました ✦");
+    }
+
+    async function saveArticleContent() {
+      const note = getActive();
+      if (!note || !note.sourceUrl) return;
+
+      if (note.content.length > 500) {
+        if (!confirm("現在のノート内容を上書きして記事を保存しますか？")) return;
+      }
+
+      toast("記事を取得中...");
+      try {
+        const res = await apiPost({ action: "fetchDriveFile", url: note.sourceUrl });
+        if (res.error) throw new Error(res.error);
+
+        note.content = `# ${res.title}\n\n${res.text}`;
+        note.updatedAt = Date.now();
+
+        document.getElementById("editor").value = note.content;
+        saveLocal();
+        scheduleSave();
+        renderPreview();
+        renderBacklinks();
+        updateMeta();
+        toast("記事を保存しました ✦");
+      } catch (e) {
+        toast("エラー: " + e.message);
+      }
     }
 
     // ============================================================
