@@ -1274,6 +1274,10 @@
       <div class="settings-label" style="margin-top: 16px; border-top: 1px solid var(--border); padding-top: 16px;">
         3. スプレッドシートから選択して取り込み
       </div>
+      <!-- ↓↓↓ この1行を追加 ↓↓↓ -->
+      <input class="settings-input" id="import-sheet-url" type="text" placeholder="スプレッドシートのURLを貼り付け"
+        style="margin-bottom:8px;" />
+
       <input class="settings-input" id="import-sheet-name" type="text" value="highlights" placeholder="シート名"
         style="margin-bottom:8px;" />
 
@@ -1398,7 +1402,7 @@
     // ============================================================
     //  CONFIG  ← ここにApps ScriptのデプロイURLを貼り付けてください
     // ============================================================
-    const API_URL = "https://script.google.com/macros/s/AKfycbwb_bYUJvaOY2ofosYUn6TW8BZeeJJkpfEIqm6BqAdaZZl_jOy3U1bPlte6vgncT9cI/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbxGTOzbPhhpoZhol_IR5SbHlntAU8LXXtU9AiiPvgStSYshpV6NavXcJbiSSQCWa5eb/exec";
 
     // ============================================================
     //  STATE
@@ -2489,15 +2493,25 @@ ${existingTitles || "（まだノートがありません）"}
       }
     }
     // ▼▼▼ ここから追加部分を丸ごと貼り付ける ▼▼▼
+    // URLからスプレッドシートIDを抽出するヘルパー関数
+    function extractSheetId(input) {
+      const match = input.match(/\/d\/([a-zA-Z0-9-_]+)/);
+      return match ? match[1] : input.trim();
+    }
+
     let pendingSheetItems = [];
 
     async function fetchSheetData() {
+      const urlInput = document.getElementById("import-sheet-url").value;
       const sheetName = document.getElementById("import-sheet-name").value.trim();
+      const sourceSsId = extractSheetId(urlInput);
+
+      if (!sourceSsId) return toast("スプレッドシートのURLを入力してください");
       if (!sheetName) return toast("シート名を入力してください");
 
       toast("一覧を取得中...");
       try {
-        const res = await apiPost({ action: "fetchUnprocessedHighlights", sheetName });
+        const res = await apiPost({ action: "fetchUnprocessedHighlights", sourceSsId: sourceSsId, sheetName: sheetName });
         if (!res.success) throw new Error(res.error);
 
         pendingSheetItems = res.items;
@@ -2531,6 +2545,9 @@ ${existingTitles || "（まだノートがありません）"}
       const checkboxes = document.querySelectorAll(".sheet-item-cb:checked");
       if (checkboxes.length === 0) return toast("項目が選択されていません");
 
+      const urlInput = document.getElementById("import-sheet-url").value;
+      const sourceSsId = extractSheetId(urlInput);
+      const sheetName = document.getElementById("import-sheet-name").value.trim();
       const optimizeTitle = document.getElementById("import-optimize-title").checked;
       const apiKey = localStorage.getItem(GEMINI_KEY_LS);
       const importModel = localStorage.getItem(GEMINI_MODEL_LS) || "gemini-2.0-flash";
@@ -2559,7 +2576,6 @@ ${existingTitles || "（まだノートがありません）"}
 
           let title = item.title;
 
-          // APIキーがあり、最適化ONならGeminiでタイトル生成
           if (optimizeTitle && apiKey) {
             try {
               const tp = getPrompt("TITLE").replace("{content}", content.substring(0, 2000));
@@ -2578,7 +2594,6 @@ ${existingTitles || "（まだノートがありません）"}
             } catch (e) { console.error("Title AI error", e); }
           }
 
-          // タイトルを確定してコンテンツを再構築
           content = `# ${title}\n\n${item.highlights}`;
           if (dateStr) content += `\n\n---\n**保存日時:** ${dateStr}`;
 
@@ -2599,7 +2614,7 @@ ${existingTitles || "（まだノートがありません）"}
 
         toast("クラウドへ保存中...");
         await apiPost({ action: "saveAll", notes: notes });
-        await apiPost({ action: "markHighlightsProcessed", sheetName: document.getElementById("import-sheet-name").value.trim(), rowIndices: rowIndices });
+        await apiPost({ action: "markHighlightsProcessed", sourceSsId: sourceSsId, sheetName: sheetName, rowIndices: rowIndices });
 
         saveLocal();
         selectNote(newNotes[0].id);
@@ -2608,7 +2623,6 @@ ${existingTitles || "（まだノートがありません）"}
         toast(`${newNotes.length}件のノートを取り込みました ✦`);
         closeImportModal();
 
-        // UIリセット
         document.getElementById("sheet-preview-list").style.display = "none";
         btn.style.display = "none";
 
