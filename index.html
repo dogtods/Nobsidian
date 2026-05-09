@@ -1160,6 +1160,188 @@
       cursor: wait;
     }
 
+    /* ===== GRAPH MODAL ===== */
+    #graph-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #0d1117;
+      z-index: 1000;
+      flex-direction: column;
+    }
+    #graph-modal.open {
+      display: flex;
+    }
+    .graph-header {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      padding: 12px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+      pointer-events: none;
+    }
+    .graph-header > * {
+      pointer-events: auto;
+    }
+    .graph-close {
+      background: #1c2128;
+      border: 1px solid var(--border2);
+      color: var(--text);
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+      transition: background 0.15s;
+    }
+    .graph-close:hover {
+      background: var(--border);
+    }
+    .graph-controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .graph-search {
+      padding: 6px 12px;
+      background: #1c2128;
+      border: 1px solid var(--border2);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 12px;
+      outline: none;
+      width: 180px;
+      transition: border-color 0.15s;
+    }
+    .graph-search:focus {
+      border-color: var(--blue);
+    }
+    .graph-btn {
+      padding: 6px 12px;
+      background: #1c2128;
+      border: 1px solid var(--border2);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .graph-btn:hover {
+      background: var(--border);
+    }
+    
+    #graph-svg {
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+    }
+    #graph-svg:active {
+      cursor: grabbing;
+    }
+    
+    /* SVG Elements */
+    .graph-node {
+      cursor: pointer;
+      stroke: #0d1117;
+      stroke-width: 1.5px;
+      transition: fill 0.2s;
+    }
+    .graph-link {
+      stroke-opacity: 0.6;
+      fill: none;
+    }
+    .graph-label {
+      font-size: 10px;
+      fill: #c9d1d9;
+      pointer-events: none;
+      text-shadow: 0 1px 2px #000, 1px 0 2px #000, -1px 0 2px #000, 0 -1px 2px #000;
+    }
+    
+    /* Hover Focus Effect */
+    .graph-container.focus-mode .graph-node,
+    .graph-container.focus-mode .graph-link,
+    .graph-container.focus-mode .graph-label {
+      opacity: 0.15;
+    }
+    .graph-container.focus-mode .graph-node.focused {
+      opacity: 1;
+      stroke: var(--bright);
+    }
+    .graph-container.focus-mode .graph-link.focused {
+      opacity: 0.8;
+      stroke: var(--bright);
+    }
+    .graph-container.focus-mode .graph-label.focused {
+      opacity: 1;
+      fill: var(--bright);
+      font-weight: bold;
+    }
+
+    /* Popup */
+    #graph-popup {
+      position: absolute;
+      background: #161b22;
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      padding: 14px;
+      width: 240px;
+      color: var(--text);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s;
+      z-index: 20;
+    }
+    #graph-popup.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .g-pop-title {
+      font-size: 13px;
+      font-weight: bold;
+      color: var(--bright);
+      margin-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 4px;
+    }
+    .g-pop-desc {
+      font-size: 11px;
+      color: var(--subtle);
+      margin-bottom: 8px;
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      white-space: normal;
+    }
+    .g-pop-links {
+      font-size: 10px;
+      color: var(--blue);
+      margin-bottom: 10px;
+    }
+    .g-pop-btn {
+      width: 100%;
+      padding: 6px;
+      background: #23863622;
+      border: 1px solid #23863644;
+      color: #7ee787;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+      text-align: center;
+    }
+    .g-pop-btn:hover {
+      background: #23863644;
+    }
+
     /* ===== MOBILE ===== */
     @media (max-width: 680px) {
       #sidebar {
@@ -1215,6 +1397,7 @@
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
 </head>
 
 <body>
@@ -1381,6 +1564,30 @@
   <!-- ===== SUGGEST BOX ===== -->
   <div id="suggest-box"></div>
 
+  <!-- ===== GRAPH MODAL ===== -->
+  <div id="graph-modal">
+    <div class="graph-header">
+      <div class="graph-close" onclick="closeGraphModal()" title="閉じる">✕</div>
+      <div class="graph-controls">
+        <div style="display:flex; align-items:center; gap:4px; margin-right:10px;">
+          <input type="checkbox" id="graph-full-label-check" onchange="toggleGraphLabels()" style="cursor:pointer;" />
+          <label for="graph-full-label-check" style="font-size:11px; color:var(--text); cursor:pointer; white-space:nowrap;">タイトルを全表示</label>
+        </div>
+        <input type="text" class="graph-search" id="graph-search-input" placeholder="ノードを検索..." oninput="searchGraphNode()" />
+        <button class="graph-btn" onclick="resetGraphZoom()">全体表示</button>
+      </div>
+    </div>
+    <div id="graph-container" class="graph-container" style="flex:1; position:relative; overflow:hidden;">
+      <svg id="graph-svg"></svg>
+      <div id="graph-popup">
+        <div class="g-pop-title" id="g-pop-title"></div>
+        <div class="g-pop-links" id="g-pop-links"></div>
+        <div class="g-pop-desc" id="g-pop-desc"></div>
+        <button class="g-pop-btn" id="g-pop-btn">このノートを開く</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== APP ===== -->
   <div id="app">
 
@@ -1437,6 +1644,7 @@
           </div>
           <button id="btn-preview" class="mode-btn" onclick="setMode('preview')">プレビュー</button>
           <button id="btn-edit" class="mode-btn on" onclick="setMode('edit')">編集</button>
+          <button class="mode-btn" onclick="openGraphModal()" style="margin-left: 4px;" title="ナレッジグラフを表示">🕸 グラフ</button>
           <div class="divider"></div>
           <button class="mode-btn" onclick="downloadCurrentMd()" title="Markdownでダウンロード">↓ MD</button>
           <div class="divider"></div>
@@ -3012,6 +3220,297 @@ ${existingTitles || "（まだノートがありません）"}
     });
 
     // ============================================================
+    //  KNOWLEDGE GRAPH
+    // ============================================================
+    let graphSimulation = null;
+    let graphZoom = null;
+    let graphSvg = null;
+    let graphG = null;
+    let graphData = { nodes: [], links: [] };
+
+    function buildGraphData() {
+      const nodes = [];
+      const links = [];
+      const titleToNode = {};
+
+      // 1. 全ノートをノードとして登録
+      notes.forEach(note => {
+        if (isNoteEmpty(note)) return; // 空ノートは除外してもよいが、ここでは一応含める（任意）
+        const node = {
+          id: note.id,
+          title: note.title,
+          content: note.content,
+          linkCount: 0
+        };
+        nodes.push(node);
+        titleToNode[note.title] = node;
+      });
+
+      // 2. エッジ（リンク）を抽出
+      notes.forEach(note => {
+        if (!note.content) return;
+        const matches = [...note.content.matchAll(/\[\[(.*?)\]\]/g)];
+        matches.forEach(m => {
+          const targetTitle = m[1];
+          const targetNode = titleToNode[targetTitle];
+          if (targetNode && targetNode.id !== note.id) {
+            links.push({
+              source: note.id,
+              target: targetNode.id,
+              isMutual: false
+            });
+            titleToNode[note.title].linkCount++;
+            targetNode.linkCount++;
+          }
+        });
+      });
+
+      // 3. 相互リンクの判定
+      links.forEach(l1 => {
+        const isMutual = links.some(l2 => l2.source === l1.target && l2.target === l1.source);
+        l1.isMutual = isMutual;
+      });
+
+      return { nodes, links };
+    }
+
+    function openGraphModal() {
+      document.getElementById("graph-modal").classList.add("open");
+      document.getElementById("graph-search-input").value = "";
+      closeGraphPopup();
+      renderGraph();
+    }
+
+    function closeGraphModal() {
+      document.getElementById("graph-modal").classList.remove("open");
+      if (graphSimulation) graphSimulation.stop();
+    }
+
+    function closeGraphPopup() {
+      document.getElementById("graph-popup").classList.remove("show");
+    }
+
+    function renderGraph() {
+      graphData = buildGraphData();
+      
+      const container = document.getElementById("graph-container");
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+
+      const svgEl = d3.select("#graph-svg");
+      svgEl.selectAll("*").remove(); // クリア
+      svgEl.attr("viewBox", [0, 0, width, height]);
+
+      graphG = svgEl.append("g");
+
+      graphZoom = d3.zoom()
+        .scaleExtent([0.1, 4])
+        .on("zoom", (e) => {
+          graphG.attr("transform", e.transform);
+          closeGraphPopup();
+        });
+
+      svgEl.call(graphZoom);
+
+      graphSimulation = d3.forceSimulation(graphData.nodes)
+        .force("link", d3.forceLink(graphData.links).id(d => d.id).distance(100))
+        .force("charge", d3.forceManyBody().strength(-300))
+        .force("center", d3.forceCenter(width / 2, height / 2))
+        .force("collide", d3.forceCollide().radius(d => getRadius(d) + 10).iterations(2));
+
+      // エッジ描画
+      const link = graphG.append("g")
+        .selectAll("line")
+        .data(graphData.links)
+        .join("line")
+        .attr("class", "graph-link")
+        .attr("stroke", d => d.isMutual ? "#58a6ff" : "#30363d")
+        .attr("stroke-width", d => d.isMutual ? 2 : 1);
+
+      // ノード群描画
+      const nodeGroup = graphG.append("g")
+        .selectAll("g")
+        .data(graphData.nodes)
+        .join("g")
+        .attr("class", "graph-node-group")
+        .call(drag(graphSimulation));
+
+      // 円
+      const node = nodeGroup.append("circle")
+        .attr("class", "graph-node")
+        .attr("r", d => getRadius(d))
+        .attr("fill", d => getColor(d))
+        .on("click", (e, d) => showGraphPopup(e, d))
+        .on("mouseover", (e, d) => focusNode(d))
+        .on("mouseout", () => unfocusAll());
+
+      // ラベル
+      const label = nodeGroup.append("text")
+        .attr("class", "graph-label")
+        .attr("dy", d => getRadius(d) + 12)
+        .attr("text-anchor", "middle")
+        .text(d => {
+          const limit = 8;
+          return d.title.length > limit ? d.title.substring(0, limit) + "..." : d.title;
+        });
+
+      graphSimulation.on("tick", () => {
+        link
+          .attr("x1", d => d.source.x)
+          .attr("y1", d => d.source.y)
+          .attr("x2", d => d.target.x)
+          .attr("y2", d => d.target.y);
+
+        nodeGroup.attr("transform", d => `translate(${d.x},${d.y})`);
+      });
+
+      // 初期アニメーション用
+      graphG.attr("opacity", 0).transition().duration(800).attr("opacity", 1);
+      
+      function getRadius(d) {
+        return Math.min(24, Math.max(6, 6 + d.linkCount * 1.5));
+      }
+
+      function getColor(d) {
+        if (d.linkCount >= 5) return "#e3b341"; // 黄色 (重要)
+        if (d.linkCount >= 2) return "#58a6ff"; // 青 (中程度)
+        return "#6e7681"; // グレー (末端)
+      }
+
+      function drag(simulation) {
+        return d3.drag()
+          .on("start", (event, d) => {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x; d.fy = d.y;
+          })
+          .on("drag", (event, d) => {
+            d.fx = event.x; d.fy = event.y;
+            closeGraphPopup();
+          })
+          .on("end", (event, d) => {
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null; d.fy = null;
+          });
+      }
+
+      function focusNode(d) {
+        document.getElementById("graph-container").classList.add("focus-mode");
+        
+        const connectedNodes = new Set();
+        connectedNodes.add(d.id);
+        
+        link.classed("focused", l => {
+          if (l.source.id === d.id || l.target.id === d.id) {
+            connectedNodes.add(l.source.id);
+            connectedNodes.add(l.target.id);
+            return true;
+          }
+          return false;
+        });
+
+        node.classed("focused", n => connectedNodes.has(n.id));
+        label.classed("focused", n => connectedNodes.has(n.id));
+      }
+
+      function unfocusAll() {
+        document.getElementById("graph-container").classList.remove("focus-mode");
+        link.classed("focused", false);
+        node.classed("focused", false);
+        label.classed("focused", false);
+      }
+    }
+
+    function showGraphPopup(event, d) {
+      event.stopPropagation();
+      const popup = document.getElementById("graph-popup");
+      
+      document.getElementById("g-pop-title").textContent = d.title;
+      
+      const links = graphData.links.filter(l => l.source.id === d.id || l.target.id === d.id);
+      const linkTitles = links.map(l => l.source.id === d.id ? l.target.title : l.source.title);
+      const uniqueLinks = [...new Set(linkTitles)];
+      
+      document.getElementById("g-pop-links").textContent = uniqueLinks.length > 0 ? `🔗 ${uniqueLinks.join(", ")}` : "🔗 リンクなし";
+      
+      // 本文の最初の50文字（見出しなどを除去）
+      let desc = d.content.replace(/^# .+\n/g, "").replace(/\[\[.*?\]\]/g, "").trim();
+      desc = desc.substring(0, 50) + (desc.length > 50 ? "..." : "");
+      document.getElementById("g-pop-desc").textContent = desc || "本文がありません。";
+      
+      const btn = document.getElementById("g-pop-btn");
+      btn.onclick = () => {
+        closeGraphModal();
+        selectNote(d.id);
+      };
+
+      popup.classList.add("show");
+      
+      // 位置の調整
+      const container = document.getElementById("graph-container");
+      const rect = container.getBoundingClientRect();
+      const transform = d3.zoomTransform(d3.select("#graph-svg").node());
+      
+      let px = transform.applyX(d.x) + 20;
+      let py = transform.applyY(d.y) - 20;
+      
+      if (px + 240 > rect.width) px -= 280;
+      if (py + 100 > rect.height) py -= 100;
+      
+      popup.style.left = px + "px";
+      popup.style.top = py + "px";
+    }
+
+    // グラフ外クリックでポップアップを閉じる
+    document.getElementById("graph-modal").addEventListener("click", (e) => {
+      if (e.target.id === "graph-svg" || e.target.id === "graph-modal") closeGraphPopup();
+    });
+
+    function resetGraphZoom() {
+      const svgEl = d3.select("#graph-svg");
+      svgEl.transition().duration(750).call(
+        graphZoom.transform, 
+        d3.zoomIdentity
+      );
+    }
+
+    function toggleGraphLabels() {
+      const isFull = document.getElementById("graph-full-label-check").checked;
+      const limit = 8;
+      d3.selectAll(".graph-label")
+        .text(d => isFull ? d.title : (d.title.length > limit ? d.title.substring(0, limit) + "..." : d.title));
+    }
+
+    function searchGraphNode() {
+      const query = document.getElementById("graph-search-input").value.toLowerCase();
+      if (!query) {
+        d3.selectAll(".graph-node").attr("stroke", "#0d1117").attr("stroke-width", 1.5);
+        return;
+      }
+
+      let found = null;
+      d3.selectAll(".graph-node").attr("stroke", (d) => {
+        if (d.title.toLowerCase().includes(query)) {
+          if (!found) found = d;
+          return "var(--bright)";
+        }
+        return "#0d1117";
+      }).attr("stroke-width", (d) => d.title.toLowerCase().includes(query) ? 3 : 1.5);
+
+      if (found) {
+        const svgEl = d3.select("#graph-svg");
+        const container = document.getElementById("graph-container");
+        const cx = container.clientWidth / 2;
+        const cy = container.clientHeight / 2;
+        
+        svgEl.transition().duration(750).call(
+          graphZoom.transform, 
+          d3.zoomIdentity.translate(cx - found.x, cy - found.y)
+        );
+      }
+    }
+
+    // ============================================================
+
     //  INIT
     // ============================================================
     (async function init() {
