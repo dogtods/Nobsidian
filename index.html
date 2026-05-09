@@ -1569,6 +1569,16 @@
     <div class="graph-header">
       <div class="graph-close" onclick="closeGraphModal()" title="閉じる">✕</div>
       <div class="graph-controls">
+        <!-- 表示モード切替 -->
+        <div style="display:flex; background:#1c2128; border:1px solid var(--border2); border-radius:6px; padding:2px; margin-right:12px;">
+          <button id="graph-mode-note" class="graph-btn" onclick="setGraphViewMode('note')" style="border:none; padding:4px 10px; font-size:10px;">ノート</button>
+          <button id="graph-mode-folder" class="graph-btn" onclick="setGraphViewMode('folder')" style="border:none; padding:4px 10px; font-size:10px;">フォルダ</button>
+        </div>
+
+        <div id="folder-graph-ai-btn-wrap" style="display:none; margin-right:10px;">
+          <button class="graph-btn" onclick="analyzeFolderRelationsWithAI()" style="background:#a371f722; border-color:#a371f744; color:var(--purple);">✦ AIフォルダ解析</button>
+        </div>
+
         <div style="display:flex; align-items:center; gap:4px; margin-right:10px;">
           <input type="checkbox" id="graph-full-label-check" onchange="toggleGraphLabels()" style="cursor:pointer;" />
           <label for="graph-full-label-check" style="font-size:11px; color:var(--text); cursor:pointer; white-space:nowrap;">タイトルを全表示</label>
@@ -1583,8 +1593,14 @@
         <div class="g-pop-title" id="g-pop-title"></div>
         <div class="g-pop-links" id="g-pop-links"></div>
         <div class="g-pop-desc" id="g-pop-desc"></div>
-        <button class="g-pop-btn" id="g-pop-btn">このノートを開く</button>
+        <div id="g-pop-ai-relations" style="margin-top:10px; font-size:10px; border-top:1px solid var(--border); padding-top:8px; display:none;">
+          <div style="color:var(--purple); font-weight:bold; margin-bottom:4px;">✦ AI解析による関連性</div>
+          <div id="g-pop-ai-list" style="color:var(--subtle); line-height:1.3;"></div>
+        </div>
+        <button class="g-pop-btn" id="g-pop-btn" style="margin-top:10px;">このノートを開く</button>
       </div>
+      <!-- AIツールチップ -->
+      <div id="graph-ai-tooltip" style="position:absolute; background:var(--bg); border:1px solid var(--purple); border-radius:4px; padding:6px 10px; color:var(--text); font-size:10px; pointer-events:none; opacity:0; transition:opacity 0.2s; z-index:30; max-width:200px; box-shadow:0 4px 12px #000;"></div>
     </div>
   </div>
 
@@ -1606,8 +1622,10 @@
         </div>
       </div>
 
-      <div class="search-wrap">
-        <input class="search-box" id="search-box" placeholder="ノートを検索..." oninput="renderList()" />
+      <div class="search-wrap" style="display:flex; gap:6px;">
+        <input class="search-box" id="search-box" placeholder="ノートを検索..." oninput="renderList()" style="flex:1;" />
+        <button id="ai-organize-btn" class="new-btn" onclick="autoOrganizeWithAI()" title="AIでフォルダを自動整理" 
+          style="flex:none; width:auto; padding:0 8px; font-size:10px; background:#a371f711; border-color:#a371f733; color:var(--purple);">✦ 整理</button>
       </div>
 
       <div class="notes-list" id="notes-list"></div>
@@ -1960,7 +1978,9 @@
       const query = document.getElementById("search-box").value.toLowerCase();
       const list = document.getElementById("notes-list");
       const filtered = notes.filter(n =>
-        n.title.toLowerCase().includes(query) || n.content.toLowerCase().includes(query)
+        n.title.toLowerCase().includes(query) || 
+        n.content.toLowerCase().includes(query) ||
+        getFolder(n).toLowerCase().includes(query)
       );
       
       const uniqueNotes = [];
@@ -3222,13 +3242,12 @@ ${existingTitles || "（まだノートがありません）"}
     // ============================================================
     //  KNOWLEDGE GRAPH
     // ============================================================
-    let graphSimulation = null;
-    let graphZoom = null;
-    let graphSvg = null;
-    let graphG = null;
-    let graphData = { nodes: [], links: [] };
+    let graphViewMode = 'note'; // 'note' or 'folder'
+    let folderRelationsAI = []; // AIによるフォルダ間関係キャッシュ
 
     function buildGraphData() {
+      if (graphViewMode === 'folder') return buildFolderGraphData();
+      
       const nodes = [];
       const links = [];
       const titleToNode = {};
@@ -3274,6 +3293,116 @@ ${existingTitles || "（まだノートがありません）"}
       return { nodes, links };
     }
 
+    function buildFolderGraphData() {
+      const folderMap = {};
+      const links = [];
+
+      // 1. ノートをフォルダごとに集計
+      notes.forEach(note => {
+        if (isNoteEmpty(note)) return;
+        const f = getFolder(note);
+        if (!folderMap[f]) {
+          folderMap[f] = { id: f, title: f, noteCount: 0, linkCount: 0, notes: [] };
+        }
+        folderMap[f].noteCount++;
+        folderMap[f].notes.push(note);
+      });
+
+      const nodes = Object.values(folderMap);
+      const folderTitles = nodes.map(n => n.title);
+
+      // 2. フォルダ間リンクの自動抽出（Wikiリンクベース）
+      notes.forEach(note => {
+        const sourceFolder = getFolder(note);
+        const matches = [...note.content.matchAll(/\[\[(.*?)\]\]/g)];
+        matches.forEach(m => {
+          const targetTitle = m[1];
+          const targetNote = notes.find(n => n.title === targetTitle);
+          if (targetNote) {
+            const targetFolder = getFolder(targetNote);
+            if (sourceFolder !== targetFolder) {
+              // フォルダ間のエッジ
+              const existing = links.find(l => l.source === sourceFolder && l.target === targetFolder);
+              if (existing) {
+                existing.value++;
+              } else {
+                links.push({ source: sourceFolder, target: targetFolder, value: 1, type: 'wiki' });
+              }
+              folderMap[sourceFolder].linkCount++;
+              folderMap[targetFolder].linkCount++;
+            }
+          }
+        });
+      });
+
+      // 3. AIによるフォルダ間関係の追加
+      folderRelationsAI.forEach(rel => {
+        if (folderTitles.includes(rel.source) && folderTitles.includes(rel.target)) {
+          links.push({ source: rel.source, target: rel.target, value: 2, type: 'ai', label: rel.reason });
+        }
+      });
+
+      return { nodes, links };
+    }
+
+    function setGraphViewMode(mode) {
+      graphViewMode = mode;
+      
+      // UI更新
+      document.getElementById("graph-mode-note").style.background = mode === 'note' ? 'var(--blue)' : 'transparent';
+      document.getElementById("graph-mode-note").style.color = mode === 'note' ? '#fff' : 'var(--text)';
+      document.getElementById("graph-mode-folder").style.background = mode === 'folder' ? 'var(--blue)' : 'transparent';
+      document.getElementById("graph-mode-folder").style.color = mode === 'folder' ? '#fff' : 'var(--text)';
+      document.getElementById("folder-graph-ai-btn-wrap").style.display = mode === 'folder' ? 'block' : 'none';
+
+      renderGraph();
+    }
+
+    async function analyzeFolderRelationsWithAI() {
+      const apiKey = localStorage.getItem(GEMINI_KEY_LS);
+      if (!apiKey) { toast("APIキーを設定してください"); return; }
+
+      const fData = buildFolderGraphData();
+      if (fData.nodes.length < 2) { toast("解析するのに十分なフォルダがありません。"); return; }
+
+      toast("AIがフォルダ間の関係性を深く解析中...");
+      
+      try {
+        // 1. フォルダごとのサマリー情報を準備（各フォルダのノートタイトルをまとめる）
+        const folderSummaries = fData.nodes.map(f => {
+          const titles = f.notes.slice(0, 15).map(n => n.title).join(", ");
+          return `[Folder: ${f.title}]\nNotes: ${titles}`;
+        }).join("\n\n");
+
+        const prompt = `あなたは知識管理の専門家です。以下のフォルダ（カテゴリ）のリストを読み、それらの間の「意味的な繋がり」や「階層関係」を解析してください。
+
+関係性のルール：
+1. 「AはBの前提条件」「AとBは補完し合っている」など、深い関係を見つけてください。
+2. 出力は必ず以下のJSON形式のみとしてください。
+[{"source": "フォルダA", "target": "フォルダB", "reason": "関係の短い説明"}, ...]
+
+フォルダリスト：
+${folderSummaries}`;
+
+        const model = localStorage.getItem(GEMINI_MODEL_LS) || "gemini-2.0-flash";
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { response_mime_type: "application/json" } })
+        });
+
+        const data = await res.json();
+        const jsonStr = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        folderRelationsAI = JSON.parse(jsonStr);
+        
+        renderGraph();
+        toast("フォルダ間の深い繋がりを可視化しました ✦");
+      } catch (e) {
+        console.error(e);
+        toast("AI解析に失敗しました: " + e.message);
+      }
+    }
+
     function openGraphModal() {
       document.getElementById("graph-modal").classList.add("open");
       document.getElementById("graph-search-input").value = "";
@@ -3313,10 +3442,10 @@ ${existingTitles || "（まだノートがありません）"}
       svgEl.call(graphZoom);
 
       graphSimulation = d3.forceSimulation(graphData.nodes)
-        .force("link", d3.forceLink(graphData.links).id(d => d.id).distance(100))
-        .force("charge", d3.forceManyBody().strength(-300))
+        .force("link", d3.forceLink(graphData.links).id(d => d.id).distance(graphViewMode === 'folder' ? 180 : 100))
+        .force("charge", d3.forceManyBody().strength(graphViewMode === 'folder' ? -500 : -300))
         .force("center", d3.forceCenter(width / 2, height / 2))
-        .force("collide", d3.forceCollide().radius(d => getRadius(d) + 10).iterations(2));
+        .force("collide", d3.forceCollide().radius(d => getRadius(d) + 15).iterations(2));
 
       // エッジ描画
       const link = graphG.append("g")
@@ -3324,8 +3453,39 @@ ${existingTitles || "（まだノートがありません）"}
         .data(graphData.links)
         .join("line")
         .attr("class", "graph-link")
-        .attr("stroke", d => d.isMutual ? "#58a6ff" : "#30363d")
-        .attr("stroke-width", d => d.isMutual ? 2 : 1);
+        .attr("stroke", d => {
+          if (graphViewMode === 'folder') {
+            return d.type === 'ai' ? 'var(--purple)' : '#30363d';
+          }
+          return d.isMutual ? "#58a6ff" : "#30363d";
+        })
+        .attr("stroke-width", d => {
+          if (graphViewMode === 'folder') return d.value + 1;
+          return d.isMutual ? 2 : 1;
+        })
+        .attr("stroke-dasharray", d => d.type === 'ai' ? "4 2" : "none")
+        .style("cursor", d => d.type === 'ai' ? "help" : "default")
+        .on("mouseover", function(e, d) {
+          if (d.type === 'ai') {
+            const tooltip = document.getElementById("graph-ai-tooltip");
+            tooltip.textContent = `✦ ${d.source.title} × ${d.target.title}: ${d.label}`;
+            tooltip.style.opacity = "1";
+            tooltip.style.left = (e.clientX - 20) + "px";
+            tooltip.style.top = (e.clientY - 40) + "px";
+            d3.select(this).attr("stroke", "var(--bright)").attr("stroke-width", d.value + 3);
+          }
+        })
+        .on("mousemove", function(e) {
+          const tooltip = document.getElementById("graph-ai-tooltip");
+          tooltip.style.left = (e.clientX + 15) + "px";
+          tooltip.style.top = (e.clientY - 15) + "px";
+        })
+        .on("mouseout", function(e, d) {
+          document.getElementById("graph-ai-tooltip").style.opacity = "0";
+          if (d.type === 'ai') {
+            d3.select(this).attr("stroke", "var(--purple)").attr("stroke-width", d.value + 1);
+          }
+        });
 
       // ノード群描画
       const nodeGroup = graphG.append("g")
@@ -3335,14 +3495,23 @@ ${existingTitles || "（まだノートがありません）"}
         .attr("class", "graph-node-group")
         .call(drag(graphSimulation));
 
-      // 円
-      const node = nodeGroup.append("circle")
+      // ノード形状
+      const node = nodeGroup.append(graphViewMode === 'folder' ? "rect" : "circle")
         .attr("class", "graph-node")
-        .attr("r", d => getRadius(d))
         .attr("fill", d => getColor(d))
         .on("click", (e, d) => showGraphPopup(e, d))
         .on("mouseover", (e, d) => focusNode(d))
         .on("mouseout", () => unfocusAll());
+      
+      if (graphViewMode === 'folder') {
+        node.attr("width", d => getRadius(d) * 2)
+            .attr("height", d => getRadius(d) * 1.5)
+            .attr("x", d => -getRadius(d))
+            .attr("y", d => -getRadius(d) * 0.75)
+            .attr("rx", 4);
+      } else {
+        node.attr("r", d => getRadius(d));
+      }
 
       // ラベル
       const label = nodeGroup.append("text")
@@ -3368,10 +3537,12 @@ ${existingTitles || "（まだノートがありません）"}
       graphG.attr("opacity", 0).transition().duration(800).attr("opacity", 1);
       
       function getRadius(d) {
+        if (graphViewMode === 'folder') return Math.min(60, Math.max(30, 30 + d.noteCount * 2));
         return Math.min(24, Math.max(6, 6 + d.linkCount * 1.5));
       }
 
       function getColor(d) {
+        if (graphViewMode === 'folder') return "#21262d"; // フォルダは少し明るいグレー
         if (d.linkCount >= 5) return "#e3b341"; // 黄色 (重要)
         if (d.linkCount >= 2) return "#58a6ff"; // 青 (中程度)
         return "#6e7681"; // グレー (末端)
@@ -3423,25 +3594,58 @@ ${existingTitles || "（まだノートがありません）"}
     function showGraphPopup(event, d) {
       event.stopPropagation();
       const popup = document.getElementById("graph-popup");
-      
-      document.getElementById("g-pop-title").textContent = d.title;
-      
-      const links = graphData.links.filter(l => l.source.id === d.id || l.target.id === d.id);
-      const linkTitles = links.map(l => l.source.id === d.id ? l.target.title : l.source.title);
-      const uniqueLinks = [...new Set(linkTitles)];
-      
-      document.getElementById("g-pop-links").textContent = uniqueLinks.length > 0 ? `🔗 ${uniqueLinks.join(", ")}` : "🔗 リンクなし";
-      
-      // 本文の最初の50文字（見出しなどを除去）
-      let desc = d.content.replace(/^# .+\n/g, "").replace(/\[\[.*?\]\]/g, "").trim();
-      desc = desc.substring(0, 50) + (desc.length > 50 ? "..." : "");
-      document.getElementById("g-pop-desc").textContent = desc || "本文がありません。";
-      
       const btn = document.getElementById("g-pop-btn");
-      btn.onclick = () => {
-        closeGraphModal();
-        selectNote(d.id);
-      };
+      
+      if (graphViewMode === 'folder') {
+        document.getElementById("g-pop-title").textContent = `📁 ${d.title}`;
+        document.getElementById("g-pop-links").textContent = `📝 ノート数: ${d.noteCount}`;
+        
+        const noteList = d.notes.slice(0, 5).map(n => n.title).join(", ");
+        document.getElementById("g-pop-desc").textContent = `含まれるノート: ${noteList}${d.notes.length > 5 ? "..." : ""}`;
+        
+        // AI関係性の表示
+        const aiRels = folderRelationsAI.filter(rel => rel.source === d.id || rel.target === d.id);
+        const aiSection = document.getElementById("g-pop-ai-relations");
+        const aiList = document.getElementById("g-pop-ai-list");
+        
+        if (aiRels.length > 0) {
+          aiSection.style.display = "block";
+          aiList.innerHTML = aiRels.map(rel => {
+            const other = rel.source === d.id ? rel.target : rel.source;
+            return `<div style="margin-bottom:4px;"><strong>${other}</strong>: ${rel.reason}</div>`;
+          }).join("");
+        } else {
+          aiSection.style.display = "none";
+        }
+
+        btn.textContent = "このフォルダを表示";
+        btn.onclick = () => {
+          closeGraphModal();
+          const searchBox = document.getElementById("search-box");
+          searchBox.value = d.title;
+          // フォルダを強制的に展開する
+          delete collapsedFolders[d.title];
+          localStorage.setItem("cn_collapsed_folders", JSON.stringify(collapsedFolders));
+          renderList();
+          openSidebar(); // サイドバーを開く
+        };
+      } else {
+        document.getElementById("g-pop-title").textContent = d.title;
+        const links = graphData.links.filter(l => l.source.id === d.id || l.target.id === d.id);
+        const linkTitles = links.map(l => l.source.id === d.id ? l.target.title : l.source.title);
+        const uniqueLinks = [...new Set(linkTitles)];
+        document.getElementById("g-pop-links").textContent = uniqueLinks.length > 0 ? `🔗 ${uniqueLinks.join(", ")}` : "🔗 リンクなし";
+        
+        let desc = d.content.replace(/^# .+\n/g, "").replace(/\[\[.*?\]\]/g, "").trim();
+        desc = desc.substring(0, 50) + (desc.length > 50 ? "..." : "");
+        document.getElementById("g-pop-desc").textContent = desc || "本文がありません。";
+        
+        btn.textContent = "このノートを開く";
+        btn.onclick = () => {
+          closeGraphModal();
+          selectNote(d.id);
+        };
+      }
 
       popup.classList.add("show");
       
@@ -3509,8 +3713,96 @@ ${existingTitles || "（まだノートがありません）"}
       }
     }
 
-    // ============================================================
+    async function autoOrganizeWithAI() {
+      const apiKey = localStorage.getItem(GEMINI_KEY_LS);
+      if (!apiKey) {
+        toast("APIキーが設定されていません。設定画面から登録してください。");
+        openSettings();
+        return;
+      }
 
+      const uncategorizedNotes = notes.filter(n => getFolder(n) === "未分類" && !isNoteEmpty(n));
+      if (uncategorizedNotes.length === 0) {
+        toast("分類が必要な「未分類」ノートが見つかりませんでした。");
+        return;
+      }
+
+      if (!confirm(`未分類のノート ${uncategorizedNotes.length} 件をAIで自動的にフォルダ分けしますか？\n（タイトルに基づいたざっくりとした分類になります）`)) return;
+
+      const btn = document.getElementById("ai-organize-btn");
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "待機中...";
+      toast("AIがノートを解析して分類中...");
+
+      try {
+        const noteListStr = uncategorizedNotes.map(n => `[ID: ${n.id}, Title: ${n.title}]`).join("\n");
+        const prompt = `あなたはノート整理の専門家です。
+以下のノートのリストを読み、タイトルに基づいて適切なフォルダ（カテゴリ名）に分類してください。
+
+分類のルール：
+1. 4〜8個程度の適切なカテゴリ名を考えてください。
+2. カテゴリ名は短く分かりやすい日本語にしてください。
+3. すでに似たカテゴリがある場合は統合してください。
+4. 出力は必ず以下のJSON形式のみとし、余計な解説は含めないでください。
+{"ID": "カテゴリ名", "ID": "カテゴリ名", ...}
+
+ノートリスト：
+${noteListStr}`;
+
+        const model = localStorage.getItem(GEMINI_MODEL_LS) || "gemini-2.0-flash";
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: { temperature: 0.2, response_mime_type: "application/json" }
+            })
+          }
+        );
+
+        if (!res.ok) throw new Error("AIへのリクエストに失敗しました");
+        const data = await res.json();
+        const jsonStr = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        const mapping = JSON.parse(jsonStr);
+
+        let count = 0;
+        notes.forEach(n => {
+          const newFolder = mapping[n.id];
+          if (newFolder) {
+            let kws = n.keywords || "";
+            if (kws.includes("[folder:")) {
+              kws = kws.replace(/\[folder:(.+?)\]/, `[folder:${newFolder}]`);
+            } else {
+              kws = kws ? `${kws}, [folder:${newFolder}]` : `[folder:${newFolder}]`;
+            }
+            n.keywords = kws;
+            n.updatedAt = Date.now();
+            count++;
+          }
+        });
+
+        if (count > 0) {
+          saveLocal();
+          await apiPost({ action: "saveAll", notes: notes });
+          renderList();
+          toast(`${count} 件のノートを自動整理しました ✦`);
+        } else {
+          toast("分類が適用されませんでした。");
+        }
+
+      } catch (e) {
+        console.error(e);
+        toast("エラー: " + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
+    }
+
+    // ============================================================
     //  INIT
     // ============================================================
     (async function init() {
