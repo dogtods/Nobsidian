@@ -262,6 +262,74 @@
       color: var(--red);
     }
 
+    .folder-header {
+      padding: 6px 14px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.1s;
+      user-select: none;
+      position: relative;
+    }
+
+    .folder-header:hover {
+      background: #1c2128;
+      color: var(--text);
+    }
+
+    .folder-icon {
+      font-size: 10px;
+      transition: transform 0.2s;
+    }
+
+    .folder-header.collapsed .folder-icon {
+      transform: rotate(-90deg);
+    }
+
+    .folder-title {
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .folder-menu-btn {
+      opacity: 0;
+      background: none;
+      border: none;
+      color: var(--subtle);
+      cursor: pointer;
+      padding: 2px 4px;
+      border-radius: 4px;
+      transition: all 0.1s;
+    }
+
+    .folder-header:hover .folder-menu-btn {
+      opacity: 1;
+    }
+
+    .folder-menu-btn:hover {
+      background: var(--border2);
+      color: var(--bright);
+    }
+
+    .folder-content {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .folder-content.collapsed {
+      display: none;
+    }
+
+    .note-item {
+      padding: 7px 14px 7px 24px;
+    }
+
     .sidebar-footer {
       border-top: 1px solid var(--border);
       padding: 12px 14px calc(12px + var(--safe-bot));
@@ -1355,9 +1423,17 @@
       <div id="editor-view" style="display:flex;flex-direction:column;height:100%;overflow:hidden;">
         <div class="toolbar">
           <button class="menu-btn" onclick="openSidebar()">☰</button>
-          <div class="title-wrap">
-            <input class="title-input" id="title-input" placeholder="タイトル" oninput="onTitleChange()" />
-            <button id="ai-title-btn" onclick="optimizeTitleWithAI()" title="AIでタイトルを提案">✦</button>
+          <div class="title-wrap" style="display:flex; flex-direction:column; align-items:flex-start; gap:2px;">
+            <div style="display:flex; width:100%; align-items:center;">
+              <input class="title-input" id="title-input" placeholder="タイトル" oninput="onTitleChange()" />
+              <button id="ai-title-btn" onclick="optimizeTitleWithAI()" title="AIでタイトルを提案">✦</button>
+            </div>
+            <div style="display:flex; align-items:center; gap:4px; width:100%; padding-left:2px;">
+              <span style="font-size:10px; color:var(--muted);">📁</span>
+              <input id="folder-input" placeholder="フォルダ名 (空欄で未分類)" 
+                style="background:transparent; border:none; color:var(--muted); font-size:11px; outline:none; width:100%;"
+                oninput="onFolderChange()" />
+            </div>
           </div>
           <button id="btn-preview" class="mode-btn" onclick="setMode('preview')">プレビュー</button>
           <button id="btn-edit" class="mode-btn on" onclick="setMode('edit')">編集</button>
@@ -1508,13 +1584,13 @@
     // ============================================================
     function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 
-    function createNote(title = "") {
+    function createNote(title = "", folder = "") {
       const note = {
         id: genId(),
         title: title || `新規ノート`,
         content: title ? `# ${title}\n\n` : `# 新規ノート\n\n`,
         summary: "",
-        keywords: "",
+        keywords: folder ? `[folder:${folder}]` : "",
         sourceUrl: "",
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -1575,6 +1651,32 @@
       scheduleSave();
     }
 
+    function onFolderChange() {
+      const note = getActive();
+      if (!note) return;
+      const newFolder = document.getElementById("folder-input").value.trim();
+      
+      // keywords内の既存の[folder:...]を置換または追加
+      let kws = note.keywords || "";
+      if (kws.includes("[folder:")) {
+        if (newFolder) {
+          kws = kws.replace(/\[folder:(.+?)\]/, `[folder:${newFolder}]`);
+        } else {
+          kws = kws.replace(/\[folder:(.+?)\]/, "").trim();
+          // 余分なカンマを掃除
+          kws = kws.replace(/^,\s*/, "").replace(/,\s*$/, "").replace(/,\s*,/g, ",");
+        }
+      } else if (newFolder) {
+        kws = kws ? `${kws}, [folder:${newFolder}]` : `[folder:${newFolder}]`;
+      }
+      
+      note.keywords = kws;
+      note.updatedAt = Date.now();
+      isDirty = true;
+      renderList();
+      scheduleSave();
+    }
+
     function scheduleSave() {
       clearTimeout(saveTimer);
       saveTimer = setTimeout(() => {
@@ -1590,9 +1692,60 @@
     // ============================================================
     function isNoteEmpty(note) {
       if (!note || !note.content) return true;
-      // 見出し（# タイトル）を除去した上で、意味のある文字が残っているか判定
       const pureContent = note.content.replace(new RegExp(`^#\\s*${esc(note.title)}`), '').trim();
       return pureContent.length === 0;
+    }
+
+    function getFolder(note) {
+      if (!note.keywords) return "未分類";
+      const match = note.keywords.match(/\[folder:(.+?)\]/);
+      return match ? match[1] : "未分類";
+    }
+
+    function getTodayFolderStr() {
+      const d = new Date();
+      return String(d.getFullYear()) + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+    }
+
+    let collapsedFolders = JSON.parse(localStorage.getItem("cn_collapsed_folders") || "{}");
+
+    function toggleFolder(folder) {
+      collapsedFolders[folder] = !collapsedFolders[folder];
+      localStorage.setItem("cn_collapsed_folders", JSON.stringify(collapsedFolders));
+      renderList();
+    }
+
+    function renameFolder(oldName) {
+      if (oldName === "未分類") {
+        toast("「未分類」はシステム用のため変更できません");
+        return;
+      }
+      const newName = prompt(`フォルダ名「${oldName}」を変更:`, oldName);
+      if (!newName || newName === oldName) return;
+      
+      let updatedCount = 0;
+      notes.forEach(n => {
+        const f = getFolder(n);
+        if (f === oldName) {
+          n.keywords = n.keywords.replace(`[folder:${oldName}]`, `[folder:${newName}]`);
+          n.updatedAt = Date.now();
+          updatedCount++;
+        }
+      });
+      
+      if (updatedCount > 0) {
+        saveLocal();
+        apiPost({ action: "saveAll", notes: notes }).then(() => {
+          toast("フォルダ名を変更しました");
+        }).catch(e => toast("保存エラー: " + e.message));
+        
+        if (collapsedFolders[oldName]) {
+          collapsedFolders[newName] = true;
+          delete collapsedFolders[oldName];
+          localStorage.setItem("cn_collapsed_folders", JSON.stringify(collapsedFolders));
+        }
+        renderList();
+      }
     }
 
     function renderList() {
@@ -1601,6 +1754,7 @@
       const filtered = notes.filter(n =>
         n.title.toLowerCase().includes(query) || n.content.toLowerCase().includes(query)
       );
+      
       const uniqueNotes = [];
       const seenIds = new Set();
       filtered.forEach(n => {
@@ -1610,15 +1764,55 @@
         }
       });
 
-      list.innerHTML = uniqueNotes.map(n => {
-        const isEmpty = isNoteEmpty(n);
+      // フォルダごとにグループ化
+      const folders = {};
+      uniqueNotes.forEach(n => {
+        const f = getFolder(n);
+        if (!folders[f]) folders[f] = [];
+        folders[f].push(n);
+      });
+
+      // フォルダ名のソート（"未分類"は一番下、それ以外は降順(新しい日付順)がおすすめだが、アルファベット順にする）
+      const sortedFolders = Object.keys(folders).sort((a, b) => {
+        if (a === "未分類") return 1;
+        if (b === "未分類") return -1;
+        return b.localeCompare(a); // 降順（新しい日付が上）
+      });
+
+      list.innerHTML = sortedFolders.map(folderName => {
+        const fNotes = folders[folderName];
+        const isCollapsed = collapsedFolders[folderName];
+        
+        // フォルダ内のノートHTML
+        const notesHtml = fNotes.map(n => {
+          const isEmpty = isNoteEmpty(n);
+          return `
+            <div class="note-item ${n.id === activeId ? "active" : ""}" onclick="selectNote('${n.id}')">
+              <span class="note-icon">${isEmpty ? '◇' : '◈'}</span>
+              <span class="note-title" style="${isEmpty ? 'color: var(--muted);' : ''}">${esc(n.title)}</span>
+              <button class="del-btn" onclick="event.stopPropagation();deleteNote('${n.id}')" title="削除">×</button>
+            </div>
+          `;
+        }).join("");
+
+        // フォルダヘッダーHTML
+        const isUncategorized = folderName === "未分類";
+        const renameBtnHtml = isUncategorized ? "" : `<button class="folder-menu-btn" onclick="event.stopPropagation();renameFolder('${esc(folderName)}')">✎</button>`;
+        
         return `
-    <div class="note-item ${n.id === activeId ? "active" : ""}" onclick="selectNote('${n.id}')">
-      <span class="note-icon">${isEmpty ? '◇' : '◈'}</span>
-      <span class="note-title" style="${isEmpty ? 'color: var(--muted);' : ''}">${esc(n.title)}</span>
-      <button class="del-btn" onclick="event.stopPropagation();deleteNote('${n.id}')" title="削除">×</button>
-    </div>
-  `}).join("");
+          <div class="folder-group">
+            <div class="folder-header ${isCollapsed ? 'collapsed' : ''}" onclick="toggleFolder('${esc(folderName)}')">
+              <span class="folder-icon">▼</span>
+              <span class="folder-title">${esc(folderName)}</span>
+              <span style="color:var(--muted); font-size:10px; font-weight:normal;">${fNotes.length}</span>
+              ${renameBtnHtml}
+            </div>
+            <div class="folder-content ${isCollapsed ? 'collapsed' : ''}">
+              ${notesHtml}
+            </div>
+          </div>
+        `;
+      }).join("");
     }
 
     function renderEditor() {
@@ -1637,6 +1831,7 @@
 
       document.getElementById("title-input").value = note.title;
       document.getElementById("editor").value = note.content;
+      document.getElementById("folder-input").value = getFolder(note) === "未分類" ? "" : getFolder(note);
 
       renderPreview();
       renderBacklinks();
@@ -2375,7 +2570,7 @@ ${existingTitles || "（まだノートがありません）"}
             toast("タイトルをAIが考えています...");
             title = await fetchAiTitle(text, title);
           }
-          const newNote = createNote(title);
+          const newNote = createNote(title, getTodayFolderStr());
           newNote.content = `# ${title}\n\n${text}`;
           newNote.sourceUrl = url;
           newNote.updatedAt = Date.now();
@@ -2428,7 +2623,7 @@ ${existingTitles || "（まだノートがありません）"}
             const docxText = docxFetchData.candidates?.[0]?.content?.parts?.[0]?.text || "";
             if (!docxText.trim()) throw new Error("Wordファイルからテキストを抽出できませんでした");
             if (optimizeTitle) { toast("タイトルを最適化中..."); title = await fetchAiTitle(docxText, title); }
-            const docxNote = createNote(title + (mode === "summarize" ? " (要約)" : mode === "keypoints" ? " (抽出)" : ""));
+            const docxNote = createNote(title + (mode === "summarize" ? " (要約)" : mode === "keypoints" ? " (抽出)" : ""), getTodayFolderStr());
             docxNote.content = `# ${docxNote.title}\n\n${docxText}`;
             if (mode === "summarize") docxNote.summary = docxText;
             docxNote.updatedAt = Date.now(); saveLocal(); pushNote(docxNote); selectNote(docxNote.id);
@@ -2458,7 +2653,7 @@ ${existingTitles || "（まだノートがありません）"}
             const pdfAiText = pdfFetchData.candidates?.[0]?.content?.parts?.[0]?.text || "";
             if (!pdfAiText.trim()) throw new Error("AIでもテキストを抽出できませんでした");
             if (optimizeTitle) { toast("タイトルを最適化中..."); title = await fetchAiTitle(pdfAiText, title); }
-            const pdfNote = createNote(title + (mode === "summarize" ? " (要約)" : mode === "keypoints" ? " (抽出)" : ""));
+            const pdfNote = createNote(title + (mode === "summarize" ? " (要約)" : mode === "keypoints" ? " (抽出)" : ""), getTodayFolderStr());
             pdfNote.content = `# ${pdfNote.title}\n\n${pdfAiText}`;
             if (mode === "summarize") pdfNote.summary = pdfAiText;
             pdfNote.updatedAt = Date.now(); saveLocal(); pushNote(pdfNote); selectNote(pdfNote.id);
@@ -2485,7 +2680,7 @@ ${existingTitles || "（まだノートがありません）"}
 
         if (mode === "raw") {
           if (optimizeTitle) { toast("タイトルを最適化中..."); title = await fetchAiTitle(text, title); }
-          const rawNote = createNote(title);
+          const rawNote = createNote(title, getTodayFolderStr());
           rawNote.content = `# ${title}\n\n${text}`;
           rawNote.updatedAt = Date.now(); saveLocal(); pushNote(rawNote); selectNote(rawNote.id);
           toast("取り込み完了");
@@ -2507,7 +2702,7 @@ ${existingTitles || "（まだノートがありません）"}
           const aiFetchData = await aiFetchRes.json();
           const processedText = aiFetchData.candidates?.[0]?.content?.parts?.[0]?.text || "";
           if (optimizeTitle) { toast("タイトルを最適化中..."); title = await fetchAiTitle(processedText, title); }
-          const aiNote = createNote(title + (mode === "summarize" ? " (要約)" : " (抽出)"));
+          const aiNote = createNote(title + (mode === "summarize" ? " (要約)" : " (抽出)"), getTodayFolderStr());
           aiNote.content = `# ${aiNote.title}\n\n${processedText}\n\n---\n<details><summary>元のテキストを展開する</summary>\n\n${text}\n</details>`;
           if (mode === "summarize") aiNote.summary = processedText;
           aiNote.updatedAt = Date.now(); saveLocal(); pushNote(aiNote); selectNote(aiNote.id);
@@ -2629,12 +2824,14 @@ ${existingTitles || "（まだノートがありません）"}
           content = `# ${title}\n\n${item.highlights}`;
           if (dateStr) content += `\n\n---\n**保存日時:** ${dateStr}`;
 
+          let folderName = item.category || getTodayFolderStr();
+          let folderTag = `[folder:${folderName}]`;
           const note = {
             id: genId(),
             title: title,
             content: content,
             summary: "",
-            keywords: item.tags || "",
+            keywords: item.tags ? `${item.tags}, ${folderTag}` : folderTag,
             sourceUrl: item.url || "",
             createdAt: Date.now(),
             updatedAt: Date.now(),
