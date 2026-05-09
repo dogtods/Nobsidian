@@ -1806,7 +1806,7 @@
       notes.unshift(note);
       saveLocal();
       selectNote(note.id);
-      setMode("edit");
+      setMode("preview");
       pushNote(note);
       renderList();
       closeSidebar();
@@ -3528,6 +3528,7 @@ ${existingTitles || "（まだノートがありません）"}
       activeId = notes[0]?.id || null;
       renderList();
       renderEditor();
+      setMode("preview");
 
       // クラウド同期
       syncFromServer();
