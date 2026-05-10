@@ -1575,8 +1575,9 @@
           <button id="graph-mode-folder" class="graph-btn" onclick="setGraphViewMode('folder')" style="border:none; padding:4px 10px; font-size:10px;">フォルダ</button>
         </div>
 
-        <div id="folder-graph-ai-btn-wrap" style="display:none; margin-right:10px;">
-          <button class="graph-btn" onclick="analyzeFolderRelationsWithAI()" style="background:#a371f722; border-color:#a371f744; color:var(--purple);">✦ AIフォルダ解析</button>
+        <div id="folder-graph-ai-btn-wrap" style="display:none; margin-right:10px; display:flex; gap:4px; align-items:center;">
+          <button id="graph-ai-main-btn" class="graph-btn" onclick="runGraphAiAnalysis()" style="background:#a371f722; border-color:#a371f744; color:var(--purple); min-width:120px;">✦ AIフォルダ解析</button>
+          <button class="graph-btn" onclick="resetFolderRelationsAI()" title="AI関係性をリセット" style="padding:4px 8px; font-size:10px;">リセット</button>
         </div>
 
         <div style="display:flex; align-items:center; gap:4px; margin-right:10px;">
@@ -1747,13 +1748,23 @@
     const LS_KEY = "cn_notes_cache";
 
     function saveLocal() {
-      try { localStorage.setItem(LS_KEY, JSON.stringify({ notes, activeId })); } catch { }
+      try { 
+        localStorage.setItem(LS_KEY, JSON.stringify({ notes, activeId })); 
+        localStorage.setItem(CN_FOLDER_RELATIONS_AI, JSON.stringify(folderRelationsAI));
+        localStorage.setItem(CN_LAST_GRAPH_AI_TIME, lastGraphAiTime.toString());
+      } catch { }
     }
 
     function loadLocal() {
       try {
         const d = JSON.parse(localStorage.getItem(LS_KEY));
         if (d && d.notes) { notes = d.notes; activeId = d.activeId || null; }
+        
+        const fr = localStorage.getItem(CN_FOLDER_RELATIONS_AI);
+        if (fr) folderRelationsAI = JSON.parse(fr);
+        
+        const lt = localStorage.getItem(CN_LAST_GRAPH_AI_TIME);
+        if (lt) lastGraphAiTime = parseInt(lt, 10) || 0;
       } catch { }
     }
 
@@ -2306,6 +2317,8 @@
     const GEMINI_MODEL_LS = "cn_gemini_model";
     const GEMINI_TEMP_LS = "cn_gemini_temp";
     const GEMINI_TOKENS_LS = "cn_gemini_tokens";
+    const CN_FOLDER_RELATIONS_AI = "cn_folder_relations_ai";
+    const CN_LAST_GRAPH_AI_TIME = "cn_last_graph_ai_time";
 
     function openSettings() {
       const key = localStorage.getItem(GEMINI_KEY_LS) || "";
@@ -3244,6 +3257,7 @@ ${existingTitles || "（まだノートがありません）"}
     // ============================================================
     let graphViewMode = 'note'; // 'note' or 'folder'
     let folderRelationsAI = []; // AIによるフォルダ間関係キャッシュ
+    let lastGraphAiTime = 0;    // 最後にAIフォルダ解析を行った時刻
 
     function buildGraphData() {
       if (graphViewMode === 'folder') return buildFolderGraphData();
@@ -3353,36 +3367,81 @@ ${existingTitles || "（まだノートがありません）"}
       document.getElementById("graph-mode-note").style.color = mode === 'note' ? '#fff' : 'var(--text)';
       document.getElementById("graph-mode-folder").style.background = mode === 'folder' ? 'var(--blue)' : 'transparent';
       document.getElementById("graph-mode-folder").style.color = mode === 'folder' ? '#fff' : 'var(--text)';
-      document.getElementById("folder-graph-ai-btn-wrap").style.display = mode === 'folder' ? 'block' : 'none';
+      document.getElementById("folder-graph-ai-btn-wrap").style.display = mode === 'folder' ? 'flex' : 'none';
 
+      updateGraphAiUI();
       renderGraph();
     }
 
-    async function analyzeFolderRelationsWithAI() {
+    function updateGraphAiUI() {
+      const btn = document.getElementById("graph-ai-main-btn");
+      if (!btn) return;
+
+      if (lastGraphAiTime === 0) {
+        btn.textContent = "✦ AIフォルダ解析";
+        return;
+      }
+
+      const unanalyzedNotes = notes.filter(n => n.updatedAt > lastGraphAiTime);
+      if (unanalyzedNotes.length > 0) {
+        btn.textContent = `✦ 差分をAI解析 (${unanalyzedNotes.length})`;
+      } else {
+        btn.textContent = "✦ 全て再解析";
+      }
+    }
+
+    function runGraphAiAnalysis() {
+      const unanalyzedNotes = notes.filter(n => n.updatedAt > lastGraphAiTime);
+      if (lastGraphAiTime > 0 && unanalyzedNotes.length === 0) {
+        if (confirm("全てのフォルダを再度解析しますか？")) {
+          analyzeFolderRelationsWithAI(false);
+        }
+      } else {
+        analyzeFolderRelationsWithAI(lastGraphAiTime > 0);
+      }
+    }
+
+    async function analyzeFolderRelationsWithAI(isIncremental = false) {
       const apiKey = localStorage.getItem(GEMINI_KEY_LS);
       if (!apiKey) { toast("APIキーを設定してください"); return; }
 
       const fData = buildFolderGraphData();
       if (fData.nodes.length < 2) { toast("解析するのに十分なフォルダがありません。"); return; }
 
-      toast("AIがフォルダ間の関係性を深く解析中...");
+      // 解析対象の抽出
+      let targetNodes = fData.nodes;
+      if (isIncremental && lastGraphAiTime > 0) {
+        targetNodes = fData.nodes.filter(f => f.notes.some(n => n.updatedAt > lastGraphAiTime));
+        if (targetNodes.length === 0) {
+          toast("新しく追加・更新されたノートはありません。");
+          return;
+        }
+      }
+
+      const statusMsg = isIncremental ? `${targetNodes.length}件の更新フォルダを差分解析中...` : "全フォルダの関係性を深く解析中...";
+      toast(statusMsg);
       
       try {
-        // 1. フォルダごとのサマリー情報を準備（各フォルダのノートタイトルをまとめる）
-        const folderSummaries = fData.nodes.map(f => {
+        // 1. フォルダごとのサマリー情報を準備
+        const activeSummaries = targetNodes.map(f => {
           const titles = f.notes.slice(0, 15).map(n => n.title).join(", ");
           return `[Folder: ${f.title}]\nNotes: ${titles}`;
         }).join("\n\n");
 
-        const prompt = `あなたは知識管理の専門家です。以下のフォルダ（カテゴリ）のリストを読み、それらの間の「意味的な繋がり」や「階層関係」を解析してください。
+        const allFolderNames = fData.nodes.map(f => f.title).join(", ");
+
+        const prompt = `あなたは知識管理の専門家です。以下のフォルダ（カテゴリ）の内容を読み、既存のフォルダリストとの間の「意味的な繋がり」や「階層関係」を解析してください。
 
 関係性のルール：
 1. 「AはBの前提条件」「AとBは補完し合っている」など、深い関係を見つけてください。
 2. 出力は必ず以下のJSON形式のみとしてください。
 [{"source": "フォルダA", "target": "フォルダB", "reason": "関係の短い説明"}, ...]
 
-フォルダリスト：
-${folderSummaries}`;
+${isIncremental ? "今回の解析対象（新規/更新分）" : "解析対象のフォルダリスト"}：
+${activeSummaries}
+
+既存の全フォルダリスト：
+${allFolderNames}`;
 
         const model = localStorage.getItem(GEMINI_MODEL_LS) || "gemini-2.0-flash";
         const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
@@ -3391,22 +3450,50 @@ ${folderSummaries}`;
           body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { response_mime_type: "application/json" } })
         });
 
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         const jsonStr = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        folderRelationsAI = JSON.parse(jsonStr);
+        const newRels = JSON.parse(jsonStr);
         
+        if (isIncremental) {
+          // 既存の結果とマージ（重複排除）
+          newRels.forEach(nr => {
+            const exists = folderRelationsAI.some(er => 
+              (er.source === nr.source && er.target === nr.target) || 
+              (er.source === nr.target && er.target === nr.source)
+            );
+            if (!exists) folderRelationsAI.push(nr);
+          });
+        } else {
+          folderRelationsAI = newRels;
+        }
+
+        lastGraphAiTime = Date.now();
+        saveLocal();
+        updateGraphAiUI();
         renderGraph();
-        toast("フォルダ間の深い繋がりを可視化しました ✦");
+        toast("フォルダ間の繋がりを更新しました ✦");
       } catch (e) {
         console.error(e);
         toast("AI解析に失敗しました: " + e.message);
       }
     }
 
+    function resetFolderRelationsAI() {
+      if (!confirm("AI解析による全てのつながりをリセットしますか？")) return;
+      folderRelationsAI = [];
+      lastGraphAiTime = 0;
+      saveLocal();
+      updateGraphAiUI();
+      renderGraph();
+      toast("リセットしました");
+    }
+
     function openGraphModal() {
       document.getElementById("graph-modal").classList.add("open");
       document.getElementById("graph-search-input").value = "";
       closeGraphPopup();
+      updateGraphAiUI();
       renderGraph();
     }
 
