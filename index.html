@@ -1443,7 +1443,7 @@
       </a>
       <div class="settings-btns">
         <button class="settings-cancel" onclick="closeSettings()">キャンセル</button>
-        <button class="settings-save" onclick="openPromptSettings()"
+        <button class="settings-save" onclick=""
           style="background:#58a6ff11;border-color:#58a6ff44;color:var(--blue)">📝 プロンプト設定</button>
         <button class="settings-save" onclick="saveSettings()">保存</button>
       </div>
@@ -2290,6 +2290,7 @@
       ANALYZE: "cn_prompt_analyze",
       IMPORT_SUMMARIZE: "cn_prompt_import_summarize",
       IMPORT_KEYPOINTS: "cn_prompt_import_keypoints",
+      REPORT: "cn_prompt_report",
     };
 
     const DEFAULT_PROMPTS = {
@@ -2297,6 +2298,7 @@
       ANALYZE: `あなたはナレッジベース管理AIです。以下のメモを分析してください。\n\n## メモ内容\nタイトル: {title}\n本文:\n{content}\n\n## 既存ノートのタイトル一覧（関連チェック用）\n{existingTitles}\n\n## 出力形式（必ずこのJSON形式のみで返してください）\n{\n  "keywords": ["キーワード1", "キーワード2", "キーワード3", "キーワード4", "キーワード5"],\n  "summary": "このメモの要点を2〜3文で日本語でまとめてください",\n  "related_notes": ["既存ノートタイトル1", "既存ノートタイトル2"],\n  "new_keywords": ["新規に作成すべきキーワード1", "新規に作成すべきキーワード2"]\n}\n\n## 指示\n- keywordsは固有名詞・概念・テーマを5〜8個抽出（名詞のみ）\n- related_notesは既存ノートの中から関連するものだけ（なければ空配列）\n- new_keywordsはkeywordsの中でまだ既存ノートにないもの\n- JSONのみ返す。マークダウンのコードブロック不要`,
       IMPORT_SUMMARIZE: `以下の文章を分かりやすく要約してください。\n\n{content}`,
       IMPORT_KEYPOINTS: `以下の文章から重要なキーポイントを箇条書きで抽出してください。\n\n{content}`,
+      REPORT: `以下のノート群を総合的に読み、日本語でレポートを作成してください。\n\n## 対象ノート\n{notes_content}\n\n## レポートの構成\n1. **概要**: 選択されたノート群の共通テーマや関係性を2〜3文でまとめる\n2. **主要な洞察**: 各ノートから得られる重要な知見を箇条書きで列挙\n3. **ノート間の関連性**: つながりや共通点・相違点を分析\n4. **まとめと次のアクション**: 全体から導かれる結論と今後の行動提案\n\n読みやすく実用的なレポートにしてください。`,
     };
 
     function getPrompt(key) {
@@ -2309,6 +2311,7 @@
       document.getElementById("prompt-import-summarize-input").value = getPrompt("IMPORT_SUMMARIZE");
       document.getElementById("prompt-import-keypoints-input").value = getPrompt("IMPORT_KEYPOINTS");
       document.getElementById("prompt-settings-modal").style.display = "flex";
+      document.getElementById("prompt-report-input").value = getPrompt("REPORT");
       closeSettings();
     }
 
@@ -2321,6 +2324,7 @@
       localStorage.setItem(PK.ANALYZE, document.getElementById("prompt-analyze-input").value);
       localStorage.setItem(PK.IMPORT_SUMMARIZE, document.getElementById("prompt-import-summarize-input").value);
       localStorage.setItem(PK.IMPORT_KEYPOINTS, document.getElementById("prompt-import-keypoints-input").value);
+      localStorage.setItem(PK.REPORT, document.getElementById("prompt-report-input").value);
       toast("プロンプト設定を保存しました ✦");
       closePromptSettings();
     }
@@ -2328,7 +2332,7 @@
     function resetPrompts() {
       if (!confirm("全てのプロンプトをデフォルトに戻しますか？")) return;
       Object.keys(PK).forEach(k => localStorage.removeItem(PK[k]));
-      openPromptSettings();
+      ;
       toast("プロンプトをリセットしました");
     }
 
@@ -3534,6 +3538,8 @@ ${allFolderNames}`;
     function closeGraphModal() {
       document.getElementById("graph-modal").classList.remove("open");
       if (graphSimulation) graphSimulation.stop();
+      reportSelectedNodes.clear();
+      updateReportPanel();
     }
 
     function closeGraphPopup() {
@@ -3767,7 +3773,19 @@ ${allFolderNames}`;
           selectNote(d.id);
         };
       }
-
+        // レポート選択ボタンの制御
+      const selectBtn = document.getElementById("g-pop-select-btn");
+      const nodeId = d.id;
+      const nodeTitle = d.title;
+      const nodeContent = graphViewMode === 'folder'
+        ? d.notes.map(n => `## ${n.title}\n${n.content}`).join("\n\n")
+        : (d.content || "");
+      
+      selectBtn.textContent = reportSelectedNodes.has(nodeId) ? "✦ 選択を解除" : "✦ レポート対象に追加";
+      selectBtn.onclick = () => {
+        toggleReportNode(nodeId, nodeTitle, nodeContent);
+        selectBtn.textContent = reportSelectedNodes.has(nodeId) ? "✦ 選択を解除" : "✦ レポート対象に追加";
+      };
       popup.classList.add("show");
       
       // 位置の調整
@@ -3946,6 +3964,122 @@ ${noteListStr}`;
       // クラウド同期
       syncFromServer();
     })();
+    
+    // ============================================================
+    //  GRAPH REPORT FEATURE
+    // ============================================================
+    let reportSelectedNodes = new Map(); // id → { title, content }
+    let lastGeneratedReport = "";
+    
+    function toggleReportNode(id, title, content) {
+      if (reportSelectedNodes.has(id)) {
+        reportSelectedNodes.delete(id);
+      } else {
+        reportSelectedNodes.set(id, { title, content });
+      }
+      updateReportPanel();
+    }
+    
+    function updateReportPanel() {
+      const panel = document.getElementById("graph-report-panel");
+      const countEl = document.getElementById("report-count");
+      const listEl = document.getElementById("report-selected-list");
+    
+      const count = reportSelectedNodes.size;
+      countEl.textContent = count;
+    
+      if (count === 0) {
+        panel.style.display = "none";
+        return;
+      }
+    
+      panel.style.display = "block";
+      listEl.innerHTML = [...reportSelectedNodes.values()]
+        .map(n => `<div style="padding:3px 0; border-bottom:1px solid var(--border); color:var(--blue);">◈ ${esc(n.title)}</div>`)
+        .join("");
+    }
+    
+    function clearReportSelection() {
+      reportSelectedNodes.clear();
+      updateReportPanel();
+      closeGraphPopup();
+    }
+    
+    async function generateGraphReport() {
+      if (reportSelectedNodes.size === 0) {
+        toast("ノートを選択してください");
+        return;
+      }
+    
+      const apiKey = localStorage.getItem(GEMINI_KEY_LS);
+      if (!apiKey) {
+        toast("APIキーを設定してください ⚙");
+        return;
+      }
+    
+      const btn = document.getElementById("graph-report-btn");
+      btn.textContent = "✦ 生成中...";
+      btn.disabled = true;
+    
+      try {
+        const notesContent = [...reportSelectedNodes.values()]
+          .map(n => `### ${n.title}\n${n.content}`)
+          .join("\n\n---\n\n");
+    
+        const promptTemplate = getPrompt("REPORT");
+        const prompt = promptTemplate.replace("{notes_content}", notesContent.substring(0, 20000));
+    
+        const model = localStorage.getItem(GEMINI_MODEL_LS) || "gemini-2.0-flash";
+        const temp = parseFloat(localStorage.getItem(GEMINI_TEMP_LS) || "0.3");
+    
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: { temperature: temp, maxOutputTokens: 2000 }
+            })
+          }
+        );
+    
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const reportText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        if (!reportText) throw new Error("レポートの生成に失敗しました");
+    
+        lastGeneratedReport = reportText;
+        document.getElementById("report-result-content").textContent = reportText;
+        document.getElementById("report-result-modal").style.display = "flex";
+    
+      } catch (e) {
+        toast("エラー: " + e.message);
+      } finally {
+        btn.textContent = "✦ 選択したノートのレポートを生成";
+        btn.disabled = false;
+      }
+    }
+    
+    function closeReportModal() {
+      document.getElementById("report-result-modal").style.display = "none";
+    }
+    
+    function saveReportAsNote() {
+      if (!lastGeneratedReport) return;
+      const selectedTitles = [...reportSelectedNodes.values()].map(n => n.title).join("・");
+      const title = `レポート: ${selectedTitles.substring(0, 30)}`;
+      const newNote = createNote(title, getTodayFolderStr());
+      newNote.content = `# ${title}\n\n${lastGeneratedReport}`;
+      newNote.updatedAt = Date.now();
+      saveLocal();
+      pushNote(newNote);
+      closeReportModal();
+      closeGraphModal();
+      selectNote(newNote.id);
+      toast("レポートをノートとして保存しました ✦");
+    }
+    
   </script>
 
 
