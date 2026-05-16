@@ -2499,8 +2499,13 @@ ${existingTitles || "（まだノートがありません）"}
         aiResults = JSON.parse(jsonStr);
 
         // ノートオブジェクトに保存
+        // 変更後
         note.summary = aiResults.summary || "";
-        note.keywords = (aiResults.keywords || []).join(", ");
+        const currentFolder = getFolder(note);
+        const newKeywords = (aiResults.keywords || []).join(", ");
+        note.keywords = currentFolder !== "未分類"
+          ? `${newKeywords}, [folder:${currentFolder}]`
+          : newKeywords;
         note.updatedAt = Date.now();
         saveLocal();
         scheduleSave();
@@ -3217,7 +3222,10 @@ ${existingTitles || "（まだノートがありません）"}
 
         suggestQuery = query;
         suggestStartPos = lastOpen;
-        suggestItems = notes.map(n => n.title).filter(t => t.toLowerCase().startsWith(query.toLowerCase())).slice(0, 8);
+        // 問題箇所変更後（suggestItems設定部分）
+        suggestItems = notes.map(n => n.title)
+          .filter(t => query === "" || t.toLowerCase().includes(query.toLowerCase()))
+          .slice(0, 15);
         suggestIndex = 0;
 
         renderSuggest();
