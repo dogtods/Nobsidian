@@ -113,25 +113,10 @@
       letter-spacing: 0;
     }
 
-    .sync-indicator.synced {
-      background: #3fb95022;
-      color: var(--green);
-    }
-
-    .sync-indicator.syncing {
-      background: #58a6ff22;
-      color: var(--blue);
-    }
-
-    .sync-indicator.offline {
-      background: #f0883e22;
-      color: var(--orange);
-    }
-
-    .sync-indicator.error {
-      background: #f8514922;
-      color: var(--red);
-    }
+    .sync-indicator.synced { background: #3fb95022; color: var(--green); }
+    .sync-indicator.syncing { background: #58a6ff22; color: var(--blue); }
+    .sync-indicator.offline { background: #f0883e22; color: var(--orange); }
+    .sync-indicator.error { background: #f8514922; color: var(--red); }
 
     .new-btn {
       width: 100%;
@@ -173,13 +158,8 @@
       transition: border-color 0.15s;
     }
 
-    .search-box:focus {
-      border-color: #58a6ff55;
-    }
-
-    .search-box::placeholder {
-      color: var(--muted);
-    }
+    .search-box:focus { border-color: #58a6ff55; }
+    .search-box::placeholder { color: var(--muted); }
 
     .notes-list {
       flex: 1;
@@ -187,14 +167,8 @@
       padding: 4px 0;
     }
 
-    .notes-list::-webkit-scrollbar {
-      width: 4px;
-    }
-
-    .notes-list::-webkit-scrollbar-thumb {
-      background: var(--border2);
-      border-radius: 2px;
-    }
+    .notes-list::-webkit-scrollbar { width: 4px; }
+    .notes-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
 
     .note-item {
       padding: 9px 14px;
@@ -207,24 +181,15 @@
       border-left: 2px solid transparent;
     }
 
-    .note-item:hover {
-      background: #1c2128;
-    }
+    .note-item:hover { background: #1c2128; }
 
     .note-item.active {
       background: #1f2d3d;
       border-left-color: var(--blue);
     }
 
-    .note-icon {
-      font-size: 11px;
-      color: var(--muted);
-      flex-shrink: 0;
-    }
-
-    .note-item.active .note-icon {
-      color: var(--blue);
-    }
+    .note-icon { font-size: 11px; color: var(--muted); flex-shrink: 0; }
+    .note-item.active .note-icon { color: var(--blue); }
 
     .note-title {
       font-size: 13px;
@@ -237,10 +202,7 @@
       min-width: 0;
     }
 
-    .note-item.active .note-title {
-      color: var(--text);
-      font-weight: 500;
-    }
+    .note-item.active .note-title { color: var(--text); font-weight: 500; }
 
     .del-btn {
       opacity: 0;
@@ -254,13 +216,8 @@
       flex-shrink: 0;
     }
 
-    .note-item:hover .del-btn {
-      opacity: 1;
-    }
-
-    .del-btn:hover {
-      color: var(--red);
-    }
+    .note-item:hover .del-btn { opacity: 1; }
+    .del-btn:hover { color: var(--red); }
 
     .folder-header {
       padding: 6px 14px;
@@ -276,26 +233,12 @@
       position: relative;
     }
 
-    .folder-header:hover {
-      background: #1c2128;
-      color: var(--text);
-    }
+    .folder-header:hover { background: #1c2128; color: var(--text); }
 
-    .folder-icon {
-      font-size: 10px;
-      transition: transform 0.2s;
-    }
+    .folder-icon { font-size: 10px; transition: transform 0.2s; }
+    .folder-header.collapsed .folder-icon { transform: rotate(-90deg); }
 
-    .folder-header.collapsed .folder-icon {
-      transform: rotate(-90deg);
-    }
-
-    .folder-title {
-      flex: 1;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
+    .folder-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
     .folder-menu-btn {
       opacity: 0;
@@ -308,27 +251,12 @@
       transition: all 0.1s;
     }
 
-    .folder-header:hover .folder-menu-btn {
-      opacity: 1;
-    }
+    .folder-header:hover .folder-menu-btn { opacity: 1; }
+    .folder-menu-btn:hover { background: var(--border2); color: var(--bright); }
 
-    .folder-menu-btn:hover {
-      background: var(--border2);
-      color: var(--bright);
-    }
-
-    .folder-content {
-      display: flex;
-      flex-direction: column;
-    }
-
-    .folder-content.collapsed {
-      display: none;
-    }
-
-    .note-item {
-      padding: 7px 14px 7px 24px;
-    }
+    .folder-content { display: flex; flex-direction: column; }
+    .folder-content.collapsed { display: none; }
+    .note-item { padding: 7px 14px 7px 24px; }
 
     .sidebar-footer {
       border-top: 1px solid var(--border);
@@ -344,11 +272,7 @@
       margin-bottom: 6px;
     }
 
-    .footer-btns {
-      display: flex;
-      flex-direction: column;
-      gap: 5px;
-    }
+    .footer-btns { display: flex; flex-direction: column; gap: 5px; }
 
     .export-btn {
       width: 100%;
@@ -366,16 +290,8 @@
       font-family: inherit;
     }
 
-    .export-btn:hover {
-      background: var(--border);
-      color: var(--text);
-      border-color: var(--border2);
-    }
-
-    .export-btn .ico {
-      color: var(--green);
-      font-weight: 700;
-    }
+    .export-btn:hover { background: var(--border); color: var(--text); border-color: var(--border2); }
+    .export-btn .ico { color: var(--green); font-weight: 700; }
 
     /* ===== MAIN ===== */
     #main {
@@ -441,10 +357,7 @@
       justify-content: center;
     }
 
-    #ai-title-btn:hover {
-      opacity: 1;
-      transform: scale(1.1);
-    }
+    #ai-title-btn:hover { opacity: 1; transform: scale(1.1); }
 
     #ai-title-btn.loading {
       animation: ai-spin 1.5s linear infinite;
@@ -453,18 +366,11 @@
     }
 
     @keyframes ai-spin {
-      0% {
-        transform: rotate(0deg);
-      }
-
-      100% {
-        transform: rotate(360deg);
-      }
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
     }
 
-    .title-input::placeholder {
-      color: var(--muted);
-    }
+    .title-input::placeholder { color: var(--muted); }
 
     .mode-btn {
       padding: 5px 11px;
@@ -480,29 +386,12 @@
       white-space: nowrap;
     }
 
-    .mode-btn.on {
-      background: var(--border);
-      color: var(--blue);
-      border-color: #58a6ff44;
-    }
+    .mode-btn.on { background: var(--border); color: var(--blue); border-color: #58a6ff44; }
+    .mode-btn:hover { background: var(--border); color: var(--text); }
 
-    .mode-btn:hover {
-      background: var(--border);
-      color: var(--text);
-    }
+    .divider { width: 1px; height: 18px; background: var(--border); flex-shrink: 0; }
 
-    .divider {
-      width: 1px;
-      height: 18px;
-      background: var(--border);
-      flex-shrink: 0;
-    }
-
-    .content-wrap {
-      flex: 1;
-      display: flex;
-      overflow: hidden;
-    }
+    .content-wrap { flex: 1; display: flex; overflow: hidden; }
 
     .editor-pane {
       flex: 1;
@@ -526,159 +415,37 @@
       overflow-y: auto;
     }
 
-    textarea#editor::-webkit-scrollbar {
-      width: 5px;
-    }
+    textarea#editor::-webkit-scrollbar { width: 5px; }
+    textarea#editor::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
 
-    textarea#editor::-webkit-scrollbar-thumb {
-      background: var(--border2);
-      border-radius: 3px;
-    }
-
-    #preview {
-      flex: 1;
-      overflow-y: auto;
-      padding: 24px 32px;
-      display: none;
-    }
-
-    #preview::-webkit-scrollbar {
-      width: 5px;
-    }
-
-    #preview::-webkit-scrollbar-thumb {
-      background: var(--border2);
-      border-radius: 3px;
-    }
+    #preview { flex: 1; overflow-y: auto; padding: 24px 32px; display: none; }
+    #preview::-webkit-scrollbar { width: 5px; }
+    #preview::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
 
     /* ===== MARKDOWN STYLES ===== */
-    .md h1 {
-      font-size: 22px;
-      font-weight: 700;
-      color: var(--bright);
-      margin-bottom: 14px;
-      line-height: 1.3;
-    }
+    .md h1 { font-size: 22px; font-weight: 700; color: var(--bright); margin-bottom: 14px; line-height: 1.3; }
+    .md h2 { font-size: 17px; font-weight: 600; color: var(--text); margin: 20px 0 10px; border-bottom: 1px solid var(--border); padding-bottom: 5px; }
+    .md h3 { font-size: 15px; font-weight: 600; color: var(--text); margin: 14px 0 7px; }
+    .md p { font-size: 14px; line-height: 1.85; color: var(--text); margin-bottom: 8px; }
 
-    .md h2 {
-      font-size: 17px;
-      font-weight: 600;
-      color: var(--text);
-      margin: 20px 0 10px;
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 5px;
-    }
+    .md .list-item { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; color: var(--text); margin: 3px 0 3px 8px; }
+    .md .bullet { color: var(--blue); font-size: 9px; margin-top: 7px; flex-shrink: 0; }
 
-    .md h3 {
-      font-size: 15px;
-      font-weight: 600;
-      color: var(--text);
-      margin: 14px 0 7px;
-    }
+    .md .check-row { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text); margin: 3px 0 3px 8px; }
+    .md .check-icon { font-size: 12px; width: 16px; flex-shrink: 0; }
+    .md .check-icon.done { color: var(--green); }
+    .md .check-icon.todo { color: var(--muted); }
+    .md .done-text { text-decoration: line-through; color: var(--muted); }
+    .md .spacer { height: 8px; }
+    .md code { font-family: 'JetBrains Mono', monospace; font-size: 12px; background: #1c2128; color: var(--orange); padding: 1px 5px; border-radius: 3px; }
 
-    .md p {
-      font-size: 14px;
-      line-height: 1.85;
-      color: var(--text);
-      margin-bottom: 8px;
-    }
-
-    .md .list-item {
-      display: flex;
-      align-items: flex-start;
-      gap: 8px;
-      font-size: 14px;
-      color: var(--text);
-      margin: 3px 0 3px 8px;
-    }
-
-    .md .bullet {
-      color: var(--blue);
-      font-size: 9px;
-      margin-top: 7px;
-      flex-shrink: 0;
-    }
-
-    .md .check-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 14px;
-      color: var(--text);
-      margin: 3px 0 3px 8px;
-    }
-
-    .md .check-icon {
-      font-size: 12px;
-      width: 16px;
-      flex-shrink: 0;
-    }
-
-    .md .check-icon.done {
-      color: var(--green);
-    }
-
-    .md .check-icon.todo {
-      color: var(--muted);
-    }
-
-    .md .done-text {
-      text-decoration: line-through;
-      color: var(--muted);
-    }
-
-    .md .spacer {
-      height: 8px;
-    }
-
-    .md code {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 12px;
-      background: #1c2128;
-      color: var(--orange);
-      padding: 1px 5px;
-      border-radius: 3px;
-    }
-
-    .wiki-link {
-      cursor: pointer;
-      border-radius: 3px;
-      padding: 1px 4px;
-      font-size: 13px;
-      transition: all 0.15s;
-    }
-
-    .wiki-link.exists {
-      color: var(--blue);
-      background: #58a6ff11;
-      border-bottom: 1px solid #58a6ff44;
-    }
-
-    .wiki-link.exists:hover {
-      background: #58a6ff22;
-      border-bottom-color: var(--blue);
-    }
-
-    .wiki-link.new {
-      color: var(--orange);
-      background: #f0883e11;
-      border-bottom: 1px dashed #f0883e44;
-    }
-
-    .wiki-link.new:hover {
-      background: #f0883e22;
-    }
-
-    .wiki-link.empty-node {
-      color: var(--muted);
-      background: transparent;
-      border-bottom: 1px dotted var(--muted);
-    }
-
-    .wiki-link.empty-node:hover {
-      background: #8b949e22;
-      color: var(--text);
-    }
+    .wiki-link { cursor: pointer; border-radius: 3px; padding: 1px 4px; font-size: 13px; transition: all 0.15s; }
+    .wiki-link.exists { color: var(--blue); background: #58a6ff11; border-bottom: 1px solid #58a6ff44; }
+    .wiki-link.exists:hover { background: #58a6ff22; border-bottom-color: var(--blue); }
+    .wiki-link.new { color: var(--orange); background: #f0883e11; border-bottom: 1px dashed #f0883e44; }
+    .wiki-link.new:hover { background: #f0883e22; }
+    .wiki-link.empty-node { color: var(--muted); background: transparent; border-bottom: 1px dotted var(--muted); }
+    .wiki-link.empty-node:hover { background: #8b949e22; color: var(--text); }
 
     /* ===== BACKLINKS PANEL ===== */
     #backlinks-panel {
@@ -690,87 +457,20 @@
       padding: 14px;
     }
 
-    #backlinks-panel::-webkit-scrollbar {
-      width: 4px;
-    }
+    #backlinks-panel::-webkit-scrollbar { width: 4px; }
+    #backlinks-panel::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
 
-    #backlinks-panel::-webkit-scrollbar-thumb {
-      background: var(--border2);
-      border-radius: 2px;
-    }
+    .panel-label { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
 
-    .panel-label {
-      font-size: 10px;
-      font-weight: 600;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      color: var(--muted);
-      margin-bottom: 10px;
-    }
+    .bl-item { padding: 8px 10px; border-radius: 6px; cursor: pointer; margin-bottom: 4px; border: 1px solid transparent; transition: all 0.15s; }
+    .bl-item:hover { background: #1c2128; border-color: var(--border); }
+    .bl-name { font-size: 12px; color: var(--blue); margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; min-width: 0; }
+    .bl-preview { font-size: 11px; color: var(--muted); line-height: 1.5; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .no-bl { font-size: 11px; color: var(--muted); text-align: center; margin-top: 16px; opacity: 0.5; }
 
-    .bl-item {
-      padding: 8px 10px;
-      border-radius: 6px;
-      cursor: pointer;
-      margin-bottom: 4px;
-      border: 1px solid transparent;
-      transition: all 0.15s;
-    }
-
-    .bl-item:hover {
-      background: #1c2128;
-      border-color: var(--border);
-    }
-
-    .bl-name {
-      font-size: 12px;
-      color: var(--blue);
-      margin-bottom: 3px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      display: block;
-      min-width: 0;
-    }
-
-    .bl-preview {
-      font-size: 11px;
-      color: var(--muted);
-      line-height: 1.5;
-      overflow: hidden;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-    }
-
-    .no-bl {
-      font-size: 11px;
-      color: var(--muted);
-      text-align: center;
-      margin-top: 16px;
-      opacity: 0.5;
-    }
-
-    .ol-item {
-      padding: 5px 8px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 12px;
-      color: var(--blue);
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      transition: background 0.1s;
-    }
-
-    .ol-item:hover {
-      background: #1c2128;
-    }
-
-    .ol-new {
-      color: var(--orange);
-      font-size: 10px;
-    }
+    .ol-item { padding: 5px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; color: var(--blue); display: flex; align-items: center; gap: 5px; transition: background 0.1s; }
+    .ol-item:hover { background: #1c2128; }
+    .ol-new { color: var(--orange); font-size: 10px; }
 
     /* ===== META BAR ===== */
     .meta-bar {
@@ -784,41 +484,11 @@
     }
 
     /* ===== EMPTY STATE ===== */
-    #empty {
-      display: none;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      gap: 12px;
-      color: var(--muted);
-    }
-
-    .empty-ico {
-      font-size: 40px;
-      opacity: 0.2;
-    }
-
-    .empty-txt {
-      font-size: 14px;
-    }
-
-    .empty-btn {
-      padding: 8px 18px;
-      background: var(--surface);
-      border: 1px solid var(--border2);
-      border-radius: 6px;
-      color: var(--subtle);
-      font-size: 12px;
-      cursor: pointer;
-      font-family: inherit;
-      transition: all 0.15s;
-    }
-
-    .empty-btn:hover {
-      background: var(--border);
-      color: var(--blue);
-    }
+    #empty { display: none; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 12px; color: var(--muted); }
+    .empty-ico { font-size: 40px; opacity: 0.2; }
+    .empty-txt { font-size: 14px; }
+    .empty-btn { padding: 8px 18px; background: var(--surface); border: 1px solid var(--border2); border-radius: 6px; color: var(--subtle); font-size: 12px; cursor: pointer; font-family: inherit; transition: all 0.15s; }
+    .empty-btn:hover { background: var(--border); color: var(--blue); }
 
     /* ===== TOAST ===== */
     #toast {
@@ -839,10 +509,7 @@
       white-space: nowrap;
     }
 
-    #toast.show {
-      opacity: 1;
-      transform: translateX(-50%) translateY(0);
-    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
     /* ===== SUGGEST BOX ===== */
     #suggest-box {
@@ -858,539 +525,116 @@
       overflow: hidden;
     }
 
-    .suggest-item {
-      padding: 8px 12px;
-      font-size: 13px;
-      color: #c9d1d9;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .suggest-item:hover,
-    .suggest-item.selected {
-      background: #1f2d3d;
-    }
-
-    .suggest-icon {
-      color: var(--muted);
-      font-size: 11px;
-    }
+    .suggest-item { padding: 8px 12px; font-size: 13px; color: #c9d1d9; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+    .suggest-item:hover, .suggest-item.selected { background: #1f2d3d; }
+    .suggest-icon { color: var(--muted); font-size: 11px; }
 
     /* ===== AI PANEL ===== */
-    #ai-panel {
-      border-top: 1px solid var(--border);
-      background: #0d1117;
-      max-height: 0;
-      overflow: hidden;
-      transition: max-height 0.3s ease;
-    }
+    #ai-panel { border-top: 1px solid var(--border); background: #0d1117; max-height: 0; overflow: hidden; transition: max-height 0.3s ease; }
+    #ai-panel.open { max-height: 500px; overflow-y: auto; }
+    #ai-panel::-webkit-scrollbar { width: 4px; }
+    #ai-panel::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
 
-    #ai-panel.open {
-      max-height: 500px;
-      overflow-y: auto;
-    }
+    .ai-panel-inner { padding: 14px 20px 16px; }
 
-    #ai-panel::-webkit-scrollbar {
-      width: 4px;
-    }
+    .ai-section-title { font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--purple); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
 
-    #ai-panel::-webkit-scrollbar-thumb {
-      background: var(--border2);
-      border-radius: 2px;
-    }
+    .ai-keywords { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
 
-    .ai-panel-inner {
-      padding: 14px 20px 16px;
-    }
+    .ai-kw { padding: 3px 10px; border-radius: 20px; font-size: 12px; cursor: pointer; transition: all 0.15s; border: 1px solid; }
+    .ai-kw.exists { color: var(--blue); background: #58a6ff11; border-color: #58a6ff44; }
+    .ai-kw.empty-node { color: var(--muted); background: transparent; border-color: var(--border2); }
+    .ai-kw.new { color: var(--orange); background: #f0883e11; border-color: #f0883e44; }
+    .ai-kw.exists:hover { background: #58a6ff22; }
+    .ai-kw.new:hover { background: #f0883e22; }
+    .ai-kw.inserted { opacity: 0.4; cursor: default; text-decoration: line-through; }
 
-    .ai-section-title {
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: var(--purple);
-      margin-bottom: 8px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
+    .ai-summary { font-size: 13px; color: var(--subtle); line-height: 1.75; background: var(--surface); border-radius: 6px; padding: 10px 14px; border: 1px solid var(--border); margin-bottom: 14px; }
 
-    .ai-keywords {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-bottom: 14px;
-    }
+    .ai-related { display: flex; flex-direction: column; gap: 4px; }
 
-    .ai-kw {
-      padding: 3px 10px;
-      border-radius: 20px;
-      font-size: 12px;
-      cursor: pointer;
-      transition: all 0.15s;
-      border: 1px solid;
-    }
+    .ai-rel-item { padding: 6px 10px; border-radius: 6px; cursor: pointer; border: 1px solid var(--border); font-size: 12px; color: var(--blue); display: flex; align-items: center; gap: 6px; transition: all 0.15s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ai-rel-item:hover { background: var(--surface); border-color: var(--border2); }
 
-    .ai-kw.exists {
-      color: var(--blue);
-      background: #58a6ff11;
-      border-color: #58a6ff44;
-    }
-
-    .ai-kw.empty-node {
-      color: var(--muted);
-      background: transparent;
-      border-color: var(--border2);
-    }
-
-    .ai-kw.new {
-      color: var(--orange);
-      background: #f0883e11;
-      border-color: #f0883e44;
-    }
-
-    .ai-kw.exists:hover {
-      background: #58a6ff22;
-    }
-
-    .ai-kw.new:hover {
-      background: #f0883e22;
-    }
-
-    .ai-kw.inserted {
-      opacity: 0.4;
-      cursor: default;
-      text-decoration: line-through;
-    }
-
-    .ai-summary {
-      font-size: 13px;
-      color: var(--subtle);
-      line-height: 1.75;
-      background: var(--surface);
-      border-radius: 6px;
-      padding: 10px 14px;
-      border: 1px solid var(--border);
-      margin-bottom: 14px;
-    }
-
-    .ai-related {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-
-    .ai-rel-item {
-      padding: 6px 10px;
-      border-radius: 6px;
-      cursor: pointer;
-      border: 1px solid var(--border);
-      font-size: 12px;
-      color: var(--blue);
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      transition: all 0.15s;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .ai-rel-item:hover {
-      background: var(--surface);
-      border-color: var(--border2);
-    }
-
-    .ai-insert-all {
-      margin-top: 12px;
-      width: 100%;
-      padding: 7px;
-      background: #a371f711;
-      border: 1px solid #a371f744;
-      border-radius: 6px;
-      color: var(--purple);
-      font-size: 12px;
-      cursor: pointer;
-      font-family: inherit;
-      transition: all 0.15s;
-    }
-
-    .ai-insert-all:hover {
-      background: #a371f722;
-    }
+    .ai-insert-all { margin-top: 12px; width: 100%; padding: 7px; background: #a371f711; border: 1px solid #a371f744; border-radius: 6px; color: var(--purple); font-size: 12px; cursor: pointer; font-family: inherit; transition: all 0.15s; }
+    .ai-insert-all:hover { background: #a371f722; }
 
     /* ===== SETTINGS MODAL ===== */
-    #settings-modal {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: #00000080;
-      z-index: 200;
-      align-items: center;
-      justify-content: center;
-    }
+    #settings-modal { display: none; position: fixed; inset: 0; background: #00000080; z-index: 200; align-items: center; justify-content: center; }
+    #settings-modal.open { display: flex; }
 
-    #settings-modal.open {
-      display: flex;
-    }
+    .settings-box { background: var(--surface); border: 1px solid var(--border2); border-radius: 12px; padding: 24px; width: 360px; max-width: 90vw; }
+    .settings-title { font-size: 15px; font-weight: 700; color: var(--bright); margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+    .settings-desc { font-size: 12px; color: var(--subtle); margin-bottom: 16px; line-height: 1.6; }
+    .settings-label { font-size: 11px; color: var(--subtle); margin-bottom: 5px; font-weight: 600; }
 
-    .settings-box {
-      background: var(--surface);
-      border: 1px solid var(--border2);
-      border-radius: 12px;
-      padding: 24px;
-      width: 360px;
-      max-width: 90vw;
-    }
+    .settings-input { width: 100%; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border2); border-radius: 6px; color: var(--text); font-size: 13px; outline: none; font-family: 'JetBrains Mono', monospace; transition: border-color 0.15s; margin-bottom: 14px; }
+    .settings-input:focus { border-color: #a371f755; }
 
-    .settings-title {
-      font-size: 15px;
-      font-weight: 700;
-      color: var(--bright);
-      margin-bottom: 6px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
+    .settings-link { font-size: 11px; color: var(--blue); display: block; margin-bottom: 16px; text-decoration: none; }
+    .settings-link:hover { text-decoration: underline; }
 
-    .settings-desc {
-      font-size: 12px;
-      color: var(--subtle);
-      margin-bottom: 16px;
-      line-height: 1.6;
-    }
+    .settings-btns { display: flex; gap: 8px; justify-content: flex-end; }
+    .settings-cancel { padding: 7px 16px; background: transparent; border: 1px solid var(--border2); border-radius: 6px; color: var(--subtle); font-size: 12px; cursor: pointer; font-family: inherit; }
+    .settings-save { padding: 7px 16px; background: #a371f722; border: 1px solid #a371f744; border-radius: 6px; color: var(--purple); font-size: 12px; cursor: pointer; font-family: inherit; font-weight: 600; transition: all 0.15s; }
+    .settings-save:hover { background: #a371f733; }
 
-    .settings-label {
-      font-size: 11px;
-      color: var(--subtle);
-      margin-bottom: 5px;
-      font-weight: 600;
-    }
-
-    .settings-input {
-      width: 100%;
-      padding: 8px 12px;
-      background: var(--bg);
-      border: 1px solid var(--border2);
-      border-radius: 6px;
-      color: var(--text);
-      font-size: 13px;
-      outline: none;
-      font-family: 'JetBrains Mono', monospace;
-      transition: border-color 0.15s;
-      margin-bottom: 14px;
-    }
-
-    .settings-input:focus {
-      border-color: #a371f755;
-    }
-
-    .settings-link {
-      font-size: 11px;
-      color: var(--blue);
-      display: block;
-      margin-bottom: 16px;
-      text-decoration: none;
-    }
-
-    .settings-link:hover {
-      text-decoration: underline;
-    }
-
-    .settings-btns {
-      display: flex;
-      gap: 8px;
-      justify-content: flex-end;
-    }
-
-    .settings-cancel {
-      padding: 7px 16px;
-      background: transparent;
-      border: 1px solid var(--border2);
-      border-radius: 6px;
-      color: var(--subtle);
-      font-size: 12px;
-      cursor: pointer;
-      font-family: inherit;
-    }
-
-    .settings-save {
-      padding: 7px 16px;
-      background: #a371f722;
-      border: 1px solid #a371f744;
-      border-radius: 6px;
-      color: var(--purple);
-      font-size: 12px;
-      cursor: pointer;
-      font-family: inherit;
-      font-weight: 600;
-      transition: all 0.15s;
-    }
-
-    .settings-save:hover {
-      background: #a371f733;
-    }
-
-    .ai-btn {
-      padding: 5px 11px;
-      border-radius: 5px;
-      font-size: 12px;
-      cursor: pointer;
-      border: 1px solid #a371f744;
-      background: #a371f711;
-      color: var(--purple);
-      font-family: inherit;
-      transition: all 0.15s;
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      white-space: nowrap;
-    }
-
-    .ai-btn:hover {
-      background: #a371f722;
-      border-color: #a371f766;
-    }
-
-    .ai-btn.loading {
-      opacity: 0.6;
-      cursor: wait;
-    }
+    .ai-btn { padding: 5px 11px; border-radius: 5px; font-size: 12px; cursor: pointer; border: 1px solid #a371f744; background: #a371f711; color: var(--purple); font-family: inherit; transition: all 0.15s; flex-shrink: 0; display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+    .ai-btn:hover { background: #a371f722; border-color: #a371f766; }
+    .ai-btn.loading { opacity: 0.6; cursor: wait; }
 
     /* ===== GRAPH MODAL ===== */
-    #graph-modal {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: #0d1117;
-      z-index: 1000;
-      flex-direction: column;
-    }
-    #graph-modal.open {
-      display: flex;
-    }
-    .graph-header {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      padding: 12px 20px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      z-index: 10;
-      pointer-events: none;
-    }
-    .graph-header > * {
-      pointer-events: auto;
-    }
-    .graph-close {
-      background: #1c2128;
-      border: 1px solid var(--border2);
-      color: var(--text);
-      width: 32px;
-      height: 32px;
-      border-radius: 6px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      font-size: 16px;
-      transition: background 0.15s;
-    }
-    .graph-close:hover {
-      background: var(--border);
-    }
-    .graph-controls {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-    }
-    .graph-search {
-      padding: 6px 12px;
-      background: #1c2128;
-      border: 1px solid var(--border2);
-      border-radius: 6px;
-      color: var(--text);
-      font-size: 12px;
-      outline: none;
-      width: 180px;
-      transition: border-color 0.15s;
-    }
-    .graph-search:focus {
-      border-color: var(--blue);
-    }
-    .graph-btn {
-      padding: 6px 12px;
-      background: #1c2128;
-      border: 1px solid var(--border2);
-      border-radius: 6px;
-      color: var(--text);
-      font-size: 12px;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-    .graph-btn:hover {
-      background: var(--border);
-    }
-    
-    #graph-svg {
-      width: 100%;
-      height: 100%;
-      cursor: grab;
-    }
-    #graph-svg:active {
-      cursor: grabbing;
-    }
-    
-    /* SVG Elements */
-    .graph-node {
-      cursor: pointer;
-      stroke: #0d1117;
-      stroke-width: 1.5px;
-      transition: fill 0.2s;
-    }
-    .graph-link {
-      stroke-opacity: 0.6;
-      fill: none;
-    }
-    .graph-label {
-      font-size: 10px;
-      fill: #c9d1d9;
-      pointer-events: none;
-      text-shadow: 0 1px 2px #000, 1px 0 2px #000, -1px 0 2px #000, 0 -1px 2px #000;
-    }
-    
-    /* Hover Focus Effect */
+    #graph-modal { display: none; position: fixed; inset: 0; background: #0d1117; z-index: 1000; flex-direction: column; }
+    #graph-modal.open { display: flex; }
+
+    .graph-header { position: absolute; top: 0; left: 0; right: 0; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; z-index: 10; pointer-events: none; }
+    .graph-header > * { pointer-events: auto; }
+
+    .graph-close { background: #1c2128; border: 1px solid var(--border2); color: var(--text); width: 32px; height: 32px; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 16px; transition: background 0.15s; }
+    .graph-close:hover { background: var(--border); }
+
+    .graph-controls { display: flex; gap: 10px; align-items: center; }
+
+    .graph-search { padding: 6px 12px; background: #1c2128; border: 1px solid var(--border2); border-radius: 6px; color: var(--text); font-size: 12px; outline: none; width: 180px; transition: border-color 0.15s; }
+    .graph-search:focus { border-color: var(--blue); }
+
+    .graph-btn { padding: 6px 12px; background: #1c2128; border: 1px solid var(--border2); border-radius: 6px; color: var(--text); font-size: 12px; cursor: pointer; transition: background 0.15s; }
+    .graph-btn:hover { background: var(--border); }
+
+    #graph-svg { width: 100%; height: 100%; cursor: grab; }
+    #graph-svg:active { cursor: grabbing; }
+
+    .graph-node { cursor: pointer; stroke: #0d1117; stroke-width: 1.5px; transition: fill 0.2s; }
+    .graph-link { stroke-opacity: 0.6; fill: none; }
+    .graph-label { font-size: 10px; fill: #c9d1d9; pointer-events: none; text-shadow: 0 1px 2px #000, 1px 0 2px #000, -1px 0 2px #000, 0 -1px 2px #000; }
+
     .graph-container.focus-mode .graph-node,
     .graph-container.focus-mode .graph-link,
-    .graph-container.focus-mode .graph-label {
-      opacity: 0.15;
-    }
-    .graph-container.focus-mode .graph-node.focused {
-      opacity: 1;
-      stroke: var(--bright);
-    }
-    .graph-container.focus-mode .graph-link.focused {
-      opacity: 0.8;
-      stroke: var(--bright);
-    }
-    .graph-container.focus-mode .graph-label.focused {
-      opacity: 1;
-      fill: var(--bright);
-      font-weight: bold;
-    }
+    .graph-container.focus-mode .graph-label { opacity: 0.15; }
+    .graph-container.focus-mode .graph-node.focused { opacity: 1; stroke: var(--bright); }
+    .graph-container.focus-mode .graph-link.focused { opacity: 0.8; stroke: var(--bright); }
+    .graph-container.focus-mode .graph-label.focused { opacity: 1; fill: var(--bright); font-weight: bold; }
 
-    /* Popup */
-    #graph-popup {
-      position: absolute;
-      background: #161b22;
-      border: 1px solid var(--border2);
-      border-radius: 8px;
-      padding: 14px;
-      width: 240px;
-      color: var(--text);
-      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.2s;
-      z-index: 20;
-    }
-    #graph-popup.show {
-      opacity: 1;
-      pointer-events: auto;
-    }
-    .g-pop-title {
-      font-size: 13px;
-      font-weight: bold;
-      color: var(--bright);
-      margin-bottom: 6px;
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 4px;
-    }
-    .g-pop-desc {
-      font-size: 11px;
-      color: var(--subtle);
-      margin-bottom: 8px;
-      line-height: 1.4;
-      display: -webkit-box;
-      -webkit-line-clamp: 3;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-      white-space: normal;
-    }
-    .g-pop-links {
-      font-size: 10px;
-      color: var(--blue);
-      margin-bottom: 10px;
-    }
-    .g-pop-btn {
-      width: 100%;
-      padding: 6px;
-      background: #23863622;
-      border: 1px solid #23863644;
-      color: #7ee787;
-      border-radius: 4px;
-      font-size: 11px;
-      cursor: pointer;
-      text-align: center;
-    }
-    .g-pop-btn:hover {
-      background: #23863644;
-    }
+    #graph-popup { position: absolute; background: #161b22; border: 1px solid var(--border2); border-radius: 8px; padding: 14px; width: 240px; color: var(--text); box-shadow: 0 4px 16px rgba(0,0,0,0.5); pointer-events: none; opacity: 0; transition: opacity 0.2s; z-index: 20; }
+    #graph-popup.show { opacity: 1; pointer-events: auto; }
+
+    .g-pop-title { font-size: 13px; font-weight: bold; color: var(--bright); margin-bottom: 6px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+    .g-pop-desc { font-size: 11px; color: var(--subtle); margin-bottom: 8px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: normal; }
+    .g-pop-links { font-size: 10px; color: var(--blue); margin-bottom: 10px; }
+    .g-pop-btn { width: 100%; padding: 6px; background: #23863622; border: 1px solid #23863644; color: #7ee787; border-radius: 4px; font-size: 11px; cursor: pointer; text-align: center; font-family: inherit; }
+    .g-pop-btn:hover { background: #23863644; }
 
     /* ===== MOBILE ===== */
     @media (max-width: 680px) {
-      #sidebar {
-        position: fixed;
-        top: 0;
-        left: 0;
-        bottom: 0;
-        transform: translateX(-100%);
-        box-shadow: 4px 0 24px #00000060;
-      }
-
-      #sidebar.open {
-        transform: translateX(0);
-      }
-
-      #overlay {
-        display: none;
-        position: fixed;
-        inset: 0;
-        background: #00000060;
-        z-index: 99;
-      }
-
-      #overlay.show {
-        display: block;
-      }
-
-      .menu-btn {
-        display: block;
-      }
-
-      #backlinks-panel {
-        display: none;
-      }
-
-      textarea#editor {
-        padding: 20px 18px;
-        font-size: 14px;
-      }
-
-      #preview {
-        padding: 20px 18px;
-      }
-
-      .meta-bar {
-        padding: 4px 18px calc(4px + var(--safe-bot));
-        font-size: 10px;
-        gap: 10px;
-      }
+      #sidebar { position: fixed; top: 0; left: 0; bottom: 0; transform: translateX(-100%); box-shadow: 4px 0 24px #00000060; }
+      #sidebar.open { transform: translateX(0); }
+      #overlay { display: none; position: fixed; inset: 0; background: #00000060; z-index: 99; }
+      #overlay.show { display: block; }
+      .menu-btn { display: block; }
+      #backlinks-panel { display: none; }
+      textarea#editor { padding: 20px 18px; font-size: 14px; }
+      #preview { padding: 20px 18px; }
+      .meta-bar { padding: 4px 18px calc(4px + var(--safe-bot)); font-size: 10px; gap: 10px; }
     }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -1411,8 +655,7 @@
         キーワード抽出・要約・関連ノートの提案ができます。
       </div>
       <div class="settings-label">Gemini API キー</div>
-      <input class="settings-input" id="gemini-key-input" type="password" placeholder="AIzaSy..."
-        style="margin-bottom: 12px;" />
+      <input class="settings-input" id="gemini-key-input" type="password" placeholder="AIzaSy..." style="margin-bottom: 12px;" />
 
       <div class="settings-label">モデル選択</div>
       <select class="settings-input" id="gemini-model-input" style="margin-bottom: 12px;">
@@ -1476,6 +719,12 @@
       <textarea class="settings-input" id="prompt-import-keypoints-input" rows="3"
         style="font-family:'JetBrains Mono',monospace;font-size:11px;resize:vertical;"></textarea>
 
+      <!-- ▼ 追加: グラフレポートプロンプト ▼ -->
+      <div class="settings-label">グラフ レポート生成プロンプト（{notes_content} が選択ノート内容に置換されます）</div>
+      <textarea class="settings-input" id="prompt-report-input" rows="8"
+        style="font-family:'JetBrains Mono',monospace;font-size:11px;resize:vertical;"></textarea>
+      <!-- ▲ ここまで追加 ▲ -->
+
       <div class="settings-btns" style="margin-top:8px;">
         <button class="settings-cancel" onclick="resetPrompts()" style="color:var(--orange)">🔄 デフォルトに戻す</button>
         <button class="settings-cancel" onclick="closePromptSettings()">キャンセル</button>
@@ -1498,13 +747,12 @@
         <input class="settings-input" id="import-url-input" type="text"
           placeholder="GoogleドキュメントのURL（例: https://docs.google.com/...）" style="margin-bottom:4px;" />
         <div style="font-size:10px; color:var(--muted); margin-bottom:8px; padding:0 2px;">
-          ⚠️ GoogleドライブからGoogleドキュメントを選ぶ場合はURLの貼り付けをご利用ください。ファイル選択ではテキストを取得できません。
+          ⚠️ GoogleドライブからGoogleドキュメントを選ぶ場合はURLの貼り付けをご利用ください。
         </div>
         <div style="text-align:center; color:var(--muted); font-size:11px; margin-bottom:4px;">または ローカルファイルを選択</div>
         <input class="settings-input" id="import-file-input" type="file" accept=".pdf,.txt,.mhtml,.docx"
           style="margin-bottom:0; padding:6px; cursor:pointer;" />
-        <div style="font-size:10px; color:var(--muted); margin-top:4px; padding:0 2px;">対応形式: PDF / テキスト (.txt) / MHTML
-          (.mhtml) / Word (.docx)</div>
+        <div style="font-size:10px; color:var(--muted); margin-top:4px; padding:0 2px;">対応形式: PDF / テキスト (.txt) / MHTML (.mhtml) / Word (.docx)</div>
       </div>
       <div style="margin-bottom:12px;"></div>
 
@@ -1517,36 +765,25 @@
 
       <div style="display:flex; align-items:center; gap:8px; margin-bottom:20px;">
         <input type="checkbox" id="import-optimize-title" style="width:16px; height:16px; cursor:pointer;" checked />
-        <label for="import-optimize-title"
-          style="font-size:12px; color:var(--text); cursor:pointer;">AIでタイトルを最適化する</label>
+        <label for="import-optimize-title" style="font-size:12px; color:var(--text); cursor:pointer;">AIでタイトルを最適化する</label>
       </div>
 
-      <!-- ▼ 新しく追加されたスプレッドシート連携用UI ▼ -->
       <div class="settings-label" style="margin-top: 16px; border-top: 1px solid var(--border); padding-top: 16px;">
         3. スプレッドシートから選択して取り込み
       </div>
-      <!-- ↓↓↓ この1行を追加 ↓↓↓ -->
-      <input class="settings-input" id="import-sheet-url" type="text" placeholder="スプレッドシートのURLを貼り付け"
-        style="margin-bottom:8px;" />
-
-      <input class="settings-input" id="import-sheet-name" type="text" value="highlights" placeholder="シート名"
-        style="margin-bottom:8px;" />
-
+      <input class="settings-input" id="import-sheet-url" type="text" placeholder="スプレッドシートのURLを貼り付け" style="margin-bottom:8px;" />
+      <input class="settings-input" id="import-sheet-name" type="text" value="highlights" placeholder="シート名" style="margin-bottom:8px;" />
       <button class="settings-save" onclick="fetchSheetData()"
         style="width:100%; background:transparent; border-color:var(--border2); color:var(--text); margin-bottom: 8px;">
         未処理のデータ一覧を取得
       </button>
-
-      <!-- 選択リスト表示領域 -->
       <div id="sheet-preview-list"
         style="max-height:200px; overflow-y:auto; margin-bottom:12px; display:none; border:1px solid var(--border); border-radius:6px; padding:8px; background:var(--bg);">
       </div>
-
       <button id="sheet-import-btn" class="settings-save" onclick="importSelectedItems()"
         style="width:100%; background:#23863622; border-color:#23863644; color:#7ee787; margin-bottom: 20px; display:none;">
         選択した項目を取り込む
       </button>
-      <!-- ▲ ここまで ▲ -->
 
       <div class="settings-btns">
         <button class="settings-cancel" onclick="closeImportModal()">閉じる</button>
@@ -1569,7 +806,6 @@
     <div class="graph-header">
       <div class="graph-close" onclick="closeGraphModal()" title="閉じる">✕</div>
       <div class="graph-controls">
-        <!-- 表示モード切替 -->
         <div style="display:flex; background:#1c2128; border:1px solid var(--border2); border-radius:6px; padding:2px; margin-right:12px;">
           <button id="graph-mode-note" class="graph-btn" onclick="setGraphViewMode('note')" style="border:none; padding:4px 10px; font-size:10px;">ノート</button>
           <button id="graph-mode-folder" class="graph-btn" onclick="setGraphViewMode('folder')" style="border:none; padding:4px 10px; font-size:10px;">フォルダ</button>
@@ -1588,8 +824,11 @@
         <button class="graph-btn" onclick="resetGraphZoom()">全体表示</button>
       </div>
     </div>
+
     <div id="graph-container" class="graph-container" style="flex:1; position:relative; overflow:hidden;">
       <svg id="graph-svg"></svg>
+
+      <!-- ポップアップ -->
       <div id="graph-popup">
         <div class="g-pop-title" id="g-pop-title"></div>
         <div class="g-pop-links" id="g-pop-links"></div>
@@ -1599,11 +838,42 @@
           <div id="g-pop-ai-list" style="color:var(--subtle); line-height:1.3;"></div>
         </div>
         <button class="g-pop-btn" id="g-pop-btn" style="margin-top:10px;">このノートを開く</button>
+        <!-- ▼ 追加: レポート対象ボタン ▼ -->
+        <button id="g-pop-select-btn" style="margin-top:6px; width:100%; padding:6px; background:#a371f711; border:1px solid #a371f744; color:var(--purple); border-radius:4px; font-size:11px; cursor:pointer; font-family:inherit;">✦ レポート対象に追加</button>
+        <!-- ▲ ここまで追加 ▲ -->
       </div>
+
       <!-- AIツールチップ -->
       <div id="graph-ai-tooltip" style="position:absolute; background:var(--bg); border:1px solid var(--purple); border-radius:4px; padding:6px 10px; color:var(--text); font-size:10px; pointer-events:none; opacity:0; transition:opacity 0.2s; z-index:30; max-width:200px; box-shadow:0 4px 12px #000;"></div>
+
+      <!-- ▼ 追加: レポート選択パネル ▼ -->
+      <div id="graph-report-panel" style="position:absolute; bottom:20px; left:50%; transform:translateX(-50%); background:#161b22; border:1px solid var(--border2); border-radius:10px; padding:12px 16px; display:none; z-index:20; min-width:320px; max-width:500px; box-shadow:0 4px 16px rgba(0,0,0,0.6);">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+          <span style="font-size:11px; color:var(--purple); font-weight:700;">✦ レポート対象 (<span id="report-count">0</span>件)</span>
+          <button onclick="clearReportSelection()" style="background:none; border:none; color:var(--muted); cursor:pointer; font-size:12px; font-family:inherit;">クリア</button>
+        </div>
+        <div id="report-selected-list" style="font-size:11px; color:var(--subtle); margin-bottom:10px; max-height:80px; overflow-y:auto;"></div>
+        <button onclick="generateGraphReport()" id="graph-report-btn" style="width:100%; padding:8px; background:#a371f722; border:1px solid #a371f744; border-radius:6px; color:var(--purple); font-size:12px; cursor:pointer; font-family:inherit; font-weight:600;">✦ 選択したノートのレポートを生成</button>
+      </div>
+      <!-- ▲ ここまで追加 ▲ -->
     </div>
   </div>
+
+  <!-- ▼ 追加: レポート結果モーダル ▼ -->
+  <div id="report-result-modal" style="display:none; position:fixed; inset:0; background:#00000090; z-index:1100; align-items:center; justify-content:center;">
+    <div style="background:var(--surface); border:1px solid var(--border2); border-radius:12px; padding:24px; width:720px; max-width:95vw; max-height:85vh; display:flex; flex-direction:column;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <div style="font-size:15px; font-weight:700; color:var(--bright);">✦ AI生成レポート</div>
+        <button onclick="closeReportModal()" style="background:none; border:none; color:var(--muted); font-size:22px; cursor:pointer; line-height:1;">×</button>
+      </div>
+      <div id="report-result-content" style="flex:1; overflow-y:auto; font-size:13px; color:var(--text); line-height:1.85; white-space:pre-wrap; background:var(--bg); border-radius:6px; padding:16px 20px; border:1px solid var(--border);"></div>
+      <div style="display:flex; gap:8px; margin-top:16px; justify-content:flex-end;">
+        <button onclick="saveReportAsNote()" style="padding:8px 18px; background:#23863622; border:1px solid #23863644; border-radius:6px; color:#7ee787; font-size:12px; cursor:pointer; font-family:inherit;">ノートとして保存</button>
+        <button onclick="closeReportModal()" style="padding:8px 18px; background:transparent; border:1px solid var(--border2); border-radius:6px; color:var(--subtle); font-size:12px; cursor:pointer; font-family:inherit;">閉じる</button>
+      </div>
+    </div>
+  </div>
+  <!-- ▲ ここまで追加 ▲ -->
 
   <!-- ===== APP ===== -->
   <div id="app">
@@ -1618,14 +888,13 @@
         </div>
         <div style="display:flex; gap:6px;">
           <button class="new-btn" onclick="createNote()" style="flex:1; width:auto;">＋ 新規ノート</button>
-          <button class="new-btn" onclick="openImportModal()" style="flex:none; width:auto; padding:8px 10px;"
-            title="取り込み">📥</button>
+          <button class="new-btn" onclick="openImportModal()" style="flex:none; width:auto; padding:8px 10px;" title="取り込み">📥</button>
         </div>
       </div>
 
       <div class="search-wrap" style="display:flex; gap:6px;">
         <input class="search-box" id="search-box" placeholder="ノートを検索..." oninput="renderList()" style="flex:1;" />
-        <button id="ai-organize-btn" class="new-btn" onclick="autoOrganizeWithAI()" title="AIでフォルダを自動整理" 
+        <button id="ai-organize-btn" class="new-btn" onclick="autoOrganizeWithAI()" title="AIでフォルダを自動整理"
           style="flex:none; width:auto; padding:0 8px; font-size:10px; background:#a371f711; border-color:#a371f733; color:var(--purple);">✦ 整理</button>
       </div>
 
@@ -1637,15 +906,13 @@
           <button class="export-btn" onclick="downloadCurrentMd()"><span class="ico">↓</span> このノート (.md)</button>
           <button class="export-btn" onclick="downloadAllMd()"><span class="ico">↓</span> 全ノート (.md)</button>
           <button class="export-btn" onclick="downloadJSON()"><span class="ico">↓</span> バックアップ (.json)</button>
-          <button class="export-btn" onclick="syncFromServer()" style="margin-top:4px"><span class="ico"
-              style="color:var(--blue)">↻</span> 今すぐ同期</button>
+          <button class="export-btn" onclick="syncFromServer()" style="margin-top:4px"><span class="ico" style="color:var(--blue)">↻</span> 今すぐ同期</button>
         </div>
       </div>
     </div>
 
     <!-- MAIN -->
     <div id="main">
-      <!-- NOTE EDITOR -->
       <div id="editor-view" style="display:flex;flex-direction:column;height:100%;overflow:hidden;">
         <div class="toolbar">
           <button class="menu-btn" onclick="openSidebar()">☰</button>
@@ -1656,7 +923,7 @@
             </div>
             <div style="display:flex; align-items:center; gap:4px; width:100%; padding-left:2px;">
               <span style="font-size:10px; color:var(--muted);">📁</span>
-              <input id="folder-input" placeholder="フォルダ名 (空欄で未分類)" 
+              <input id="folder-input" placeholder="フォルダ名 (空欄で未分類)"
                 style="background:transparent; border:none; color:var(--muted); font-size:11px; outline:none; width:100%;"
                 oninput="onFolderChange()" />
             </div>
@@ -1680,7 +947,6 @@
           <div id="backlinks-panel"></div>
         </div>
 
-        <!-- AI PANEL -->
         <div id="ai-panel">
           <div class="ai-panel-inner" id="ai-panel-inner"></div>
         </div>
@@ -1692,7 +958,6 @@
         </div>
       </div>
 
-      <!-- EMPTY STATE -->
       <div id="empty">
         <div class="empty-ico">◈</div>
         <div class="empty-txt">ノートを選択してください</div>
@@ -1703,16 +968,16 @@
 
   <script>
     // ============================================================
-    //  CONFIG  ← ここにApps ScriptのデプロイURLを貼り付けてください
+    //  CONFIG
     // ============================================================
-    const API_URL = "https://script.google.com/macros/s/AKfycbyTMMamBJxmxEPD3P-j57Hj4Wi1lbhB5iJa10uDRgRHrFW4qj3SjOgRvesaT57BS_bp/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbx5fcOAPilGIYI9fgSvNZwF0ADILZt9s1Wrf-itQ6kdeJVa1y7JMGyJjoRXgNoPGpg/exec";
 
     // ============================================================
     //  STATE
     // ============================================================
     let notes = [];
     let activeId = null;
-    let mode = "edit";  // "edit" | "preview"
+    let mode = "edit";
     let saveTimer = null;
     let isDirty = false;
 
@@ -1729,7 +994,7 @@
       const res = await fetch(API_URL, {
         method: "POST",
         mode: "cors",
-        headers: { "Content-Type": "text/plain" }, // Apps Script CORS workaround
+        headers: { "Content-Type": "text/plain" },
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1743,13 +1008,13 @@
     }
 
     // ============================================================
-    //  STORAGE (IndexedDB fallback for offline)
+    //  STORAGE
     // ============================================================
     const LS_KEY = "cn_notes_cache";
 
     function saveLocal() {
-      try { 
-        localStorage.setItem(LS_KEY, JSON.stringify({ notes, activeId })); 
+      try {
+        localStorage.setItem(LS_KEY, JSON.stringify({ notes, activeId }));
         localStorage.setItem(CN_FOLDER_RELATIONS_AI, JSON.stringify(folderRelationsAI));
         localStorage.setItem(CN_LAST_GRAPH_AI_TIME, lastGraphAiTime.toString());
       } catch { }
@@ -1759,10 +1024,8 @@
       try {
         const d = JSON.parse(localStorage.getItem(LS_KEY));
         if (d && d.notes) { notes = d.notes; activeId = d.activeId || null; }
-        
         const fr = localStorage.getItem(CN_FOLDER_RELATIONS_AI);
         if (fr) folderRelationsAI = JSON.parse(fr);
-        
         const lt = localStorage.getItem(CN_LAST_GRAPH_AI_TIME);
         if (lt) lastGraphAiTime = parseInt(lt, 10) || 0;
       } catch { }
@@ -1772,16 +1035,11 @@
     //  SYNC
     // ============================================================
     async function syncFromServer() {
-      if (!API_URL || API_URL.includes("YOUR_")) {
-        setSyncStatus("offline", "API未設定");
-        return;
-      }
+      if (!API_URL || API_URL.includes("YOUR_")) { setSyncStatus("offline", "API未設定"); return; }
       setSyncStatus("syncing", "同期中...");
       try {
         const data = await apiGet("getNotes");
-        if (data.error) {
-          throw new Error(data.error);
-        }
+        if (data.error) throw new Error(data.error);
         if (data.notes) {
           notes = data.notes;
           saveLocal();
@@ -1811,9 +1069,7 @@
 
     async function pushDelete(id) {
       if (!API_URL || API_URL.includes("YOUR_")) return;
-      try {
-        await apiPost({ action: "deleteNote", id });
-      } catch { }
+      try { await apiPost({ action: "deleteNote", id }); } catch { }
     }
 
     // ============================================================
@@ -1858,8 +1114,8 @@
       renderEditor();
       renderList();
       closeSidebar();
-      setMode("preview"); // ★ ノートを開いた時はプレビューモードをデフォルトにする
-      document.getElementById("ai-panel").classList.remove("open"); // ★ 別のノートを開いたらAIパネルを閉じる（ポップダウン）
+      setMode("preview");
+      document.getElementById("ai-panel").classList.remove("open");
     }
 
     function getNote(id) { return notes.find(n => n.id === id); }
@@ -1892,21 +1148,17 @@
       const note = getActive();
       if (!note) return;
       const newFolder = document.getElementById("folder-input").value.trim();
-      
-      // keywords内の既存の[folder:...]を置換または追加
       let kws = note.keywords || "";
       if (kws.includes("[folder:")) {
         if (newFolder) {
           kws = kws.replace(/\[folder:(.+?)\]/, `[folder:${newFolder}]`);
         } else {
           kws = kws.replace(/\[folder:(.+?)\]/, "").trim();
-          // 余分なカンマを掃除
           kws = kws.replace(/^,\s*/, "").replace(/,\s*$/, "").replace(/,\s*,/g, ",");
         }
       } else if (newFolder) {
         kws = kws ? `${kws}, [folder:${newFolder}]` : `[folder:${newFolder}]`;
       }
-      
       note.keywords = kws;
       note.updatedAt = Date.now();
       isDirty = true;
@@ -1953,13 +1205,9 @@
     }
 
     function renameFolder(oldName) {
-      if (oldName === "未分類") {
-        toast("「未分類」はシステム用のため変更できません");
-        return;
-      }
+      if (oldName === "未分類") { toast("「未分類」はシステム用のため変更できません"); return; }
       const newName = prompt(`フォルダ名「${oldName}」を変更:`, oldName);
       if (!newName || newName === oldName) return;
-      
       let updatedCount = 0;
       notes.forEach(n => {
         const f = getFolder(n);
@@ -1969,13 +1217,9 @@
           updatedCount++;
         }
       });
-      
       if (updatedCount > 0) {
         saveLocal();
-        apiPost({ action: "saveAll", notes: notes }).then(() => {
-          toast("フォルダ名を変更しました");
-        }).catch(e => toast("保存エラー: " + e.message));
-        
+        apiPost({ action: "saveAll", notes: notes }).then(() => { toast("フォルダ名を変更しました"); }).catch(e => toast("保存エラー: " + e.message));
         if (collapsedFolders[oldName]) {
           collapsedFolders[newName] = true;
           delete collapsedFolders[oldName];
@@ -1989,68 +1233,42 @@
       const query = document.getElementById("search-box").value.toLowerCase();
       const list = document.getElementById("notes-list");
       const filtered = notes.filter(n =>
-        n.title.toLowerCase().includes(query) || 
+        n.title.toLowerCase().includes(query) ||
         n.content.toLowerCase().includes(query) ||
         getFolder(n).toLowerCase().includes(query)
       );
-      
       const uniqueNotes = [];
       const seenIds = new Set();
-      filtered.forEach(n => {
-        if (!seenIds.has(n.id)) {
-          seenIds.add(n.id);
-          uniqueNotes.push(n);
-        }
-      });
-
-      // フォルダごとにグループ化
+      filtered.forEach(n => { if (!seenIds.has(n.id)) { seenIds.add(n.id); uniqueNotes.push(n); } });
       const folders = {};
-      uniqueNotes.forEach(n => {
-        const f = getFolder(n);
-        if (!folders[f]) folders[f] = [];
-        folders[f].push(n);
-      });
-
-      // フォルダ名のソート（"未分類"は一番下、それ以外は降順(新しい日付順)がおすすめだが、アルファベット順にする）
+      uniqueNotes.forEach(n => { const f = getFolder(n); if (!folders[f]) folders[f] = []; folders[f].push(n); });
       const sortedFolders = Object.keys(folders).sort((a, b) => {
         if (a === "未分類") return 1;
         if (b === "未分類") return -1;
-        return b.localeCompare(a); // 降順（新しい日付が上）
+        return b.localeCompare(a);
       });
-
       list.innerHTML = sortedFolders.map(folderName => {
         const fNotes = folders[folderName];
         const isCollapsed = collapsedFolders[folderName];
-        
-        // フォルダ内のノートHTML
         const notesHtml = fNotes.map(n => {
           const isEmpty = isNoteEmpty(n);
-          return `
-            <div class="note-item ${n.id === activeId ? "active" : ""}" onclick="selectNote('${n.id}')">
-              <span class="note-icon">${isEmpty ? '◇' : '◈'}</span>
-              <span class="note-title" style="${isEmpty ? 'color: var(--muted);' : ''}">${esc(n.title)}</span>
-              <button class="del-btn" onclick="event.stopPropagation();deleteNote('${n.id}')" title="削除">×</button>
-            </div>
-          `;
+          return `<div class="note-item ${n.id === activeId ? "active" : ""}" onclick="selectNote('${n.id}')">
+            <span class="note-icon">${isEmpty ? '◇' : '◈'}</span>
+            <span class="note-title" style="${isEmpty ? 'color: var(--muted);' : ''}">${esc(n.title)}</span>
+            <button class="del-btn" onclick="event.stopPropagation();deleteNote('${n.id}')" title="削除">×</button>
+          </div>`;
         }).join("");
-
-        // フォルダヘッダーHTML
         const isUncategorized = folderName === "未分類";
         const renameBtnHtml = isUncategorized ? "" : `<button class="folder-menu-btn" onclick="event.stopPropagation();renameFolder('${esc(folderName)}')">✎</button>`;
-        
-        return `
-          <div class="folder-group">
-            <div class="folder-header ${isCollapsed ? 'collapsed' : ''}" onclick="toggleFolder('${esc(folderName)}')">
-              <span class="folder-icon">▼</span>
-              <span class="folder-title">${esc(folderName)}</span>
-              <span style="color:var(--muted); font-size:10px; font-weight:normal;">${fNotes.length}</span>
-              ${renameBtnHtml}
-            </div>
-            <div class="folder-content ${isCollapsed ? 'collapsed' : ''}">
-              ${notesHtml}
-            </div>
+        return `<div class="folder-group">
+          <div class="folder-header ${isCollapsed ? 'collapsed' : ''}" onclick="toggleFolder('${esc(folderName)}')">
+            <span class="folder-icon">▼</span>
+            <span class="folder-title">${esc(folderName)}</span>
+            <span style="color:var(--muted); font-size:10px; font-weight:normal;">${fNotes.length}</span>
+            ${renameBtnHtml}
           </div>
-        `;
+          <div class="folder-content ${isCollapsed ? 'collapsed' : ''}">${notesHtml}</div>
+        </div>`;
       }).join("");
     }
 
@@ -2058,20 +1276,12 @@
       const note = getActive();
       const editorView = document.getElementById("editor-view");
       const emptyEl = document.getElementById("empty");
-
-      if (!note) {
-        editorView.style.display = "none";
-        emptyEl.style.display = "flex";
-        return;
-      }
-
+      if (!note) { editorView.style.display = "none"; emptyEl.style.display = "flex"; return; }
       editorView.style.display = "flex";
       emptyEl.style.display = "none";
-
       document.getElementById("title-input").value = note.title;
       document.getElementById("editor").value = note.content;
       document.getElementById("folder-input").value = getFolder(note) === "未分類" ? "" : getFolder(note);
-
       renderPreview();
       renderBacklinks();
       updateMeta();
@@ -2087,34 +1297,28 @@
       const note = getActive();
       if (!note) return;
       const panel = document.getElementById("backlinks-panel");
-
       const backlinks = notes.filter(n => n.id !== note.id && extractLinks(n.content).includes(note.title));
       const outlinks = extractLinks(note.content);
-
       let html = `<div class="panel-label">バックリンク (${backlinks.length})</div>`;
       if (backlinks.length === 0) {
         html += `<div class="no-bl">リンクなし</div>`;
       } else {
-        html += backlinks.map(n => `
-      <div class="bl-item" onclick="selectNote('${n.id}')">
-        <div class="bl-name">◈ ${esc(n.title)}</div>
-        <div class="bl-preview">${esc(n.content.slice(0, 80))}...</div>
-      </div>
-    `).join("");
+        html += backlinks.map(n => `<div class="bl-item" onclick="selectNote('${n.id}')">
+          <div class="bl-name">◈ ${esc(n.title)}</div>
+          <div class="bl-preview">${esc(n.content.slice(0, 80))}...</div>
+        </div>`).join("");
       }
-
       if (outlinks.length > 0) {
         html += `<div class="panel-label" style="margin-top:16px">リンク先 (${outlinks.length})</div>`;
         html += outlinks.map(t => {
           const exists = notes.find(n => n.title === t);
           const isEmpty = exists ? isNoteEmpty(exists) : false;
           return `<div class="ol-item" onclick="handleWikiLink('${esc(t)}')">
-        <span>→</span><span style="${isEmpty ? 'color:var(--muted)' : ''}">${esc(t)}</span>
-        ${!exists ? `<span class="ol-new">新規</span>` : ""}
-      </div>`;
+            <span>→</span><span style="${isEmpty ? 'color:var(--muted)' : ''}">${esc(t)}</span>
+            ${!exists ? `<span class="ol-new">新規</span>` : ""}
+          </div>`;
         }).join("");
       }
-
       panel.innerHTML = html;
     }
 
@@ -2137,19 +1341,12 @@
       const preview = document.getElementById("preview");
       const btnE = document.getElementById("btn-edit");
       const btnP = document.getElementById("btn-preview");
-
       if (m === "edit") {
-        editor.style.display = "block";
-        preview.style.display = "none";
-        btnE.classList.add("on");
-        btnP.classList.remove("on");
-        editor.focus();
+        editor.style.display = "block"; preview.style.display = "none";
+        btnE.classList.add("on"); btnP.classList.remove("on"); editor.focus();
       } else {
-        renderPreview();
-        editor.style.display = "none";
-        preview.style.display = "block";
-        btnP.classList.add("on");
-        btnE.classList.remove("on");
+        renderPreview(); editor.style.display = "none"; preview.style.display = "block";
+        btnP.classList.add("on"); btnE.classList.remove("on");
       }
     }
 
@@ -2168,7 +1365,6 @@
     window.handleWikiLink = handleWikiLink;
 
     function renderInline(text) {
-      // [[links]]
       text = text.replace(/\[\[([^\]]+)\]\]/g, (_, t) => {
         const target = notes.find(n => n.title === t);
         const exists = !!target;
@@ -2177,9 +1373,7 @@
         if (isEmpty) cls = "empty-node";
         return `<span class="wiki-link ${cls}" onclick="handleWikiLink('${esc(t)}')">${esc(t)}</span>`;
       });
-      // **bold**
       text = text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-      // `code`
       text = text.replace(/`(.+?)`/g, "<code>$1</code>");
       return text;
     }
@@ -2264,6 +1458,7 @@
       ANALYZE: "cn_prompt_analyze",
       IMPORT_SUMMARIZE: "cn_prompt_import_summarize",
       IMPORT_KEYPOINTS: "cn_prompt_import_keypoints",
+      REPORT: "cn_prompt_report",  // ← 追加
     };
 
     const DEFAULT_PROMPTS = {
@@ -2271,6 +1466,23 @@
       ANALYZE: `あなたはナレッジベース管理AIです。以下のメモを分析してください。\n\n## メモ内容\nタイトル: {title}\n本文:\n{content}\n\n## 既存ノートのタイトル一覧（関連チェック用）\n{existingTitles}\n\n## 出力形式（必ずこのJSON形式のみで返してください）\n{\n  "keywords": ["キーワード1", "キーワード2", "キーワード3", "キーワード4", "キーワード5"],\n  "summary": "このメモの要点を2〜3文で日本語でまとめてください",\n  "related_notes": ["既存ノートタイトル1", "既存ノートタイトル2"],\n  "new_keywords": ["新規に作成すべきキーワード1", "新規に作成すべきキーワード2"]\n}\n\n## 指示\n- keywordsは固有名詞・概念・テーマを5〜8個抽出（名詞のみ）\n- related_notesは既存ノートの中から関連するものだけ（なければ空配列）\n- new_keywordsはkeywordsの中でまだ既存ノートにないもの\n- JSONのみ返す。マークダウンのコードブロック不要`,
       IMPORT_SUMMARIZE: `以下の文章を分かりやすく要約してください。\n\n{content}`,
       IMPORT_KEYPOINTS: `以下の文章から重要なキーポイントを箇条書きで抽出してください。\n\n{content}`,
+      // ▼ 追加: グラフレポートデフォルトプロンプト ▼
+      REPORT: `あなたは優秀な情報アナリストです。以下の複数のノートを総合的に読み込み、日本語でレポートを作成してください。
+
+## 対象ノート
+{notes_content}
+
+## レポートの構成
+1. **概要**: 選択されたノート群の共通テーマや関係性を2〜3文でまとめる
+2. **主要な洞察**: 各ノートから得られる重要な知見を箇条書きで列挙
+3. **ノート間の関連性**: つながりや共通点・相違点を分析
+4. **まとめと次のアクション**: 全体から導かれる結論と今後の行動提案
+
+## 注意事項
+- 読みやすく実用的なレポートにしてください
+- 各ノートの内容を公平に反映してください
+- 専門用語はそのまま使用し、必要に応じて簡単な説明を加えてください`,
+      // ▲ ここまで追加 ▲
     };
 
     function getPrompt(key) {
@@ -2282,6 +1494,7 @@
       document.getElementById("prompt-analyze-input").value = getPrompt("ANALYZE");
       document.getElementById("prompt-import-summarize-input").value = getPrompt("IMPORT_SUMMARIZE");
       document.getElementById("prompt-import-keypoints-input").value = getPrompt("IMPORT_KEYPOINTS");
+      document.getElementById("prompt-report-input").value = getPrompt("REPORT"); // ← 追加
       document.getElementById("prompt-settings-modal").style.display = "flex";
       closeSettings();
     }
@@ -2295,6 +1508,7 @@
       localStorage.setItem(PK.ANALYZE, document.getElementById("prompt-analyze-input").value);
       localStorage.setItem(PK.IMPORT_SUMMARIZE, document.getElementById("prompt-import-summarize-input").value);
       localStorage.setItem(PK.IMPORT_KEYPOINTS, document.getElementById("prompt-import-keypoints-input").value);
+      localStorage.setItem(PK.REPORT, document.getElementById("prompt-report-input").value); // ← 追加
       toast("プロンプト設定を保存しました ✦");
       closePromptSettings();
     }
@@ -2323,17 +1537,13 @@
     function openSettings() {
       const key = localStorage.getItem(GEMINI_KEY_LS) || "";
       document.getElementById("gemini-key-input").value = key;
-
       document.getElementById("gemini-model-input").value = localStorage.getItem(GEMINI_MODEL_LS) || "gemini-2.0-flash";
-
       const temp = localStorage.getItem(GEMINI_TEMP_LS) || "0.1";
       document.getElementById("gemini-temp-slider").value = temp;
       document.getElementById("gemini-temp-val").textContent = temp;
-
       const tokens = localStorage.getItem(GEMINI_TOKENS_LS) || "1024";
       document.getElementById("gemini-tokens-slider").value = tokens;
       document.getElementById("gemini-tokens-val").textContent = tokens;
-
       document.getElementById("settings-modal").classList.add("open");
     }
 
@@ -2343,21 +1553,14 @@
 
     function saveSettings() {
       const key = document.getElementById("gemini-key-input").value.trim();
-      if (key) {
-        localStorage.setItem(GEMINI_KEY_LS, key);
-      } else {
-        localStorage.removeItem(GEMINI_KEY_LS);
-      }
-
+      if (key) { localStorage.setItem(GEMINI_KEY_LS, key); } else { localStorage.removeItem(GEMINI_KEY_LS); }
       localStorage.setItem(GEMINI_MODEL_LS, document.getElementById("gemini-model-input").value);
       localStorage.setItem(GEMINI_TEMP_LS, document.getElementById("gemini-temp-slider").value);
       localStorage.setItem(GEMINI_TOKENS_LS, document.getElementById("gemini-tokens-slider").value);
-
       toast("AI設定を保存しました ✦");
       closeSettings();
     }
 
-    // モーダル外クリックで閉じる
     document.getElementById("settings-modal").addEventListener("click", function (e) {
       if (e.target === this) closeSettings();
     });
@@ -2365,46 +1568,28 @@
     // ============================================================
     //  GEMINI AI INTEGRATION
     // ============================================================
-    let aiResults = null; // { keywords, summary, related }
+    let aiResults = null;
 
     async function optimizeTitleWithAI() {
       const note = getActive();
       if (!note) return;
       if (note.content.trim().length < 10) { toast("本文が短すぎてタイトルを生成できません"); return; }
-
       const apiKey = localStorage.getItem(GEMINI_KEY_LS);
-      if (!apiKey) {
-        toast("まずAPIキーを設定してください ⚙");
-        openSettings();
-        return;
-      }
-
+      if (!apiKey) { toast("まずAPIキーを設定してください ⚙"); openSettings(); return; }
       const btn = document.getElementById("ai-title-btn");
       btn.classList.add("loading");
-
       try {
         const model = localStorage.getItem(GEMINI_MODEL_LS) || "gemini-2.0-flash";
         const promptTemplate = getPrompt("TITLE");
         const prompt = promptTemplate.replace("{content}", note.content.substring(0, 3000));
-
         const res = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: { temperature: 0.7, maxOutputTokens: 60 }
-            })
-          }
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 60 } }) }
         );
-
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         let newTitle = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-
         if (newTitle) {
-          // 余計な装飾を削る
           newTitle = newTitle.replace(/^#\s*/, "").replace(/[\"\'「」]/g, "").trim();
           document.getElementById("title-input").value = newTitle;
           note.title = newTitle;
@@ -2425,24 +1610,14 @@
       const note = getActive();
       if (!note) { toast("ノートを選択してください"); return; }
       if (note.content.trim().length < 20) { toast("内容が短すぎます"); return; }
-
       const apiKey = localStorage.getItem(GEMINI_KEY_LS);
-      if (!apiKey) {
-        toast("まずAPIキーを設定してください ⚙");
-        openSettings();
-        return;
-      }
+      if (!apiKey) { toast("まずAPIキーを設定してください ⚙"); openSettings(); return; }
 
       const btn = document.getElementById("ai-analyze-btn");
       btn.classList.add("loading");
       btn.textContent = "✦ 解析中...";
 
-      // 既存ノートのタイトル一覧（関連提案用）
-      const existingTitles = notes
-        .filter(n => n.id !== note.id)
-        .map(n => n.title)
-        .join("、");
-
+      const existingTitles = notes.filter(n => n.id !== note.id).map(n => n.title).join("、");
       const prompt = `
 あなたはナレッジベース管理AIです。以下のメモを分析してください。
 
@@ -2473,47 +1648,31 @@ ${existingTitles || "（まだノートがありません）"}
         const model = localStorage.getItem(GEMINI_MODEL_LS) || "gemini-2.0-flash";
         const temp = parseFloat(localStorage.getItem(GEMINI_TEMP_LS) || "0.1");
         const maxTokens = parseInt(localStorage.getItem(GEMINI_TOKENS_LS) || "1024", 10);
-
         const res = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: { temperature: temp, maxOutputTokens: maxTokens }
-            })
-          }
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: temp, maxOutputTokens: maxTokens } }) }
         );
-
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.error?.message || `HTTP ${res.status}`);
-        }
-
+        if (!res.ok) { const err = await res.json(); throw new Error(err.error?.message || `HTTP ${res.status}`); }
         const data = await res.json();
         const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
-        // JSON抽出（```json ... ``` が付いてくることがある）
         const jsonStr = raw.replace(/```json|```/g, "").trim();
         aiResults = JSON.parse(jsonStr);
 
-        // ノートオブジェクトに保存
-        // 変更後
+        // ▼ 修正: フォルダタグを保持したままkeywordsを更新 ▼
         note.summary = aiResults.summary || "";
         const currentFolder = getFolder(note);
         const newKeywords = (aiResults.keywords || []).join(", ");
         note.keywords = currentFolder !== "未分類"
           ? `${newKeywords}, [folder:${currentFolder}]`
           : newKeywords;
+        // ▲ ここまで修正 ▲
+
         note.updatedAt = Date.now();
         saveLocal();
         scheduleSave();
-
         renderAiPanel(aiResults);
         document.getElementById("ai-panel").classList.add("open");
         toast("AI解析が完了しました ✦");
-
       } catch (e) {
         toast("エラー: " + e.message);
         console.error(e);
@@ -2524,26 +1683,20 @@ ${existingTitles || "（まだノートがありません）"}
     }
 
     function renderAiPanel(result) {
-      const existingKws = (result.keywords || []).filter(k =>
-        notes.some(n => n.title === k)
-      );
+      const existingKws = (result.keywords || []).filter(k => notes.some(n => n.title === k));
       const newKws = result.new_keywords || [];
       const allKws = [...new Set([...existingKws, ...newKws])];
 
-      let html = `
-        <div style="text-align: right; margin-bottom: -10px; margin-top: -5px;">
-          <button onclick="document.getElementById('ai-panel').classList.remove('open')" style="background:none; border:none; color:var(--muted); font-size:20px; cursor:pointer; padding:0 8px;" title="閉じる">×</button>
-        </div>
-      `;
+      let html = `<div style="text-align: right; margin-bottom: -10px; margin-top: -5px;">
+        <button onclick="document.getElementById('ai-panel').classList.remove('open')" style="background:none; border:none; color:var(--muted); font-size:20px; cursor:pointer; padding:0 8px;" title="閉じる">×</button>
+      </div>`;
 
-      // 要約
       if (result.summary) {
         html += `<div class="ai-section-title">✦ AI要約</div>`;
         html += `<div class="ai-summary">${esc(result.summary)}</div>`;
         html += `<button class="ai-insert-all" onclick="insertSummary()" style="margin-top:0; margin-bottom:12px; background:#58a6ff11; border-color:#58a6ff44; color:var(--blue)">✦ 要約をノートの先頭に挿入</button>`;
       }
 
-      // キーワード
       if (allKws.length > 0) {
         html += `<div class="ai-section-title">✦ 抽出キーワード <span style="color:var(--muted);font-size:9px;letter-spacing:0">（クリックでリンク挿入）</span></div>`;
         html += `<div class="ai-keywords">`;
@@ -2551,15 +1704,14 @@ ${existingTitles || "（まだノートがありません）"}
           const isExist = notes.some(n => n.title === kw);
           const alreadyLinked = getActive()?.content.includes(`[[${kw}]]`);
           html += `<span class="ai-kw ${isExist ? "exists" : "new"} ${alreadyLinked ? "inserted" : ""}"
-        onclick="insertKeyword('${esc(kw)}')"
-        title="${isExist ? "既存ノートへリンク" : "新規ノートとしてリンク"}"
-      >[[${esc(kw)}]]</span>`;
+            onclick="insertKeyword('${esc(kw)}')"
+            title="${isExist ? "既存ノートへリンク" : "新規ノートとしてリンク"}"
+          >[[${esc(kw)}]]</span>`;
         });
         html += `</div>`;
         html += `<button class="ai-insert-all" onclick="insertAllKeywords()">✦ まとめて全てのキーワードを挿入</button>`;
       }
 
-      // 関連ノート
       if (result.related_notes?.length > 0) {
         html += `<div class="ai-section-title" style="margin-top:14px">✦ 関連ノート</div>`;
         html += `<div class="ai-related">`;
@@ -2568,15 +1720,14 @@ ${existingTitles || "（まだノートがありません）"}
           if (n) {
             const isEmpty = isNoteEmpty(n);
             html += `<div class="ai-rel-item" onclick="selectNote('${n.id}')" style="${isEmpty ? 'color:var(--muted)' : ''}">
-          <span>${isEmpty ? '◇' : '◈'}</span><span>${esc(title)}</span>
-        </div>`;
+              <span>${isEmpty ? '◇' : '◈'}</span><span>${esc(title)}</span>
+            </div>`;
           }
         });
         html += `</div>`;
         html += `<button class="ai-insert-all" onclick="insertRelatedNotes()" style="background:#58a6ff11; border-color:#58a6ff44; color:var(--blue)">✦ 関連ノートを本文の末尾に追記</button>`;
       }
 
-      // ソースリンク
       const note = getActive();
       if (note && note.sourceUrl) {
         html += `<div class="ai-section-title" style="margin-top:14px">✦ ソース元</div>`;
@@ -2595,11 +1746,7 @@ ${existingTitles || "（まだノートがありません）"}
     function insertKeyword(kw) {
       const note = getActive();
       if (!note) return;
-      if (note.content.includes(`[[${kw}]]`)) {
-        toast(`[[${kw}]] は既に挿入済みです`);
-        return;
-      }
-      // ## キーワード セクションがあればそこに追加、なければ末尾に追加
+      if (note.content.includes(`[[${kw}]]`)) { toast(`[[${kw}]] は既に挿入済みです`); return; }
       let content = note.content;
       if (content.includes("## キーワード")) {
         content = content.replace("## キーワード", `## キーワード\n- [[${kw}]]`);
@@ -2609,24 +1756,17 @@ ${existingTitles || "（まだノートがありません）"}
       note.content = content;
       note.updatedAt = Date.now();
       document.getElementById("editor").value = content;
-      saveLocal();
-      scheduleSave();
-      renderBacklinks();
-      updateMeta();
-      if (aiResults) renderAiPanel(aiResults); // 挿入済みマークを更新
+      saveLocal(); scheduleSave(); renderBacklinks(); updateMeta();
+      if (aiResults) renderAiPanel(aiResults);
       toast(`[[${kw}]] を挿入しました`);
     }
 
     function insertAllKeywords() {
       const note = getActive();
       if (!note || !aiResults) return;
-      const allKws = [...new Set([
-        ...(aiResults.keywords || []),
-        ...(aiResults.new_keywords || [])
-      ])];
+      const allKws = [...new Set([...(aiResults.keywords || []), ...(aiResults.new_keywords || [])])];
       const toInsert = allKws.filter(kw => !note.content.includes(`[[${kw}]]`));
       if (toInsert.length === 0) { toast("全て挿入済みです"); return; }
-
       let content = note.content.trimEnd();
       if (content.includes("## キーワード")) {
         const kwLines = toInsert.map(k => `- [[${k}]]`).join("\n");
@@ -2638,114 +1778,65 @@ ${existingTitles || "（まだノートがありません）"}
       note.content = content;
       note.updatedAt = Date.now();
       document.getElementById("editor").value = content;
-      saveLocal();
-      scheduleSave();
-      renderBacklinks();
-      updateMeta();
-      renderAiPanel(aiResults);
+      saveLocal(); scheduleSave(); renderBacklinks(); updateMeta(); renderAiPanel(aiResults);
       toast(`${toInsert.length}個のキーワードを挿入しました ✦`);
     }
 
     function insertSummary() {
       const note = getActive();
       if (!note || !aiResults || !aiResults.summary) return;
-
       const summaryPrefix = `> [!NOTE] AI要約 (${new Date().toLocaleDateString("ja-JP")})`;
-      if (note.content.includes(summaryPrefix)) {
-        if (!confirm("既に要約が挿入されているようです。再度挿入しますか？")) return;
-      }
-
+      if (note.content.includes(summaryPrefix)) { if (!confirm("既に要約が挿入されているようです。再度挿入しますか？")) return; }
       let content = note.content;
-      // 最初の見出し（# タイトル）の直後に挿入を試みる
       const summaryText = `${summaryPrefix}\n> ${aiResults.summary.replace(/\n/g, "\n> ")}\n\n`;
-
       const titleMatch = content.match(/^# .+\n/);
-      if (titleMatch) {
-        content = content.replace(titleMatch[0], titleMatch[0] + "\n" + summaryText);
-      } else {
-        content = summaryText + content;
-      }
-
+      if (titleMatch) { content = content.replace(titleMatch[0], titleMatch[0] + "\n" + summaryText); }
+      else { content = summaryText + content; }
       note.content = content;
       note.updatedAt = Date.now();
       document.getElementById("editor").value = content;
-      saveLocal();
-      scheduleSave();
-      renderPreview();
-      updateMeta();
+      saveLocal(); scheduleSave(); renderPreview(); updateMeta();
       toast("要約を挿入しました ✦");
     }
 
     function insertRelatedNotes() {
       const note = getActive();
       if (!note || !aiResults || !aiResults.related_notes || aiResults.related_notes.length === 0) return;
-
-      if (note.content.includes("## 関連ノート")) {
-        if (!confirm("すでに「関連ノート」が挿入されているようです。再度挿入しますか？")) return;
-      }
-
-      // リンクの箇条書きテキストを生成
+      if (note.content.includes("## 関連ノート")) { if (!confirm("すでに「関連ノート」が挿入されているようです。再度挿入しますか？")) return; }
       const links = aiResults.related_notes.map(t => `- [[${t}]]`).join("\n");
-
-      // 本文の末尾に改行して追加
       note.content = note.content.trimEnd() + `\n\n## 関連ノート\n${links}`;
       note.updatedAt = Date.now();
-
       document.getElementById("editor").value = note.content;
-      saveLocal();
-      scheduleSave();
-      renderPreview();
-      updateMeta();
-      renderBacklinks();
-
+      saveLocal(); scheduleSave(); renderPreview(); updateMeta(); renderBacklinks();
       toast("関連ノートのリンクを追記しました ✦");
     }
 
     function insertSourceLink() {
       const note = getActive();
       if (!note || !note.sourceUrl) return;
-
       const linkText = `\n\n--- \n**ソース元:** [${note.title}](${note.sourceUrl})`;
-      if (note.content.includes(note.sourceUrl)) {
-        if (!confirm("既にリンクが挿入されているようです。再度挿入しますか？")) return;
-      }
-
+      if (note.content.includes(note.sourceUrl)) { if (!confirm("既にリンクが挿入されているようです。再度挿入しますか？")) return; }
       note.content = note.content.trimEnd() + linkText;
       note.updatedAt = Date.now();
       document.getElementById("editor").value = note.content;
-      saveLocal();
-      scheduleSave();
-      renderPreview();
-      updateMeta();
+      saveLocal(); scheduleSave(); renderPreview(); updateMeta();
       toast("ソースリンクを挿入しました ✦");
     }
 
     async function saveArticleContent() {
       const note = getActive();
       if (!note || !note.sourceUrl) return;
-
-      if (note.content.length > 500) {
-        if (!confirm("現在のノート内容を上書きして記事を保存しますか？")) return;
-      }
-
+      if (note.content.length > 500) { if (!confirm("現在のノート内容を上書きして記事を保存しますか？")) return; }
       toast("記事を取得中...");
       try {
         const res = await apiPost({ action: "fetchDriveFile", url: note.sourceUrl });
         if (res.error) throw new Error(res.error);
-
         note.content = `# ${res.title}\n\n${res.text}`;
         note.updatedAt = Date.now();
-
         document.getElementById("editor").value = note.content;
-        saveLocal();
-        scheduleSave();
-        renderPreview();
-        renderBacklinks();
-        updateMeta();
+        saveLocal(); scheduleSave(); renderPreview(); renderBacklinks(); updateMeta();
         toast("記事を保存しました ✦");
-      } catch (e) {
-        toast("エラー: " + e.message);
-      }
+      } catch (e) { toast("エラー: " + e.message); }
     }
 
     // ============================================================
@@ -2768,35 +1859,21 @@ ${existingTitles || "（まだノートがありません）"}
       const optimizeTitle = document.getElementById("import-optimize-title").checked;
       const btn = document.getElementById("import-run-btn");
 
-      if (!url && (!fileInput.files || fileInput.files.length === 0)) {
-        toast("URLまたはファイルを選択してください");
-        return;
-      }
+      if (!url && (!fileInput.files || fileInput.files.length === 0)) { toast("URLまたはファイルを選択してください"); return; }
 
-      btn.disabled = true;
-      btn.textContent = "処理中...";
-      toast("抽出中...");
-
-      let text = "";
-      let title = "取り込んだノート";
+      btn.disabled = true; btn.textContent = "処理中..."; toast("抽出中...");
+      let text = ""; let title = "取り込んだノート";
 
       try {
         const apiKey = localStorage.getItem(GEMINI_KEY_LS);
         const importModel = localStorage.getItem(GEMINI_MODEL_LS) || "gemini-2.0-flash";
         const importTemp = parseFloat(localStorage.getItem(GEMINI_TEMP_LS) || "0.1");
 
-        // AIタイトル生成ヘルパー（arrow functionで宣言、ブロックスコープ問題を回避）
         const fetchAiTitle = async (content, currentTitle) => {
           if (!apiKey || !optimizeTitle) return currentTitle;
           try {
             const tp = getPrompt("TITLE").replace("{content}", content.substring(0, 2000));
-            const r = await fetch(
-              `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
-              {
-                method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ contents: [{ parts: [{ text: tp }] }], generationConfig: { temperature: 0.5, maxOutputTokens: 60 } })
-              }
-            );
+            const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: tp }] }], generationConfig: { temperature: 0.5, maxOutputTokens: 60 } }) });
             if (!r.ok) { toast("タイトル生成API呼び出し失敗"); return currentTitle; }
             const rd = await r.json();
             const at = rd.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || currentTitle;
@@ -2804,66 +1881,34 @@ ${existingTitles || "（まだノートがありません）"}
           } catch (e) { toast("タイトル生成エラー: " + e.message); return currentTitle; }
         };
 
-        // --- GoogleドキュメントURL取り込み ---
         if (url) {
           if (!API_URL || API_URL.includes("YOUR_")) throw new Error("API URLが設定されていません");
           const urlRes = await apiPost({ action: "fetchDriveFile", url });
           if (urlRes.error) throw new Error(urlRes.error);
           text = urlRes.text;
           if (urlRes.title) title = urlRes.title;
-          // URLからの取り込みは即座にタイトルをAI最適化する
-          if (optimizeTitle && apiKey) {
-            toast("タイトルをAIが考えています...");
-            title = await fetchAiTitle(text, title);
-          }
+          if (optimizeTitle && apiKey) { toast("タイトルをAIが考えています..."); title = await fetchAiTitle(text, title); }
           const newNote = createNote(title, getTodayFolderStr());
           newNote.content = `# ${title}\n\n${text}`;
-          newNote.sourceUrl = url;
-          newNote.updatedAt = Date.now();
-          saveLocal();
-          pushNote(newNote);
-          selectNote(newNote.id);
-          toast("取り込みが完了しました ✦");
-          closeImportModal();
-          return;
-
-          // --- ローカルファイル取り込み ---
+          newNote.sourceUrl = url; newNote.updatedAt = Date.now();
+          saveLocal(); pushNote(newNote); selectNote(newNote.id);
+          toast("取り込みが完了しました ✦"); closeImportModal(); return;
         } else {
           const file = fileInput.files[0];
           title = file.name.replace(/\.[^/.]+$/, "");
 
           if (file.name.endsWith(".txt")) {
             text = await file.text();
-
           } else if (file.name.endsWith(".mhtml")) {
             const raw = await file.text();
-            text = raw
-              .replace(/<style[\s\S]*?<\/style>/gi, "")
-              .replace(/<script[\s\S]*?<\/script>/gi, "")
-              .replace(/<[^>]+>/g, " ")
-              .replace(/&nbsp;/g, " ")
-              .replace(/\s+/g, " ").trim();
-
+            text = raw.replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
           } else if (file.name.endsWith(".docx") && apiKey) {
             toast("AIがWordファイルを解析中...");
-            const docxB64 = await new Promise((res, rej) => {
-              const fr = new FileReader(); fr.onload = () => res(fr.result.split(',')[1]); fr.onerror = rej; fr.readAsDataURL(file);
-            });
+            const docxB64 = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result.split(',')[1]); fr.onerror = rej; fr.readAsDataURL(file); });
             const docxMime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-            let docxPr = mode === "raw" ? "このWordファイルに含まれるすべてのテキストをそのまま抽出してください。"
-              : mode === "summarize" ? "このWordファイルの内容を分かりやすく要約してください。"
-                : "このWordファイルから重要なキーポイントを箇条書きで抽出してください。";
+            let docxPr = mode === "raw" ? "このWordファイルに含まれるすべてのテキストをそのまま抽出してください。" : mode === "summarize" ? "このWordファイルの内容を分かりやすく要約してください。" : "このWordファイルから重要なキーポイントを箇条書きで抽出してください。";
             const docxMaxTok = Math.max(parseInt(localStorage.getItem(GEMINI_TOKENS_LS) || "2000", 10), 2000);
-            const docxFetchRes = await fetch(
-              `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
-              {
-                method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  contents: [{ parts: [{ text: docxPr }, { inlineData: { mimeType: docxMime, data: docxB64 } }] }],
-                  generationConfig: { temperature: importTemp, maxOutputTokens: docxMaxTok }
-                })
-              }
-            );
+            const docxFetchRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: docxPr }, { inlineData: { mimeType: docxMime, data: docxB64 } }] }], generationConfig: { temperature: importTemp, maxOutputTokens: docxMaxTok } }) });
             if (!docxFetchRes.ok) { const de = await docxFetchRes.json(); throw new Error(de.error?.message || "Wordファイルの解析に失敗しました"); }
             const docxFetchData = await docxFetchRes.json();
             const docxText = docxFetchData.candidates?.[0]?.content?.parts?.[0]?.text || "";
@@ -2874,26 +1919,12 @@ ${existingTitles || "（まだノートがありません）"}
             if (mode === "summarize") docxNote.summary = docxText;
             docxNote.updatedAt = Date.now(); saveLocal(); pushNote(docxNote); selectNote(docxNote.id);
             toast("取り込みが完了しました ✦"); closeImportModal(); return;
-
           } else if (apiKey) {
             toast("AIがPDFを解析中...");
-            const pdfB64 = await new Promise((res, rej) => {
-              const fr = new FileReader(); fr.onload = () => res(fr.result.split(',')[1]); fr.onerror = rej; fr.readAsDataURL(file);
-            });
-            let pdfPr = mode === "raw" ? "このPDFに含まれるすべてのテキストをそのまま抽出してください。要約や追加のコメントは一切不要です。"
-              : mode === "summarize" ? "このPDFの内容を分かりやすく要約してください。"
-                : "このPDFから重要なキーポイントを箇条書きで抽出してください。";
+            const pdfB64 = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result.split(',')[1]); fr.onerror = rej; fr.readAsDataURL(file); });
+            let pdfPr = mode === "raw" ? "このPDFに含まれるすべてのテキストをそのまま抽出してください。要約や追加のコメントは一切不要です。" : mode === "summarize" ? "このPDFの内容を分かりやすく要約してください。" : "このPDFから重要なキーポイントを箇条書きで抽出してください。";
             const pdfMaxTok = Math.max(parseInt(localStorage.getItem(GEMINI_TOKENS_LS) || "2000", 10), 2000);
-            const pdfFetchRes = await fetch(
-              `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
-              {
-                method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  contents: [{ parts: [{ text: pdfPr }, { inlineData: { mimeType: "application/pdf", data: pdfB64 } }] }],
-                  generationConfig: { temperature: importTemp, maxOutputTokens: pdfMaxTok }
-                })
-              }
-            );
+            const pdfFetchRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: pdfPr }, { inlineData: { mimeType: "application/pdf", data: pdfB64 } }] }], generationConfig: { temperature: importTemp, maxOutputTokens: pdfMaxTok } }) });
             if (!pdfFetchRes.ok) { const pe = await pdfFetchRes.json(); throw new Error(pe.error?.message || "AIによるPDF解析に失敗しました"); }
             const pdfFetchData = await pdfFetchRes.json();
             const pdfAiText = pdfFetchData.candidates?.[0]?.content?.parts?.[0]?.text || "";
@@ -2904,9 +1935,7 @@ ${existingTitles || "（まだノートがありません）"}
             if (mode === "summarize") pdfNote.summary = pdfAiText;
             pdfNote.updatedAt = Date.now(); saveLocal(); pushNote(pdfNote); selectNote(pdfNote.id);
             toast("取り込みが完了しました ✦"); closeImportModal(); return;
-
           } else {
-            // APIキーなし: pdf.jsによる簡易テキスト抽出
             const arrBuf = await file.arrayBuffer();
             const pdfDoc = await pdfjsLib.getDocument({ data: arrBuf }).promise;
             for (let i = 1; i <= pdfDoc.numPages; i++) {
@@ -2914,14 +1943,10 @@ ${existingTitles || "（まだノートがありません）"}
               const pgContent = await pg.getTextContent();
               text += pgContent.items.map(item => item.str).join(" ") + "\n";
             }
-            if (!text.trim()) {
-              openSettings();
-              throw new Error("スキャンされたPDF等でテキストが見つかりませんでした。設定からGemini APIキーを登録すると、AIによる画像文字認識(OCR)が使えます。");
-            }
+            if (!text.trim()) { openSettings(); throw new Error("スキャンされたPDF等でテキストが見つかりませんでした。設定からGemini APIキーを登録すると、AIによる画像文字認識(OCR)が使えます。"); }
           }
         }
 
-        // テキスト取得後の処理（Google Doc URL / txt / mhtml / APIキーなしPDF）
         if (!text.trim()) throw new Error("テキストを抽出できませんでした");
 
         if (mode === "raw") {
@@ -2934,16 +1959,8 @@ ${existingTitles || "（まだノートがありません）"}
           toast("AI処理中...");
           if (!apiKey) { openSettings(); throw new Error("AI処理にはAPIキーの設定が必要です"); }
           const aiMaxTok = parseInt(localStorage.getItem(GEMINI_TOKENS_LS) || "1024", 10);
-          const aiPr = mode === "summarize"
-            ? getPrompt("IMPORT_SUMMARIZE").replace("{content}", text.substring(0, 30000))
-            : getPrompt("IMPORT_KEYPOINTS").replace("{content}", text.substring(0, 30000));
-          const aiFetchRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
-            {
-              method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ contents: [{ parts: [{ text: aiPr }] }], generationConfig: { temperature: importTemp, maxOutputTokens: aiMaxTok } })
-            }
-          );
+          const aiPr = mode === "summarize" ? getPrompt("IMPORT_SUMMARIZE").replace("{content}", text.substring(0, 30000)) : getPrompt("IMPORT_KEYPOINTS").replace("{content}", text.substring(0, 30000));
+          const aiFetchRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: aiPr }] }], generationConfig: { temperature: importTemp, maxOutputTokens: aiMaxTok } }) });
           if (!aiFetchRes.ok) { const ae = await aiFetchRes.json(); throw new Error(ae.error?.message || "AI処理に失敗しました"); }
           const aiFetchData = await aiFetchRes.json();
           const processedText = aiFetchData.candidates?.[0]?.content?.parts?.[0]?.text || "";
@@ -2954,19 +1971,14 @@ ${existingTitles || "（まだノートがありません）"}
           aiNote.updatedAt = Date.now(); saveLocal(); pushNote(aiNote); selectNote(aiNote.id);
           toast("取り込みとAI処理が完了しました ✦");
         }
-
         closeImportModal();
-
       } catch (err) {
-        toast("エラー: " + err.message);
-        console.error(err);
+        toast("エラー: " + err.message); console.error(err);
       } finally {
-        btn.disabled = false;
-        btn.textContent = "実行";
+        btn.disabled = false; btn.textContent = "実行";
       }
     }
-    // ▼▼▼ ここから追加部分を丸ごと貼り付ける ▼▼▼
-    // URLからスプレッドシートIDを抽出するヘルパー関数
+
     function extractSheetId(input) {
       const match = input.match(/\/d\/([a-zA-Z0-9-_]+)/);
       return match ? match[1] : input.trim();
@@ -2978,23 +1990,14 @@ ${existingTitles || "（まだノートがありません）"}
       const urlInput = document.getElementById("import-sheet-url").value;
       const sheetName = document.getElementById("import-sheet-name").value.trim();
       const sourceSsId = extractSheetId(urlInput);
-
       if (!sourceSsId) return toast("スプレッドシートのURLを入力してください");
       if (!sheetName) return toast("シート名を入力してください");
-
       toast("一覧を取得中...");
       try {
         const res = await apiPost({ action: "fetchUnprocessedHighlights", sourceSsId: sourceSsId, sheetName: sheetName });
         if (!res.success) throw new Error(res.error);
-
         pendingSheetItems = res.items;
-        if (pendingSheetItems.length === 0) {
-          toast("未処理のデータはありません");
-          document.getElementById("sheet-preview-list").style.display = "none";
-          document.getElementById("sheet-import-btn").style.display = "none";
-          return;
-        }
-
+        if (pendingSheetItems.length === 0) { toast("未処理のデータはありません"); document.getElementById("sheet-preview-list").style.display = "none"; document.getElementById("sheet-import-btn").style.display = "none"; return; }
         const listEl = document.getElementById("sheet-preview-list");
         listEl.innerHTML = pendingSheetItems.map((item, idx) => `
           <label style="display:flex; align-items:flex-start; gap:8px; padding:6px; border-bottom:1px solid var(--border2); cursor:pointer;">
@@ -3003,114 +2006,61 @@ ${existingTitles || "（まだノートがありません）"}
               <div style="font-size:12px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(item.title)}</div>
               <div style="font-size:10px; color:var(--muted); line-height:1.4; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">${esc(item.highlights)}</div>
             </div>
-          </label>
-        `).join("");
-
+          </label>`).join("");
         listEl.style.display = "block";
         document.getElementById("sheet-import-btn").style.display = "block";
         toast(`${pendingSheetItems.length}件の未処理データを取得しました`);
-      } catch (e) {
-        toast("エラー: " + e.message);
-      }
+      } catch (e) { toast("エラー: " + e.message); }
     }
 
     async function importSelectedItems() {
       const checkboxes = document.querySelectorAll(".sheet-item-cb:checked");
       if (checkboxes.length === 0) return toast("項目が選択されていません");
-
       const urlInput = document.getElementById("import-sheet-url").value;
       const sourceSsId = extractSheetId(urlInput);
       const sheetName = document.getElementById("import-sheet-name").value.trim();
       const optimizeTitle = document.getElementById("import-optimize-title").checked;
       const apiKey = localStorage.getItem(GEMINI_KEY_LS);
       const importModel = localStorage.getItem(GEMINI_MODEL_LS) || "gemini-2.0-flash";
-
       const btn = document.getElementById("sheet-import-btn");
-      btn.disabled = true;
-      btn.textContent = "処理中...";
-
+      btn.disabled = true; btn.textContent = "処理中...";
       const selectedItems = Array.from(checkboxes).map(cb => pendingSheetItems[cb.value]);
       const rowIndices = selectedItems.map(item => item.rowIndex);
       const newNotes = [];
-
       try {
         for (let i = 0; i < selectedItems.length; i++) {
           const item = selectedItems[i];
           toast(`AI処理中... (${i + 1}/${selectedItems.length})`);
-
           let dateStr = "";
-          if (item.saved_at) {
-            const d = new Date(item.saved_at);
-            dateStr = isNaN(d) ? item.saved_at : d.toLocaleString("ja-JP");
-          }
-
+          if (item.saved_at) { const d = new Date(item.saved_at); dateStr = isNaN(d) ? item.saved_at : d.toLocaleString("ja-JP"); }
           let content = `# ${item.title}\n\n${item.highlights}`;
           if (dateStr) content += `\n\n---\n**保存日時:** ${dateStr}`;
-
           let title = item.title;
-
           if (optimizeTitle && apiKey) {
             try {
               const tp = getPrompt("TITLE").replace("{content}", content.substring(0, 2000));
-              const r = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
-                {
-                  method: "POST", headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ contents: [{ parts: [{ text: tp }] }], generationConfig: { temperature: 0.5, maxOutputTokens: 60 } })
-                }
-              );
-              if (r.ok) {
-                const rd = await r.json();
-                const at = rd.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-                if (at) title = at.replace(/^#\s*/, "").replace(/[\"\']/g, "");
-              }
+              const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: tp }] }], generationConfig: { temperature: 0.5, maxOutputTokens: 60 } }) });
+              if (r.ok) { const rd = await r.json(); const at = rd.candidates?.[0]?.content?.parts?.[0]?.text?.trim(); if (at) title = at.replace(/^#\s*/, "").replace(/[\"\']/g, ""); }
             } catch (e) { console.error("Title AI error", e); }
           }
-
           content = `# ${title}\n\n${item.highlights}`;
           if (dateStr) content += `\n\n---\n**保存日時:** ${dateStr}`;
-
           let folderName = item.category || getTodayFolderStr();
           let folderTag = `[folder:${folderName}]`;
-          const note = {
-            id: genId(),
-            title: title,
-            content: content,
-            summary: "",
-            keywords: item.tags ? `${item.tags}, ${folderTag}` : folderTag,
-            sourceUrl: item.url || "",
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          };
-
-          notes.unshift(note);
-          newNotes.push(note);
+          const note = { id: genId(), title: title, content: content, summary: "", keywords: item.tags ? `${item.tags}, ${folderTag}` : folderTag, sourceUrl: item.url || "", createdAt: Date.now(), updatedAt: Date.now() };
+          notes.unshift(note); newNotes.push(note);
         }
-
         toast("クラウドへ保存中...");
         await apiPost({ action: "saveAll", notes: notes });
         await apiPost({ action: "markHighlightsProcessed", sourceSsId: sourceSsId, sheetName: sheetName, rowIndices: rowIndices });
-
-        saveLocal();
-        selectNote(newNotes[0].id);
-        renderList();
-
-        toast(`${newNotes.length}件のノートを取り込みました ✦`);
-        closeImportModal();
-
-        document.getElementById("sheet-preview-list").style.display = "none";
-        btn.style.display = "none";
-
-      } catch (err) {
-        toast("エラー: " + err.message);
-      } finally {
-        btn.disabled = false;
-        btn.textContent = "選択した項目を取り込む";
-      }
+        saveLocal(); selectNote(newNotes[0].id); renderList();
+        toast(`${newNotes.length}件のノートを取り込みました ✦`); closeImportModal();
+        document.getElementById("sheet-preview-list").style.display = "none"; btn.style.display = "none";
+      } catch (err) { toast("エラー: " + err.message); } finally { btn.disabled = false; btn.textContent = "選択した項目を取り込む"; }
     }
-    // ▲▲▲ ここまで追加部分 ▲▲▲
+
     // ============================================================
-    //  SUGGEST FEATURE
+    //  SUGGEST FEATURE  ※部分一致・件数拡張済み
     // ============================================================
     const suggestBox = document.getElementById("suggest-box");
     const editorEl = document.getElementById("editor");
@@ -3119,42 +2069,23 @@ ${existingTitles || "（まだノートがありません）"}
     let suggestIndex = -1;
     let suggestStartPos = -1;
 
-    function closeSuggest() {
-      suggestBox.style.display = "none";
-      suggestStartPos = -1;
-    }
+    function closeSuggest() { suggestBox.style.display = "none"; suggestStartPos = -1; }
 
     function updateSuggestPosition() {
       const div = document.createElement('div');
       const style = div.style;
       const computed = window.getComputedStyle(editorEl);
-
-      style.whiteSpace = 'pre-wrap';
-      style.wordWrap = 'break-word';
-      style.position = 'absolute';
-      style.visibility = 'hidden';
-
+      style.whiteSpace = 'pre-wrap'; style.wordWrap = 'break-word'; style.position = 'absolute'; style.visibility = 'hidden';
       const props = ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'boxSizing', 'width'];
       props.forEach(p => style[p] = computed[p]);
-
       div.textContent = editorEl.value.substring(0, editorEl.selectionEnd);
-      const span = document.createElement('span');
-      span.textContent = '.';
-      div.appendChild(span);
+      const span = document.createElement('span'); span.textContent = '.'; div.appendChild(span);
       document.body.appendChild(div);
-
-      const caretTop = span.offsetTop;
-      const caretLeft = span.offsetLeft;
-      const lh = parseInt(computed.lineHeight) || 20;
-
+      const caretTop = span.offsetTop; const caretLeft = span.offsetLeft; const lh = parseInt(computed.lineHeight) || 20;
       document.body.removeChild(div);
-
       const rect = editorEl.getBoundingClientRect();
-      const top = rect.top - editorEl.scrollTop + caretTop + lh;
-      const left = rect.left - editorEl.scrollLeft + caretLeft;
-
-      suggestBox.style.top = top + "px";
-      suggestBox.style.left = left + "px";
+      suggestBox.style.top = (rect.top - editorEl.scrollTop + caretTop + lh) + "px";
+      suggestBox.style.left = (rect.left - editorEl.scrollLeft + caretLeft) + "px";
     }
 
     function renderSuggest() {
@@ -3169,8 +2100,7 @@ ${existingTitles || "（まだノートがありません）"}
           <div class="suggest-item ${i === suggestIndex ? 'selected' : ''}" onclick="applySuggest(${i})">
             <span class="suggest-icon">◈</span>
             <span>${esc(t)}</span>
-          </div>
-        `).join("");
+          </div>`).join("");
       }
       suggestBox.innerHTML = html;
       suggestBox.style.display = "block";
@@ -3178,56 +2108,42 @@ ${existingTitles || "（まだノートがありません）"}
 
     function applySuggest(index = suggestIndex) {
       if (suggestStartPos === -1) return;
-
       const val = editorEl.value;
       const pos = editorEl.selectionStart;
       const before = val.slice(0, suggestStartPos);
-
-      // Look for a closing ]] if user already typed it
       let after = val.slice(pos);
-      if (after.startsWith("]]")) {
-        after = after.slice(2);
-      }
-
+      if (after.startsWith("]]")) after = after.slice(2);
       let insertText = "";
       if (suggestItems.length === 0 || index < 0 || index >= suggestItems.length) {
         insertText = `[[${suggestQuery}]] `;
       } else {
         insertText = `[[${suggestItems[index]}]] `;
       }
-
       editorEl.value = before + insertText + after;
       const newPos = before.length + insertText.length;
       editorEl.setSelectionRange(newPos, newPos);
-
-      onContentChange();
-      closeSuggest();
-      editorEl.focus();
+      onContentChange(); closeSuggest(); editorEl.focus();
     }
 
     editorEl.addEventListener("input", (e) => {
       const val = editorEl.value;
       const pos = editorEl.selectionStart;
-
       const textBefore = val.slice(0, pos);
       const lastOpen = textBefore.lastIndexOf("[[");
       const lastClose = textBefore.lastIndexOf("]]");
-
       if (lastOpen !== -1 && lastOpen >= lastClose) {
         const query = textBefore.slice(lastOpen + 2);
-        if (query.includes("\n")) {
-          closeSuggest();
-          return;
-        }
-
+        if (query.includes("\n")) { closeSuggest(); return; }
         suggestQuery = query;
         suggestStartPos = lastOpen;
-        // 問題箇所変更後（suggestItems設定部分）
-        suggestItems = notes.map(n => n.title)
-          .filter(t => query === "" || t.toLowerCase().includes(query.toLowerCase()))
-          .slice(0, 15);
+        // ▼ 修正: 部分一致・全角スペース対応・30件上限 ▼
+        suggestItems = notes.map(n => n.title.trim())
+          .filter(t => query === "" ||
+            t.toLowerCase().replace(/　/g, " ").includes(query.toLowerCase().replace(/　/g, " "))
+          )
+          .slice(0, 30);
+        // ▲ ここまで修正 ▲
         suggestIndex = 0;
-
         renderSuggest();
         updateSuggestPosition();
       } else {
@@ -3237,57 +2153,32 @@ ${existingTitles || "（まだノートがありません）"}
 
     editorEl.addEventListener("keydown", (e) => {
       if (suggestBox.style.display === "none" || suggestBox.style.display === "") return;
-
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        const len = suggestItems.length || 1;
-        suggestIndex = (suggestIndex + 1) % len;
-        renderSuggest();
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        const len = suggestItems.length || 1;
-        suggestIndex = (suggestIndex - 1 + len) % len;
-        renderSuggest();
-      } else if (e.key === "Enter") {
-        e.preventDefault();
-        applySuggest();
-      } else if (e.key === "Escape") {
-        closeSuggest();
-      }
+      if (e.key === "ArrowDown") { e.preventDefault(); const len = suggestItems.length || 1; suggestIndex = (suggestIndex + 1) % len; renderSuggest(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); const len = suggestItems.length || 1; suggestIndex = (suggestIndex - 1 + len) % len; renderSuggest(); }
+      else if (e.key === "Enter") { e.preventDefault(); applySuggest(); }
+      else if (e.key === "Escape") { closeSuggest(); }
     });
 
-    editorEl.addEventListener("blur", () => {
-      setTimeout(closeSuggest, 200);
-    });
+    editorEl.addEventListener("blur", () => { setTimeout(closeSuggest, 200); });
 
     // ============================================================
     //  KNOWLEDGE GRAPH
     // ============================================================
-    let graphViewMode = 'note'; // 'note' or 'folder'
-    let folderRelationsAI = []; // AIによるフォルダ間関係キャッシュ
-    let lastGraphAiTime = 0;    // 最後にAIフォルダ解析を行った時刻
+    let graphViewMode = 'note';
+    let folderRelationsAI = [];
+    let lastGraphAiTime = 0;
+    let graphData = { nodes: [], links: [] };
+    let graphSimulation = null;
+    let graphZoom = null;
+    let graphG = null;
 
     function buildGraphData() {
       if (graphViewMode === 'folder') return buildFolderGraphData();
-      
-      const nodes = [];
-      const links = [];
-      const titleToNode = {};
-
-      // 1. 全ノートをノードとして登録
+      const nodes = []; const links = []; const titleToNode = {};
       notes.forEach(note => {
-        if (isNoteEmpty(note)) return; // 空ノートは除外してもよいが、ここでは一応含める（任意）
-        const node = {
-          id: note.id,
-          title: note.title,
-          content: note.content,
-          linkCount: 0
-        };
-        nodes.push(node);
-        titleToNode[note.title] = node;
+        const node = { id: note.id, title: note.title, content: note.content, linkCount: 0 };
+        nodes.push(node); titleToNode[note.title] = node;
       });
-
-      // 2. エッジ（リンク）を抽出
       notes.forEach(note => {
         if (!note.content) return;
         const matches = [...note.content.matchAll(/\[\[(.*?)\]\]/g)];
@@ -3295,219 +2186,121 @@ ${existingTitles || "（まだノートがありません）"}
           const targetTitle = m[1];
           const targetNode = titleToNode[targetTitle];
           if (targetNode && targetNode.id !== note.id) {
-            links.push({
-              source: note.id,
-              target: targetNode.id,
-              isMutual: false
-            });
+            links.push({ source: note.id, target: targetNode.id, isMutual: false });
             titleToNode[note.title].linkCount++;
             targetNode.linkCount++;
           }
         });
       });
-
-      // 3. 相互リンクの判定
-      links.forEach(l1 => {
-        const isMutual = links.some(l2 => l2.source === l1.target && l2.target === l1.source);
-        l1.isMutual = isMutual;
-      });
-
+      links.forEach(l1 => { l1.isMutual = links.some(l2 => l2.source === l1.target && l2.target === l1.source); });
       return { nodes, links };
     }
 
     function buildFolderGraphData() {
-      const folderMap = {};
-      const links = [];
-
-      // 1. ノートをフォルダごとに集計
+      const folderMap = {}; const links = [];
       notes.forEach(note => {
         if (isNoteEmpty(note)) return;
         const f = getFolder(note);
-        if (!folderMap[f]) {
-          folderMap[f] = { id: f, title: f, noteCount: 0, linkCount: 0, notes: [] };
-        }
-        folderMap[f].noteCount++;
-        folderMap[f].notes.push(note);
+        if (!folderMap[f]) folderMap[f] = { id: f, title: f, noteCount: 0, linkCount: 0, notes: [] };
+        folderMap[f].noteCount++; folderMap[f].notes.push(note);
       });
-
       const nodes = Object.values(folderMap);
-      const folderTitles = nodes.map(n => n.title);
-
-      // 2. フォルダ間リンクの自動抽出（Wikiリンクベース）
       notes.forEach(note => {
         const sourceFolder = getFolder(note);
         const matches = [...note.content.matchAll(/\[\[(.*?)\]\]/g)];
         matches.forEach(m => {
-          const targetTitle = m[1];
-          const targetNote = notes.find(n => n.title === targetTitle);
+          const targetNote = notes.find(n => n.title === m[1]);
           if (targetNote) {
             const targetFolder = getFolder(targetNote);
             if (sourceFolder !== targetFolder) {
-              // フォルダ間のエッジ
               const existing = links.find(l => l.source === sourceFolder && l.target === targetFolder);
-              if (existing) {
-                existing.value++;
-              } else {
-                links.push({ source: sourceFolder, target: targetFolder, value: 1, type: 'wiki' });
-              }
-              folderMap[sourceFolder].linkCount++;
-              folderMap[targetFolder].linkCount++;
+              if (existing) { existing.value++; } else { links.push({ source: sourceFolder, target: targetFolder, value: 1, type: 'wiki' }); }
+              if (folderMap[sourceFolder]) folderMap[sourceFolder].linkCount++;
+              if (folderMap[targetFolder]) folderMap[targetFolder].linkCount++;
             }
           }
         });
       });
-
-      // 3. AIによるフォルダ間関係の追加
       folderRelationsAI.forEach(rel => {
-        if (folderTitles.includes(rel.source) && folderTitles.includes(rel.target)) {
-          links.push({ source: rel.source, target: rel.target, value: 2, type: 'ai', label: rel.reason });
-        }
+        const srcExists = nodes.some(n => n.id === rel.source);
+        const tgtExists = nodes.some(n => n.id === rel.target);
+        if (srcExists && tgtExists) links.push({ source: rel.source, target: rel.target, value: 2, type: 'ai', label: rel.reason });
       });
-
       return { nodes, links };
     }
 
-    function setGraphViewMode(mode) {
-      graphViewMode = mode;
-      
-      // UI更新
-      document.getElementById("graph-mode-note").style.background = mode === 'note' ? 'var(--blue)' : 'transparent';
-      document.getElementById("graph-mode-note").style.color = mode === 'note' ? '#fff' : 'var(--text)';
-      document.getElementById("graph-mode-folder").style.background = mode === 'folder' ? 'var(--blue)' : 'transparent';
-      document.getElementById("graph-mode-folder").style.color = mode === 'folder' ? '#fff' : 'var(--text)';
-      document.getElementById("folder-graph-ai-btn-wrap").style.display = mode === 'folder' ? 'flex' : 'none';
-
-      updateGraphAiUI();
-      renderGraph();
+    function setGraphViewMode(m) {
+      graphViewMode = m;
+      document.getElementById("graph-mode-note").style.background = m === 'note' ? 'var(--blue)' : 'transparent';
+      document.getElementById("graph-mode-note").style.color = m === 'note' ? '#fff' : 'var(--text)';
+      document.getElementById("graph-mode-folder").style.background = m === 'folder' ? 'var(--blue)' : 'transparent';
+      document.getElementById("graph-mode-folder").style.color = m === 'folder' ? '#fff' : 'var(--text)';
+      document.getElementById("folder-graph-ai-btn-wrap").style.display = m === 'folder' ? 'flex' : 'none';
+      updateGraphAiUI(); renderGraph();
     }
 
     function updateGraphAiUI() {
       const btn = document.getElementById("graph-ai-main-btn");
       if (!btn) return;
-
-      if (lastGraphAiTime === 0) {
-        btn.textContent = "✦ AIフォルダ解析";
-        return;
-      }
-
+      if (lastGraphAiTime === 0) { btn.textContent = "✦ AIフォルダ解析"; return; }
       const unanalyzedNotes = notes.filter(n => n.updatedAt > lastGraphAiTime);
-      if (unanalyzedNotes.length > 0) {
-        btn.textContent = `✦ 差分をAI解析 (${unanalyzedNotes.length})`;
-      } else {
-        btn.textContent = "✦ 全て再解析";
-      }
+      btn.textContent = unanalyzedNotes.length > 0 ? `✦ 差分をAI解析 (${unanalyzedNotes.length})` : "✦ 全て再解析";
     }
 
     function runGraphAiAnalysis() {
       const unanalyzedNotes = notes.filter(n => n.updatedAt > lastGraphAiTime);
       if (lastGraphAiTime > 0 && unanalyzedNotes.length === 0) {
-        if (confirm("全てのフォルダを再度解析しますか？")) {
-          analyzeFolderRelationsWithAI(false);
-        }
-      } else {
-        analyzeFolderRelationsWithAI(lastGraphAiTime > 0);
-      }
+        if (confirm("全てのフォルダを再度解析しますか？")) analyzeFolderRelationsWithAI(false);
+      } else { analyzeFolderRelationsWithAI(lastGraphAiTime > 0); }
     }
 
     async function analyzeFolderRelationsWithAI(isIncremental = false) {
       const apiKey = localStorage.getItem(GEMINI_KEY_LS);
       if (!apiKey) { toast("APIキーを設定してください"); return; }
-
       const fData = buildFolderGraphData();
       if (fData.nodes.length < 2) { toast("解析するのに十分なフォルダがありません。"); return; }
-
-      // 解析対象の抽出
       let targetNodes = fData.nodes;
       if (isIncremental && lastGraphAiTime > 0) {
         targetNodes = fData.nodes.filter(f => f.notes.some(n => n.updatedAt > lastGraphAiTime));
-        if (targetNodes.length === 0) {
-          toast("新しく追加・更新されたノートはありません。");
-          return;
-        }
+        if (targetNodes.length === 0) { toast("新しく追加・更新されたノートはありません。"); return; }
       }
-
-      const statusMsg = isIncremental ? `${targetNodes.length}件の更新フォルダを差分解析中...` : "全フォルダの関係性を深く解析中...";
-      toast(statusMsg);
-      
+      toast(isIncremental ? `${targetNodes.length}件の更新フォルダを差分解析中...` : "全フォルダの関係性を深く解析中...");
       try {
-        // 1. フォルダごとのサマリー情報を準備
-        const activeSummaries = targetNodes.map(f => {
-          const titles = f.notes.slice(0, 15).map(n => n.title).join(", ");
-          return `[Folder: ${f.title}]\nNotes: ${titles}`;
-        }).join("\n\n");
-
+        const activeSummaries = targetNodes.map(f => `[Folder: ${f.title}]\nNotes: ${f.notes.slice(0, 15).map(n => n.title).join(", ")}`).join("\n\n");
         const allFolderNames = fData.nodes.map(f => f.title).join(", ");
-
-        const prompt = `あなたは知識管理の専門家です。以下のフォルダ（カテゴリ）の内容を読み、既存のフォルダリストとの間の「意味的な繋がり」や「階層関係」を解析してください。
-
-関係性のルール：
-1. 「AはBの前提条件」「AとBは補完し合っている」など、深い関係を見つけてください。
-2. 出力は必ず以下のJSON形式のみとしてください。
-[{"source": "フォルダA", "target": "フォルダB", "reason": "関係の短い説明"}, ...]
-
-${isIncremental ? "今回の解析対象（新規/更新分）" : "解析対象のフォルダリスト"}：
-${activeSummaries}
-
-既存の全フォルダリスト：
-${allFolderNames}`;
-
+        const prompt = `あなたは知識管理の専門家です。以下のフォルダ（カテゴリ）の内容を読み、既存のフォルダリストとの間の「意味的な繋がり」や「階層関係」を解析してください。\n\n関係性のルール：\n1. 「AはBの前提条件」「AとBは補完し合っている」など、深い関係を見つけてください。\n2. 出力は必ず以下のJSON形式のみとしてください。\n[{"source": "フォルダA", "target": "フォルダB", "reason": "関係の短い説明"}, ...]\n\n${isIncremental ? "今回の解析対象（新規/更新分）" : "解析対象のフォルダリスト"}：\n${activeSummaries}\n\n既存の全フォルダリスト：\n${allFolderNames}`;
         const model = localStorage.getItem(GEMINI_MODEL_LS) || "gemini-2.0-flash";
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { response_mime_type: "application/json" } })
-        });
-
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { response_mime_type: "application/json" } }) });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        const jsonStr = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        const newRels = JSON.parse(jsonStr);
-        
+        const newRels = JSON.parse(data.candidates?.[0]?.content?.parts?.[0]?.text);
         if (isIncremental) {
-          // 既存の結果とマージ（重複排除）
-          newRels.forEach(nr => {
-            const exists = folderRelationsAI.some(er => 
-              (er.source === nr.source && er.target === nr.target) || 
-              (er.source === nr.target && er.target === nr.source)
-            );
-            if (!exists) folderRelationsAI.push(nr);
-          });
-        } else {
-          folderRelationsAI = newRels;
-        }
-
-        lastGraphAiTime = Date.now();
-        saveLocal();
-        updateGraphAiUI();
-        renderGraph();
+          newRels.forEach(nr => { const exists = folderRelationsAI.some(er => (er.source === nr.source && er.target === nr.target) || (er.source === nr.target && er.target === nr.source)); if (!exists) folderRelationsAI.push(nr); });
+        } else { folderRelationsAI = newRels; }
+        lastGraphAiTime = Date.now(); saveLocal(); updateGraphAiUI(); renderGraph();
         toast("フォルダ間の繋がりを更新しました ✦");
-      } catch (e) {
-        console.error(e);
-        toast("AI解析に失敗しました: " + e.message);
-      }
+      } catch (e) { console.error(e); toast("AI解析に失敗しました: " + e.message); }
     }
 
     function resetFolderRelationsAI() {
       if (!confirm("AI解析による全てのつながりをリセットしますか？")) return;
-      folderRelationsAI = [];
-      lastGraphAiTime = 0;
-      saveLocal();
-      updateGraphAiUI();
-      renderGraph();
+      folderRelationsAI = []; lastGraphAiTime = 0; saveLocal(); updateGraphAiUI(); renderGraph();
       toast("リセットしました");
     }
 
     function openGraphModal() {
       document.getElementById("graph-modal").classList.add("open");
       document.getElementById("graph-search-input").value = "";
-      closeGraphPopup();
-      updateGraphAiUI();
-      renderGraph();
+      closeGraphPopup(); updateGraphAiUI(); renderGraph();
     }
 
     function closeGraphModal() {
       document.getElementById("graph-modal").classList.remove("open");
       if (graphSimulation) graphSimulation.stop();
+      // ▼ 追加: グラフを閉じたらレポート選択をリセット ▼
+      reportSelectedNodes.clear();
+      updateReportPanel();
+      // ▲ ここまで追加 ▲
     }
 
     function closeGraphPopup() {
@@ -3516,24 +2309,15 @@ ${allFolderNames}`;
 
     function renderGraph() {
       graphData = buildGraphData();
-      
       const container = document.getElementById("graph-container");
       const width = container.clientWidth;
       const height = container.clientHeight;
-
       const svgEl = d3.select("#graph-svg");
-      svgEl.selectAll("*").remove(); // クリア
+      svgEl.selectAll("*").remove();
       svgEl.attr("viewBox", [0, 0, width, height]);
-
       graphG = svgEl.append("g");
 
-      graphZoom = d3.zoom()
-        .scaleExtent([0.1, 4])
-        .on("zoom", (e) => {
-          graphG.attr("transform", e.transform);
-          closeGraphPopup();
-        });
-
+      graphZoom = d3.zoom().scaleExtent([0.1, 4]).on("zoom", (e) => { graphG.attr("transform", e.transform); closeGraphPopup(); });
       svgEl.call(graphZoom);
 
       graphSimulation = d3.forceSimulation(graphData.nodes)
@@ -3542,147 +2326,78 @@ ${allFolderNames}`;
         .force("center", d3.forceCenter(width / 2, height / 2))
         .force("collide", d3.forceCollide().radius(d => getRadius(d) + 15).iterations(2));
 
-      // エッジ描画
-      const link = graphG.append("g")
-        .selectAll("line")
-        .data(graphData.links)
-        .join("line")
+      const link = graphG.append("g").selectAll("line").data(graphData.links).join("line")
         .attr("class", "graph-link")
-        .attr("stroke", d => {
-          if (graphViewMode === 'folder') {
-            return d.type === 'ai' ? 'var(--purple)' : '#30363d';
-          }
-          return d.isMutual ? "#58a6ff" : "#30363d";
-        })
-        .attr("stroke-width", d => {
-          if (graphViewMode === 'folder') return d.value + 1;
-          return d.isMutual ? 2 : 1;
-        })
+        .attr("stroke", d => { if (graphViewMode === 'folder') return d.type === 'ai' ? 'var(--purple)' : '#30363d'; return d.isMutual ? "#58a6ff" : "#30363d"; })
+        .attr("stroke-width", d => { if (graphViewMode === 'folder') return d.value + 1; return d.isMutual ? 2 : 1; })
         .attr("stroke-dasharray", d => d.type === 'ai' ? "4 2" : "none")
         .style("cursor", d => d.type === 'ai' ? "help" : "default")
         .on("mouseover", function(e, d) {
           if (d.type === 'ai') {
             const tooltip = document.getElementById("graph-ai-tooltip");
             tooltip.textContent = `✦ ${d.source.title} × ${d.target.title}: ${d.label}`;
-            tooltip.style.opacity = "1";
-            tooltip.style.left = (e.clientX - 20) + "px";
-            tooltip.style.top = (e.clientY - 40) + "px";
+            tooltip.style.opacity = "1"; tooltip.style.left = (e.clientX - 20) + "px"; tooltip.style.top = (e.clientY - 40) + "px";
             d3.select(this).attr("stroke", "var(--bright)").attr("stroke-width", d.value + 3);
           }
         })
-        .on("mousemove", function(e) {
-          const tooltip = document.getElementById("graph-ai-tooltip");
-          tooltip.style.left = (e.clientX + 15) + "px";
-          tooltip.style.top = (e.clientY - 15) + "px";
-        })
+        .on("mousemove", function(e) { const t = document.getElementById("graph-ai-tooltip"); t.style.left = (e.clientX + 15) + "px"; t.style.top = (e.clientY - 15) + "px"; })
         .on("mouseout", function(e, d) {
           document.getElementById("graph-ai-tooltip").style.opacity = "0";
-          if (d.type === 'ai') {
-            d3.select(this).attr("stroke", "var(--purple)").attr("stroke-width", d.value + 1);
-          }
+          if (d.type === 'ai') d3.select(this).attr("stroke", "var(--purple)").attr("stroke-width", d.value + 1);
         });
 
-      // ノード群描画
-      const nodeGroup = graphG.append("g")
-        .selectAll("g")
-        .data(graphData.nodes)
-        .join("g")
+      const nodeGroup = graphG.append("g").selectAll("g").data(graphData.nodes).join("g")
         .attr("class", "graph-node-group")
         .call(drag(graphSimulation));
 
-      // ノード形状
       const node = nodeGroup.append(graphViewMode === 'folder' ? "rect" : "circle")
         .attr("class", "graph-node")
         .attr("fill", d => getColor(d))
         .on("click", (e, d) => showGraphPopup(e, d))
         .on("mouseover", (e, d) => focusNode(d))
         .on("mouseout", () => unfocusAll());
-      
-      if (graphViewMode === 'folder') {
-        node.attr("width", d => getRadius(d) * 2)
-            .attr("height", d => getRadius(d) * 1.5)
-            .attr("x", d => -getRadius(d))
-            .attr("y", d => -getRadius(d) * 0.75)
-            .attr("rx", 4);
-      } else {
-        node.attr("r", d => getRadius(d));
-      }
 
-      // ラベル
-      const label = nodeGroup.append("text")
-        .attr("class", "graph-label")
-        .attr("dy", d => getRadius(d) + 12)
-        .attr("text-anchor", "middle")
-        .text(d => {
-          const limit = 8;
-          return d.title.length > limit ? d.title.substring(0, limit) + "..." : d.title;
-        });
+      if (graphViewMode === 'folder') {
+        node.attr("width", d => getRadius(d) * 2).attr("height", d => getRadius(d) * 1.5)
+            .attr("x", d => -getRadius(d)).attr("y", d => -getRadius(d) * 0.75).attr("rx", 4);
+      } else { node.attr("r", d => getRadius(d)); }
+
+      const label = nodeGroup.append("text").attr("class", "graph-label").attr("dy", d => getRadius(d) + 12).attr("text-anchor", "middle")
+        .text(d => { const limit = 8; return d.title.length > limit ? d.title.substring(0, limit) + "..." : d.title; });
 
       graphSimulation.on("tick", () => {
-        link
-          .attr("x1", d => d.source.x)
-          .attr("y1", d => d.source.y)
-          .attr("x2", d => d.target.x)
-          .attr("y2", d => d.target.y);
-
+        link.attr("x1", d => d.source.x).attr("y1", d => d.source.y).attr("x2", d => d.target.x).attr("y2", d => d.target.y);
         nodeGroup.attr("transform", d => `translate(${d.x},${d.y})`);
       });
 
-      // 初期アニメーション用
       graphG.attr("opacity", 0).transition().duration(800).attr("opacity", 1);
-      
+
       function getRadius(d) {
         if (graphViewMode === 'folder') return Math.min(60, Math.max(30, 30 + d.noteCount * 2));
         return Math.min(24, Math.max(6, 6 + d.linkCount * 1.5));
       }
-
       function getColor(d) {
-        if (graphViewMode === 'folder') return "#21262d"; // フォルダは少し明るいグレー
-        if (d.linkCount >= 5) return "#e3b341"; // 黄色 (重要)
-        if (d.linkCount >= 2) return "#58a6ff"; // 青 (中程度)
-        return "#6e7681"; // グレー (末端)
+        if (graphViewMode === 'folder') return "#21262d";
+        if (d.linkCount >= 5) return "#e3b341";
+        if (d.linkCount >= 2) return "#58a6ff";
+        return "#6e7681";
       }
-
       function drag(simulation) {
         return d3.drag()
-          .on("start", (event, d) => {
-            if (!event.active) simulation.alphaTarget(0.3).restart();
-            d.fx = d.x; d.fy = d.y;
-          })
-          .on("drag", (event, d) => {
-            d.fx = event.x; d.fy = event.y;
-            closeGraphPopup();
-          })
-          .on("end", (event, d) => {
-            if (!event.active) simulation.alphaTarget(0);
-            d.fx = null; d.fy = null;
-          });
+          .on("start", (event, d) => { if (!event.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+          .on("drag", (event, d) => { d.fx = event.x; d.fy = event.y; closeGraphPopup(); })
+          .on("end", (event, d) => { if (!event.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; });
       }
-
       function focusNode(d) {
         document.getElementById("graph-container").classList.add("focus-mode");
-        
-        const connectedNodes = new Set();
-        connectedNodes.add(d.id);
-        
-        link.classed("focused", l => {
-          if (l.source.id === d.id || l.target.id === d.id) {
-            connectedNodes.add(l.source.id);
-            connectedNodes.add(l.target.id);
-            return true;
-          }
-          return false;
-        });
-
+        const connectedNodes = new Set(); connectedNodes.add(d.id);
+        link.classed("focused", l => { if (l.source.id === d.id || l.target.id === d.id) { connectedNodes.add(l.source.id); connectedNodes.add(l.target.id); return true; } return false; });
         node.classed("focused", n => connectedNodes.has(n.id));
         label.classed("focused", n => connectedNodes.has(n.id));
       }
-
       function unfocusAll() {
         document.getElementById("graph-container").classList.remove("focus-mode");
-        link.classed("focused", false);
-        node.classed("focused", false);
-        label.classed("focused", false);
+        link.classed("focused", false); node.classed("focused", false); label.classed("focused", false);
       }
     }
 
@@ -3690,39 +2405,41 @@ ${allFolderNames}`;
       event.stopPropagation();
       const popup = document.getElementById("graph-popup");
       const btn = document.getElementById("g-pop-btn");
-      
+      const selectBtn = document.getElementById("g-pop-select-btn");
+
+      // ノードのID・タイトル・コンテンツを取得
+      const nodeId = d.id;
+      const nodeTitle = d.title;
+      const nodeContent = graphViewMode === 'folder'
+        ? d.notes.map(n => `## ${n.title}\n${n.content}`).join("\n\n")
+        : (d.content || "");
+
+      // ▼ レポートボタンの状態を更新 ▼
+      selectBtn.textContent = reportSelectedNodes.has(nodeId) ? "✦ 選択を解除" : "✦ レポート対象に追加";
+      selectBtn.onclick = () => {
+        toggleReportNode(nodeId, nodeTitle, nodeContent);
+        selectBtn.textContent = reportSelectedNodes.has(nodeId) ? "✦ 選択を解除" : "✦ レポート対象に追加";
+      };
+      // ▲ ここまで追加 ▲
+
       if (graphViewMode === 'folder') {
         document.getElementById("g-pop-title").textContent = `📁 ${d.title}`;
         document.getElementById("g-pop-links").textContent = `📝 ノート数: ${d.noteCount}`;
-        
         const noteList = d.notes.slice(0, 5).map(n => n.title).join(", ");
         document.getElementById("g-pop-desc").textContent = `含まれるノート: ${noteList}${d.notes.length > 5 ? "..." : ""}`;
-        
-        // AI関係性の表示
         const aiRels = folderRelationsAI.filter(rel => rel.source === d.id || rel.target === d.id);
         const aiSection = document.getElementById("g-pop-ai-relations");
         const aiList = document.getElementById("g-pop-ai-list");
-        
         if (aiRels.length > 0) {
           aiSection.style.display = "block";
-          aiList.innerHTML = aiRels.map(rel => {
-            const other = rel.source === d.id ? rel.target : rel.source;
-            return `<div style="margin-bottom:4px;"><strong>${other}</strong>: ${rel.reason}</div>`;
-          }).join("");
-        } else {
-          aiSection.style.display = "none";
-        }
-
+          aiList.innerHTML = aiRels.map(rel => { const other = rel.source === d.id ? rel.target : rel.source; return `<div style="margin-bottom:4px;"><strong>${other}</strong>: ${rel.reason}</div>`; }).join("");
+        } else { aiSection.style.display = "none"; }
         btn.textContent = "このフォルダを表示";
         btn.onclick = () => {
           closeGraphModal();
-          const searchBox = document.getElementById("search-box");
-          searchBox.value = d.title;
-          // フォルダを強制的に展開する
-          delete collapsedFolders[d.title];
-          localStorage.setItem("cn_collapsed_folders", JSON.stringify(collapsedFolders));
-          renderList();
-          openSidebar(); // サイドバーを開く
+          const searchBox = document.getElementById("search-box"); searchBox.value = d.title;
+          delete collapsedFolders[d.title]; localStorage.setItem("cn_collapsed_folders", JSON.stringify(collapsedFolders));
+          renderList(); openSidebar();
         };
       } else {
         document.getElementById("g-pop-title").textContent = d.title;
@@ -3730,171 +2447,176 @@ ${allFolderNames}`;
         const linkTitles = links.map(l => l.source.id === d.id ? l.target.title : l.source.title);
         const uniqueLinks = [...new Set(linkTitles)];
         document.getElementById("g-pop-links").textContent = uniqueLinks.length > 0 ? `🔗 ${uniqueLinks.join(", ")}` : "🔗 リンクなし";
-        
         let desc = d.content.replace(/^# .+\n/g, "").replace(/\[\[.*?\]\]/g, "").trim();
         desc = desc.substring(0, 50) + (desc.length > 50 ? "..." : "");
         document.getElementById("g-pop-desc").textContent = desc || "本文がありません。";
-        
+        document.getElementById("g-pop-ai-relations").style.display = "none";
         btn.textContent = "このノートを開く";
-        btn.onclick = () => {
-          closeGraphModal();
-          selectNote(d.id);
-        };
+        btn.onclick = () => { closeGraphModal(); selectNote(d.id); };
       }
 
       popup.classList.add("show");
-      
-      // 位置の調整
       const container = document.getElementById("graph-container");
       const rect = container.getBoundingClientRect();
       const transform = d3.zoomTransform(d3.select("#graph-svg").node());
-      
       let px = transform.applyX(d.x) + 20;
       let py = transform.applyY(d.y) - 20;
-      
       if (px + 240 > rect.width) px -= 280;
       if (py + 100 > rect.height) py -= 100;
-      
-      popup.style.left = px + "px";
-      popup.style.top = py + "px";
+      popup.style.left = px + "px"; popup.style.top = py + "px";
     }
 
-    // グラフ外クリックでポップアップを閉じる
     document.getElementById("graph-modal").addEventListener("click", (e) => {
       if (e.target.id === "graph-svg" || e.target.id === "graph-modal") closeGraphPopup();
     });
 
     function resetGraphZoom() {
       const svgEl = d3.select("#graph-svg");
-      svgEl.transition().duration(750).call(
-        graphZoom.transform, 
-        d3.zoomIdentity
-      );
+      svgEl.transition().duration(750).call(graphZoom.transform, d3.zoomIdentity);
     }
 
     function toggleGraphLabels() {
       const isFull = document.getElementById("graph-full-label-check").checked;
       const limit = 8;
-      d3.selectAll(".graph-label")
-        .text(d => isFull ? d.title : (d.title.length > limit ? d.title.substring(0, limit) + "..." : d.title));
+      d3.selectAll(".graph-label").text(d => isFull ? d.title : (d.title.length > limit ? d.title.substring(0, limit) + "..." : d.title));
     }
 
     function searchGraphNode() {
       const query = document.getElementById("graph-search-input").value.toLowerCase();
-      if (!query) {
-        d3.selectAll(".graph-node").attr("stroke", "#0d1117").attr("stroke-width", 1.5);
-        return;
-      }
-
+      if (!query) { d3.selectAll(".graph-node").attr("stroke", "#0d1117").attr("stroke-width", 1.5); return; }
       let found = null;
-      d3.selectAll(".graph-node").attr("stroke", (d) => {
-        if (d.title.toLowerCase().includes(query)) {
-          if (!found) found = d;
-          return "var(--bright)";
-        }
-        return "#0d1117";
-      }).attr("stroke-width", (d) => d.title.toLowerCase().includes(query) ? 3 : 1.5);
-
+      d3.selectAll(".graph-node")
+        .attr("stroke", (d) => { if (d.title.toLowerCase().includes(query)) { if (!found) found = d; return "var(--bright)"; } return "#0d1117"; })
+        .attr("stroke-width", (d) => d.title.toLowerCase().includes(query) ? 3 : 1.5);
       if (found) {
         const svgEl = d3.select("#graph-svg");
         const container = document.getElementById("graph-container");
-        const cx = container.clientWidth / 2;
-        const cy = container.clientHeight / 2;
-        
-        svgEl.transition().duration(750).call(
-          graphZoom.transform, 
-          d3.zoomIdentity.translate(cx - found.x, cy - found.y)
-        );
+        const cx = container.clientWidth / 2; const cy = container.clientHeight / 2;
+        svgEl.transition().duration(750).call(graphZoom.transform, d3.zoomIdentity.translate(cx - found.x, cy - found.y));
       }
     }
 
     async function autoOrganizeWithAI() {
       const apiKey = localStorage.getItem(GEMINI_KEY_LS);
-      if (!apiKey) {
-        toast("APIキーが設定されていません。設定画面から登録してください。");
-        openSettings();
-        return;
-      }
-
+      if (!apiKey) { toast("APIキーが設定されていません。設定画面から登録してください。"); openSettings(); return; }
       const uncategorizedNotes = notes.filter(n => getFolder(n) === "未分類" && !isNoteEmpty(n));
-      if (uncategorizedNotes.length === 0) {
-        toast("分類が必要な「未分類」ノートが見つかりませんでした。");
-        return;
-      }
-
+      if (uncategorizedNotes.length === 0) { toast("分類が必要な「未分類」ノートが見つかりませんでした。"); return; }
       if (!confirm(`未分類のノート ${uncategorizedNotes.length} 件をAIで自動的にフォルダ分けしますか？\n（タイトルに基づいたざっくりとした分類になります）`)) return;
-
       const btn = document.getElementById("ai-organize-btn");
       const originalText = btn.textContent;
-      btn.disabled = true;
-      btn.textContent = "待機中...";
+      btn.disabled = true; btn.textContent = "待機中...";
       toast("AIがノートを解析して分類中...");
-
       try {
         const noteListStr = uncategorizedNotes.map(n => `[ID: ${n.id}, Title: ${n.title}]`).join("\n");
-        const prompt = `あなたはノート整理の専門家です。
-以下のノートのリストを読み、タイトルに基づいて適切なフォルダ（カテゴリ名）に分類してください。
-
-分類のルール：
-1. 4〜8個程度の適切なカテゴリ名を考えてください。
-2. カテゴリ名は短く分かりやすい日本語にしてください。
-3. すでに似たカテゴリがある場合は統合してください。
-4. 出力は必ず以下のJSON形式のみとし、余計な解説は含めないでください。
-{"ID": "カテゴリ名", "ID": "カテゴリ名", ...}
-
-ノートリスト：
-${noteListStr}`;
-
+        const prompt = `あなたはノート整理の専門家です。\n以下のノートのリストを読み、タイトルに基づいて適切なフォルダ（カテゴリ名）に分類してください。\n\n分類のルール：\n1. 4〜8個程度の適切なカテゴリ名を考えてください。\n2. カテゴリ名は短く分かりやすい日本語にしてください。\n3. すでに似たカテゴリがある場合は統合してください。\n4. 出力は必ず以下のJSON形式のみとし、余計な解説は含めないでください。\n{"ID": "カテゴリ名", "ID": "カテゴリ名", ...}\n\nノートリスト：\n${noteListStr}`;
         const model = localStorage.getItem(GEMINI_MODEL_LS) || "gemini-2.0-flash";
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: { temperature: 0.2, response_mime_type: "application/json" }
-            })
-          }
-        );
-
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.2, response_mime_type: "application/json" } }) });
         if (!res.ok) throw new Error("AIへのリクエストに失敗しました");
         const data = await res.json();
-        const jsonStr = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        const mapping = JSON.parse(jsonStr);
-
+        const mapping = JSON.parse(data.candidates?.[0]?.content?.parts?.[0]?.text);
         let count = 0;
         notes.forEach(n => {
           const newFolder = mapping[n.id];
           if (newFolder) {
             let kws = n.keywords || "";
-            if (kws.includes("[folder:")) {
-              kws = kws.replace(/\[folder:(.+?)\]/, `[folder:${newFolder}]`);
-            } else {
-              kws = kws ? `${kws}, [folder:${newFolder}]` : `[folder:${newFolder}]`;
-            }
-            n.keywords = kws;
-            n.updatedAt = Date.now();
-            count++;
+            if (kws.includes("[folder:")) { kws = kws.replace(/\[folder:(.+?)\]/, `[folder:${newFolder}]`); }
+            else { kws = kws ? `${kws}, [folder:${newFolder}]` : `[folder:${newFolder}]`; }
+            n.keywords = kws; n.updatedAt = Date.now(); count++;
           }
         });
-
         if (count > 0) {
           saveLocal();
           await apiPost({ action: "saveAll", notes: notes });
-          renderList();
-          toast(`${count} 件のノートを自動整理しました ✦`);
-        } else {
-          toast("分類が適用されませんでした。");
-        }
+          renderList(); toast(`${count} 件のノートを自動整理しました ✦`);
+        } else { toast("分類が適用されませんでした。"); }
+      } catch (e) { console.error(e); toast("エラー: " + e.message); } finally { btn.disabled = false; btn.textContent = originalText; }
+    }
 
+    // ============================================================
+    //  GRAPH REPORT FEATURE  ← 新規追加
+    // ============================================================
+    let reportSelectedNodes = new Map(); // id → { title, content }
+    let lastGeneratedReport = "";
+
+    function toggleReportNode(id, title, content) {
+      if (reportSelectedNodes.has(id)) {
+        reportSelectedNodes.delete(id);
+      } else {
+        reportSelectedNodes.set(id, { title, content });
+      }
+      updateReportPanel();
+    }
+
+    function updateReportPanel() {
+      const panel = document.getElementById("graph-report-panel");
+      const countEl = document.getElementById("report-count");
+      const listEl = document.getElementById("report-selected-list");
+      const count = reportSelectedNodes.size;
+      countEl.textContent = count;
+      if (count === 0) { panel.style.display = "none"; return; }
+      panel.style.display = "block";
+      listEl.innerHTML = [...reportSelectedNodes.values()]
+        .map(n => `<div style="padding:3px 0; border-bottom:1px solid var(--border); color:var(--blue);">◈ ${esc(n.title)}</div>`)
+        .join("");
+    }
+
+    function clearReportSelection() {
+      reportSelectedNodes.clear();
+      updateReportPanel();
+      closeGraphPopup();
+    }
+
+    async function generateGraphReport() {
+      if (reportSelectedNodes.size === 0) { toast("ノートを選択してください"); return; }
+      const apiKey = localStorage.getItem(GEMINI_KEY_LS);
+      if (!apiKey) { toast("APIキーを設定してください ⚙"); return; }
+
+      const btn = document.getElementById("graph-report-btn");
+      btn.textContent = "✦ 生成中..."; btn.disabled = true;
+
+      try {
+        const notesContent = [...reportSelectedNodes.values()]
+          .map(n => `### ${n.title}\n${n.content}`)
+          .join("\n\n---\n\n");
+
+        const promptTemplate = getPrompt("REPORT");
+        const prompt = promptTemplate.replace("{notes_content}", notesContent.substring(0, 20000));
+        const model = localStorage.getItem(GEMINI_MODEL_LS) || "gemini-2.0-flash";
+        const temp = parseFloat(localStorage.getItem(GEMINI_TEMP_LS) || "0.3");
+
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: temp, maxOutputTokens: 2000 } }) }
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const reportText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        if (!reportText) throw new Error("レポートの生成に失敗しました");
+
+        lastGeneratedReport = reportText;
+        document.getElementById("report-result-content").textContent = reportText;
+        document.getElementById("report-result-modal").style.display = "flex";
       } catch (e) {
-        console.error(e);
         toast("エラー: " + e.message);
       } finally {
-        btn.disabled = false;
-        btn.textContent = originalText;
+        btn.textContent = "✦ 選択したノートのレポートを生成"; btn.disabled = false;
       }
+    }
+
+    function closeReportModal() {
+      document.getElementById("report-result-modal").style.display = "none";
+    }
+
+    function saveReportAsNote() {
+      if (!lastGeneratedReport) return;
+      const selectedTitles = [...reportSelectedNodes.values()].map(n => n.title).join("・");
+      const title = `レポート: ${selectedTitles.substring(0, 30)}`;
+      const newNote = createNote(title, getTodayFolderStr());
+      newNote.content = `# ${title}\n\n${lastGeneratedReport}`;
+      newNote.updatedAt = Date.now();
+      saveLocal(); pushNote(newNote);
+      closeReportModal(); closeGraphModal(); selectNote(newNote.id);
+      toast("レポートをノートとして保存しました ✦");
     }
 
     // ============================================================
@@ -3902,22 +2624,15 @@ ${noteListStr}`;
     // ============================================================
     (async function init() {
       loadLocal();
-
       if (notes.length === 0) {
-        // デフォルトノートを作成
         notes = [
           { id: genId(), title: "ようこそ", content: "# ようこそ Connected Notes へ！\n\n[[使い方]] を見てみましょう。\n\n[[アイデア]] や [[タスク]] にリンクできます。", summary: "", keywords: "", createdAt: Date.now(), updatedAt: Date.now() },
           { id: genId(), title: "使い方", content: "# 使い方\n\n- `[[ノート名]]` でリンクを作成\n- リンクをクリックでジャンプ\n- 右パネルでバックリンクを確認\n\n[[ようこそ]] に戻る", summary: "", keywords: "", createdAt: Date.now(), updatedAt: Date.now() },
         ];
         saveLocal();
       }
-
       activeId = notes[0]?.id || null;
-      renderList();
-      renderEditor();
-      setMode("preview");
-
-      // クラウド同期
+      renderList(); renderEditor(); setMode("preview");
       syncFromServer();
     })();
   </script>
