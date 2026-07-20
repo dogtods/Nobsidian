@@ -2057,15 +2057,19 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
     
     try {
       const cleanText = currentNote.content.replace(/#+\s/g, '').replace(/\[\[(.*?)\]\]/g, '$1').replace(/\*/g, '');
-      
+      const apiKey = localStorage.getItem("cn_gemini_key");
+
       const res = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: cleanText })
+        body: JSON.stringify({ text: cleanText, apiKey: apiKey || undefined })
       });
-      
-      if (!res.ok) throw new Error('TTS Fetch Failed');
-      
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'TTS Fetch Failed');
+      }
+
       const data = await res.json();
       
       if (data.audioContent) {

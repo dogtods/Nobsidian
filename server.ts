@@ -12,10 +12,10 @@ async function startServer() {
   // API routes FIRST
   app.post("/api/tts", async (req, res) => {
     try {
-      const { text } = req.body;
-      const apiKey = process.env.GEMINI_API_KEY_CUSTOM || process.env.GEMINI_API_KEY;
+      const { text, apiKey: clientApiKey } = req.body;
+      const apiKey = clientApiKey || process.env.GEMINI_API_KEY_CUSTOM || process.env.GEMINI_API_KEY;
       if (!apiKey) {
-        return res.status(400).json({ error: "API key is not configured. Please set GEMINI_API_KEY_CUSTOM in Secrets." });
+        return res.status(400).json({ error: "APIキーが設定されていません。AI設定より有効化してください。" });
       }
 
       const ai = new GoogleGenAI({ apiKey });
