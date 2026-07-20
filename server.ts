@@ -13,9 +13,9 @@ async function startServer() {
   app.post("/api/tts", async (req, res) => {
     try {
       const { text } = req.body;
-      const apiKey = process.env.GEMINI_API_KEY;
+      const apiKey = process.env.GEMINI_API_KEY_CUSTOM || process.env.GEMINI_API_KEY;
       if (!apiKey) {
-        return res.status(400).json({ error: "GEMINI_API_KEY environment variable is not configured" });
+        return res.status(400).json({ error: "API key is not configured. Please set GEMINI_API_KEY_CUSTOM in Secrets." });
       }
 
       const ai = new GoogleGenAI({ apiKey });
