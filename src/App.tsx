@@ -2056,8 +2056,19 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
     setIsTtsLoading(true);
     
     try {
-      const cleanText = currentNote.content.replace(/#+\s/g, '').replace(/\[\[(.*?)\]\]/g, '$1').replace(/\*/g, '');
-      const apiKey = localStorage.getItem("cn_gemini_key");
+      let rawText = currentNote.content;
+      // Remove everything after "保存日時" (or variations) if it exists
+      rawText = rawText.split(/保存日時|保存:|保存：/)[0];
+      
+      // Remove the title from the start of the note if it exists
+      const escapedTitle = currentNote.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const titleRegex = new RegExp(`^\\s*#*\\s*${escapedTitle}\\s*`, 'i');
+      rawText = rawText.replace(titleRegex, '');
+
+      // Clean remaining markdown syntax
+      const cleanText = rawText.replace(/#+\s/g, '').replace(/\[\[(.*?)\]\]/g, '$1').replace(/\*/g, '');
+      
+      const apiKey = localStorage.getItem("cn_gcp_tts_key");
 
       const res = await fetch('/api/tts', {
         method: 'POST',
@@ -2076,6 +2087,7 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
         const audioSrc = `data:${data.mimeType || 'audio/mp3'};base64,${data.audioContent}`;
         if (audioRef.current) {
           audioRef.current.src = audioSrc;
+          audioRef.current.playbackRate = parseFloat(localStorage.getItem("cn_tts_speed") || "1.2");
           
           if ('mediaSession' in navigator) {
             navigator.mediaSession.metadata = new MediaMetadata({

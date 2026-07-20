@@ -15,6 +15,8 @@ interface SettingsModalProps {
 
 export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToast, onFilterChange }: SettingsModalProps) {
   const [apiKey, setApiKey] = useState("");
+  const [ttsApiKey, setTtsApiKey] = useState("");
+  const [ttsSpeed, setTtsSpeed] = useState("1.2");
   const [model, setModel] = useState("gemini-2.0-flash");
   const [temp, setTemp] = useState("0.1");
   const [tokens, setTokens] = useState("1024");
@@ -28,6 +30,8 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
   useEffect(() => {
     if (isOpen) {
       setApiKey(localStorage.getItem("cn_gemini_key") || "");
+      setTtsApiKey(localStorage.getItem("cn_gcp_tts_key") || "");
+      setTtsSpeed(localStorage.getItem("cn_tts_speed") || "1.2");
       setModel(localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash");
       setTemp(localStorage.getItem("cn_gemini_temp") || "0.1");
       setTokens(localStorage.getItem("cn_gemini_tokens") || "1024");
@@ -48,6 +52,13 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
       localStorage.removeItem("cn_gemini_key");
     }
 
+    if (ttsApiKey.trim()) {
+      localStorage.setItem("cn_gcp_tts_key", ttsApiKey.trim());
+    } else {
+      localStorage.removeItem("cn_gcp_tts_key");
+    }
+
+    localStorage.setItem("cn_tts_speed", ttsSpeed);
     localStorage.setItem("cn_gemini_model", model);
     localStorage.setItem("cn_gemini_temp", temp);
     localStorage.setItem("cn_gemini_tokens", tokens);
@@ -96,13 +107,37 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
         </div>
 
         <div>
-          <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1">Gemini API キー</label>
+          <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1">Gemini API キー (解析用)</label>
           <input
             className="w-full font-mono text-xs p-2.5 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all"
             type="password"
             placeholder="AIzaSy..."
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
+          />
+        </div>
+
+        <div>
+          <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1">Google Cloud API キー (音声TTS用)</label>
+          <input
+            className="w-full font-mono text-xs p-2.5 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all mb-3"
+            type="password"
+            placeholder="AIzaSy..."
+            value={ttsApiKey}
+            onChange={(e) => setTtsApiKey(e.target.value)}
+          />
+          <label className="text-[11px] text-[var(--subtle)] font-bold flex justify-between mb-1">
+            <span>読み上げ速度</span>
+            <span className="font-mono text-[var(--purple)]">{ttsSpeed}x</span>
+          </label>
+          <input
+            type="range"
+            min="0.8"
+            max="2.0"
+            step="0.1"
+            value={ttsSpeed}
+            onChange={(e) => setTtsSpeed(e.target.value)}
+            className="w-full accent-[var(--purple)] cursor-pointer"
           />
           <div className="mt-2.5 bg-[rgba(163,113,247,0.04)] border border-[rgba(163,113,247,0.15)] rounded-lg p-2.5 flex flex-col gap-2">
             <label className="flex items-start gap-2 cursor-pointer select-none">
