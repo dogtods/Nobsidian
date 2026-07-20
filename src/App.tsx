@@ -31,7 +31,9 @@ import {
   Maximize2,
   Minimize2,
   X,
-  Clipboard
+  Clipboard,
+  Volume2,
+  Square
 } from "lucide-react";
 
 import { Note, FolderRelation } from "./types";
@@ -141,6 +143,12 @@ export default function App() {
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
   const [aiIsLoading, setAiIsLoading] = useState(false);
   const [aiResults, setAiResults] = useState<any | null>(null);
+
+  // TTS State
+  const [ttsQueue, setTtsQueue] = useState<Note[]>([]);
+  const [isTtsPlaying, setIsTtsPlaying] = useState(false);
+  const [isTtsLoading, setIsTtsLoading] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Auto-complete Wiki suggestions state
   const [suggest, setSuggest] = useState<{
@@ -2011,6 +2019,112 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
     toast("全てのフォルダを展開しました ✦");
   };
 
+  // TTS Initialization and Handlers
+  useEffect(() => {
+    const audio = new Audio();
+    audio.onended = () => {
+      setTtsQueue(prev => prev.slice(1));
+    };
+    audio.onerror = (e) => {
+      if (!audio.src || audio.src === window.location.href) return;
+      console.error("Audio error", e);
+      setIsTtsPlaying(false);
+      toast("音声の再生に失敗しました");
+    };
+    audioRef.current = audio;
+    return () => {
+      audio.pause();
+      audio.src = "";
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isTtsPlaying && !isTtsLoading && ttsQueue.length > 0) {
+      if (!audioRef.current || audioRef.current.paused) {
+        playNextTts();
+      }
+    } else if (ttsQueue.length === 0 && isTtsPlaying) {
+      setIsTtsPlaying(false);
+      toast("フォルダ内のすべてのノートの読み上げが完了しました ✦");
+    }
+  }, [isTtsPlaying, ttsQueue, isTtsLoading]);
+
+  const playNextTts = async () => {
+    if (ttsQueue.length === 0) return;
+    
+    const currentNote = ttsQueue[0];
+    setIsTtsLoading(true);
+    
+    try {
+      const cleanText = currentNote.content.replace(/#+\s/g, '').replace(/\[\[(.*?)\]\]/g, '$1').replace(/\*/g, '');
+      
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: cleanText })
+      });
+      
+      if (!res.ok) throw new Error('TTS Fetch Failed');
+      
+      const data = await res.json();
+      
+      if (data.audioContent) {
+        const audioSrc = `data:${data.mimeType || 'audio/mp3'};base64,${data.audioContent}`;
+        if (audioRef.current) {
+          audioRef.current.src = audioSrc;
+          
+          if ('mediaSession' in navigator) {
+            navigator.mediaSession.metadata = new MediaMetadata({
+              title: currentNote.title,
+              artist: getFolder(currentNote),
+              album: 'Connected Notes'
+            });
+            navigator.mediaSession.setActionHandler('nexttrack', () => {
+              if (audioRef.current) audioRef.current.pause();
+              setTtsQueue(prev => prev.slice(1));
+            });
+            navigator.mediaSession.setActionHandler('stop', () => stopTts());
+          }
+          
+          await audioRef.current.play();
+        }
+      }
+    } catch (e) {
+      console.error(e);
+      toast("音声の取得に失敗しました");
+      setIsTtsPlaying(false);
+    } finally {
+      setIsTtsLoading(false);
+    }
+  };
+
+  const startTtsFromCurrent = () => {
+    const active = getActiveNote();
+    if (!active) return;
+    
+    const { groups } = getCategorizedNotes();
+    const folder = getFolder(active);
+    const groupList = groups[folder] || [];
+    const startIndex = groupList.findIndex(n => n.id === active.id);
+    
+    if (startIndex === -1) return;
+    
+    const queue = groupList.slice(startIndex);
+    setTtsQueue(queue);
+    setIsTtsPlaying(true);
+    toast(`${queue.length}件の記事の連続読み上げを開始します ✦`);
+  };
+
+  const stopTts = () => {
+    setIsTtsPlaying(false);
+    setTtsQueue([]);
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.removeAttribute("src");
+      audioRef.current.load();
+    }
+  };
+
   const copyNoteToClipboard = () => {
     const activeNote = getActiveNote();
     if (!activeNote) return;
@@ -2849,6 +2963,23 @@ ${candidateNotesInfo || "（候補となる既存ノートはありません）"
                 </button>
 
                 <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={isTtsPlaying ? stopTts : startTtsFromCurrent}
+                    className={`p-1 px-2.5 bg-transparent border border-[var(--border2)] text-xs font-medium rounded-md cursor-pointer flex items-center gap-1.5 transition-all ${
+                      isTtsPlaying ? "text-red-400 hover:text-red-300 hover:bg-red-900/30" : "text-[var(--subtle)] hover:text-white hover:bg-[var(--border)]"
+                    }`}
+                    title="このフォルダの末尾まで記事を連続で読み上げます（バックグラウンド再生対応）"
+                  >
+                    {isTtsLoading ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-[var(--blue)]" />
+                    ) : isTtsPlaying ? (
+                      <Square className="w-3.5 h-3.5" />
+                    ) : (
+                      <Volume2 className="w-3.5 h-3.5 text-green-400" />
+                    )}
+                    <span className="hidden sm:inline">{isTtsPlaying ? "停止" : "読み上げ"}</span>
+                  </button>
+
                   <button
                     onClick={copyNoteToClipboard}
                     className="p-1 px-2.5 bg-transparent border border-[var(--border2)] text-xs text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded-md cursor-pointer flex items-center gap-1.5 transition-all"
