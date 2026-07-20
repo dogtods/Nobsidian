@@ -2070,21 +2070,29 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
       
       const apiKey = localStorage.getItem("cn_gcp_tts_key");
 
-      const res = await fetch('/api/tts', {
+      if (!apiKey) {
+        throw new Error("APIキーが設定されていません。設定画面からGoogle Cloud TTS APIキーを入力してください。");
+      }
+
+      const res = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: cleanText, apiKey: apiKey || undefined })
+        body: JSON.stringify({
+          input: { text: cleanText.substring(0, 4900) },
+          voice: { languageCode: "ja-JP", name: "ja-JP-Neural2-B" },
+          audioConfig: { audioEncoding: "MP3" }
+        })
       });
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || 'TTS Fetch Failed');
+        throw new Error(err.error?.message || 'TTS Fetch Failed');
       }
 
       const data = await res.json();
       
       if (data.audioContent) {
-        const audioSrc = `data:${data.mimeType || 'audio/mp3'};base64,${data.audioContent}`;
+        const audioSrc = `data:audio/mp3;base64,${data.audioContent}`;
         if (audioRef.current) {
           audioRef.current.src = audioSrc;
           audioRef.current.playbackRate = parseFloat(localStorage.getItem("cn_tts_speed") || "1.2");
