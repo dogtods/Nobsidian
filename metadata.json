@@ -1,0 +1,6 @@
+{
+  "name": "Connected Notes",
+  "description": "AI-powered connected note-taking app with advanced metadata analysis, knowledge graph, and deep correlation rendering.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

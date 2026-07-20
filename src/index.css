@@ -1,0 +1,333 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Noto Sans JP", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --border: #21262d;
+  --border2: #30363d;
+  --muted: #8b949e;
+  --subtle: #c9d1d9;
+  --text: #f0f6fc;
+  --bright: #ffffff;
+  --blue: #58a6ff;
+  --green: #3fb950;
+  --orange: #f0883e;
+  --red: #f85149;
+  --purple: #a371f7;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bot: env(safe-area-inset-bottom, 0px);
+}
+
+body {
+  font-family: 'Noto Sans JP', sans-serif;
+  background: #0d1117;
+  color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ===== SCROLLBARS ===== */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border2);
+  border-radius: 3px;
+}
+
+/* ===== APP LAYOUT & TRANSITIONS ===== */
+.wiki-link {
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+
+.wiki-link.exists {
+  color: var(--blue);
+  background: #58a6ff11;
+  border-bottom: 1px solid #58a6ff44;
+}
+
+.wiki-link.exists:hover {
+  background: #58a6ff22;
+  border-bottom-color: var(--blue);
+}
+
+.wiki-link.new {
+  color: var(--orange);
+  background: #f0883e11;
+  border-bottom: 1px dashed #f0883e44;
+}
+
+.wiki-link.new:hover {
+  background: #f0883e22;
+}
+
+.wiki-link.empty-node {
+  color: var(--muted);
+  background: transparent;
+  border-bottom: 1px dotted var(--muted);
+}
+
+.wiki-link.empty-node:hover {
+  background: #8b949e22;
+  color: var(--text);
+}
+
+/* ===== MARKDOWN RENDER STYLES ===== */
+.md h1 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--bright);
+  margin-bottom: 14px;
+  line-height: 1.3;
+}
+
+.md h2 {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 20px 0 10px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 5px;
+}
+
+.md h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 14px 0 7px;
+}
+
+.md p {
+  font-size: 14px;
+  line-height: 1.85;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.md .list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text);
+  margin: 3px 0 3px 8px;
+}
+
+.md .bullet {
+  color: var(--blue);
+  font-size: 9px;
+  margin-top: 7px;
+  flex-shrink: 0;
+}
+
+.md .check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text);
+  margin: 3px 0 3px 8px;
+}
+
+.md .check-icon {
+  font-size: 12px;
+  width: 16px;
+  flex-shrink: 0;
+}
+
+.md .check-icon.done {
+  color: var(--green);
+}
+
+.md .check-icon.todo {
+  color: var(--muted);
+}
+
+.md .done-text {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.md .spacer {
+  height: 8px;
+}
+
+.md code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  background: #1c2128;
+  color: var(--orange);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+/* ===== D3 GRAPH VISUALS ===== */
+.graph-node {
+  cursor: pointer;
+  stroke: #0d1117;
+  stroke-width: 1.5px;
+  transition: fill 0.2s;
+}
+
+.graph-link {
+  stroke-opacity: 0.6;
+  fill: none;
+}
+
+.graph-label {
+  font-size: 10px;
+  fill: #c9d1d9;
+  pointer-events: none;
+  text-shadow: 0 1px 2px #000, 1px 0 2px #000, -1px 0 2px #000, 0 -1px 2px #000;
+}
+
+/* Hover Focus Effect */
+.graph-container.focus-mode .graph-node,
+.graph-container.focus-mode .graph-link,
+.graph-container.focus-mode .graph-label {
+  opacity: 0.15;
+}
+
+.graph-container.focus-mode .graph-node.focused {
+  opacity: 1;
+  stroke: var(--bright);
+}
+
+.graph-container.focus-mode .graph-link.focused {
+  opacity: 0.8;
+  stroke: var(--bright);
+}
+
+.graph-container.focus-mode .graph-label.focused {
+  opacity: 1;
+  fill: var(--bright);
+  font-weight: bold;
+}
+
+/* ===== CO-OCCURRENCE NETWORK ===== */
+.co-occur-node {
+  cursor: grab;
+  stroke: #0d1117;
+  stroke-width: 1.5px;
+  transition: stroke-width 0.15s;
+}
+
+.co-occur-node:hover {
+  stroke: var(--bright);
+  stroke-width: 2.5px;
+}
+
+.co-occur-node:active {
+  cursor: grabbing;
+}
+
+.co-occur-link {
+  stroke: #58a6ff;
+  stroke-opacity: 0.4;
+  stroke-linecap: round;
+}
+
+.co-occur-label {
+  font-size: 11px;
+  fill: var(--text);
+  pointer-events: none;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+  font-weight: 500;
+}
+
+/* ===== STREAM GRAPH ===== */
+.stream-path {
+  transition: opacity 0.2s;
+}
+
+.stream-path:hover {
+  opacity: 1 !important;
+  stroke: var(--bright);
+  stroke-width: 1px;
+}
+
+/* ===== BUBBLE CHART ===== */
+.bubble-node {
+  stroke: #0d1117;
+  stroke-width: 1.5px;
+  transition: opacity 0.2s, stroke-width 0.2s;
+}
+
+.bubble-node:hover {
+  stroke: var(--bright);
+  stroke-width: 2px;
+  opacity: 1 !important;
+}
+
+/* Extra D3 styles */
+.grid line {
+  stroke: lightgrey;
+  stroke-opacity: 0.7;
+  shape-rendering: crispEdges;
+}
+.grid path {
+  stroke-width: 0;
+}
+
+/* Mermaid Global Styles */
+.mermaid-container svg {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  overflow: visible !important;
+}
+
+/* ===== PRINT STYLES ===== */
+@page {
+  size: A4 portrait;
+  margin: 15mm 20mm;
+}
+
+@media print {
+  body { 
+    background: #ffffff !important;
+    color: #1a1a1a !important;
+    font-size: 11pt; 
+  }
+  .no-print { display: none !important; }
+  .page-break { page-break-before: always; }
+
+  /* Ensure preview has proper margins for printing */
+  #preview {
+    width: 100% !important;
+    max-width: 170mm !important; /* 210mm (A4) - 40mm (margin) */
+    margin: 0 auto !important;
+    font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+  }
+
+  #preview, #preview * {
+    color: #1a1a1a !important;
+    border-color: #dddddd !important;
+  }
+  
+  .md h1, .md h2, .md h3, .md p, .md .list-item, .md .check-row {
+    color: #1a1a1a !important;
+  }
+  
+  /* Mermaid Diagram Printing */
+  .mermaid-container {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    margin: 0 auto;
+    display: block;
+    max-width: 170mm !important;
+  }
+  
+  .mermaid-container svg {
+    max-width: 100% !important;
+    height: auto !important;
+  }
+}
