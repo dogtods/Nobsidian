@@ -303,6 +303,7 @@ export default function App() {
     try {
       const res = await fetch(url, {
         method: "POST",
+        referrerPolicy: "no-referrer",
         mode: "cors",
         redirect: "follow",
         headers: { "Content-Type": "text/plain" }, // GAS workaround
@@ -324,6 +325,7 @@ export default function App() {
     
     try {
       const res = await fetch(`${url}?action=${action}`, { 
+        referrerPolicy: "no-referrer",
         mode: "cors",
         redirect: "follow"
       });
@@ -1374,6 +1376,7 @@ const renderMarkdownToElements = (contentStr: string) => {
 
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
         method: "POST",
+        referrerPolicy: "no-referrer",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
@@ -1825,6 +1828,7 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
 
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
         method: "POST",
+        referrerPolicy: "no-referrer",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
@@ -2065,8 +2069,13 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
       const titleRegex = new RegExp(`^\\s*#*\\s*${escapedTitle}\\s*`, 'i');
       rawText = rawText.replace(titleRegex, '');
 
-      // Clean remaining markdown syntax
-      const cleanText = rawText.replace(/#+\s/g, '').replace(/\[\[(.*?)\]\]/g, '$1').replace(/\*/g, '');
+      const cleanText = rawText.replace(/#+\s/g, '').replace(/\[\[(.*?)\]\]/g, '$1').replace(/\*/g, '').trim();
+      
+      if (!cleanText) {
+        setTtsQueue(prev => prev.slice(1));
+        setIsTtsLoading(false);
+        return;
+      }
       
       const apiKey = localStorage.getItem("cn_gcp_tts_key");
 
@@ -2074,11 +2083,25 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
         throw new Error("APIキーが設定されていません。設定画面からGoogle Cloud TTS APIキーを入力してください。");
       }
 
+      let textToRead = cleanText;
+      if (cleanText.length > 1500) {
+        textToRead = cleanText.substring(0, 1500);
+        const remainingText = cleanText.substring(1500);
+        
+        // Add the remaining text as the next item in the queue
+        setTtsQueue(prev => {
+          const newQueue = [...prev];
+          newQueue.splice(1, 0, { ...currentNote, content: remainingText, title: "" });
+          return newQueue;
+        });
+      }
+
       const res = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`, {
         method: 'POST',
+        referrerPolicy: 'no-referrer',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          input: { text: cleanText.substring(0, 4900) },
+          input: { text: textToRead },
           voice: { languageCode: "ja-JP", name: "ja-JP-Neural2-B" },
           audioConfig: { audioEncoding: "MP3" }
         })
@@ -2092,8 +2115,19 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
       const data = await res.json();
       
       if (data.audioContent) {
-        const audioSrc = `data:audio/mp3;base64,${data.audioContent}`;
+        const byteCharacters = atob(data.audioContent);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: 'audio/mp3' });
+        const audioSrc = URL.createObjectURL(blob);
+
         if (audioRef.current) {
+          if (audioRef.current.src && audioRef.current.src.startsWith('blob:')) {
+            URL.revokeObjectURL(audioRef.current.src);
+          }
           audioRef.current.src = audioSrc;
           audioRef.current.playbackRate = parseFloat(localStorage.getItem("cn_tts_speed") || "1.2");
           
@@ -2272,6 +2306,7 @@ ${listStr}`;
           const model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
           const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
             method: "POST",
+        referrerPolicy: "no-referrer",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               contents: [{ parts: [{ text: prompt }] }],
@@ -2500,6 +2535,7 @@ ${candidateNotesInfo || "（候補となる既存ノートはありません）"
           const model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
           const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
             method: "POST",
+        referrerPolicy: "no-referrer",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               contents: [{ parts: [{ text: prompt }] }],
