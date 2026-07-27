@@ -299,6 +299,10 @@ export default function App() {
   const apiPost = async (body: any) => {
     const url = getApiUrl();
     if (!url || url.includes("YOUR_")) throw new Error("API URL is unconfigured.");
+    const sheetName = localStorage.getItem("cn_gas_sheet_name");
+    if (sheetName && sheetName.trim() !== "") {
+      body.sheetName = sheetName.trim();
+    }
     
     try {
       const res = await fetch(url, {
@@ -322,9 +326,13 @@ export default function App() {
   const apiGet = async (action: string) => {
     const url = getApiUrl();
     if (!url || url.includes("YOUR_")) throw new Error("API URL is unconfigured.");
-    
+    let fullUrl = `${url}?action=${action}`;
+    const sheetName = localStorage.getItem("cn_gas_sheet_name");
+    if (sheetName && sheetName.trim() !== "") {
+      fullUrl += `&sheetName=${encodeURIComponent(sheetName.trim())}`;
+    }
     try {
-      const res = await fetch(`${url}?action=${action}`, { 
+      const res = await fetch(fullUrl, {
         referrerPolicy: "no-referrer",
         mode: "cors",
         redirect: "follow"
@@ -3233,7 +3241,22 @@ ${candidateNotesInfo || "（候補となる既存ノートはありません）"
                           </button>
                         </div>
                       </div>
-                      <button onClick={() => setShowSourceMemo(false)} className="hover:text-gray-200 cursor-pointer p-1">✕</button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            if (activeNote.columnJ) {
+                              navigator.clipboard.writeText(activeNote.columnJ);
+                              toast("記事全文をコピーしました");
+                            }
+                          }}
+                          className="p-1 px-2.5 bg-transparent border border-[#30363d] text-xs text-gray-400 hover:text-white hover:bg-[#30363d] font-medium rounded-md cursor-pointer flex items-center gap-1.5 transition-all"
+                          title="全文をコピー"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>コピー</span>
+                        </button>
+                        <button onClick={() => setShowSourceMemo(false)} className="hover:text-gray-200 cursor-pointer p-1">✕</button>
+                      </div>
                     </div>
                     <div 
                       className={`${sourceMemoFontSize} text-[var(--text)] whitespace-pre-wrap overflow-y-auto custom-scrollbar pr-2 flex-1 select-text`}

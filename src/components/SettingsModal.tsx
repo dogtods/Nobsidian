@@ -23,6 +23,7 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
   const [filterStart, setFilterStart] = useState("");
   const [filterEnd, setFilterEnd] = useState("");
   const [gasUrl, setGasUrl] = useState("");
+  const [gasSheetName, setGasSheetName] = useState("");
   const [optimizeTokens, setOptimizeTokens] = useState(true);
   const [maxCandidates, setMaxCandidates] = useState("20");
   const [maxContentLength, setMaxContentLength] = useState("2500");
@@ -42,6 +43,7 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
       setFilterStart(localStorage.getItem("cn_filter_start_date") || "");
       setFilterEnd(localStorage.getItem("cn_filter_end_date") || "");
       setGasUrl(localStorage.getItem("cn_gas_api_url") || "https://script.google.com/macros/s/AKfycbwURzm-X3meCgYanIU4C-F5yW1dLC2vV_x09pBn-HuZvriVsCekp7X1_g9CuhZmdyRy/exec");
+      setGasSheetName(localStorage.getItem("cn_gas_sheet_name") || "");
     }
   }, [isOpen]);
 
@@ -70,6 +72,12 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
       localStorage.setItem("cn_gas_api_url", gasUrl.trim());
     } else {
       localStorage.removeItem("cn_gas_api_url");
+    }
+
+    if (gasSheetName.trim()) {
+      localStorage.setItem("cn_gas_sheet_name", gasSheetName.trim());
+    } else {
+      localStorage.removeItem("cn_gas_sheet_name");
     }
 
     if (filterStart) {
@@ -250,14 +258,22 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
         <div className="border-t border-[var(--border)] pt-3.5">
           <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1">🔗 Google Apps Script (GAS) 同期WebアプリURL</label>
           <input
-            className="w-full font-mono text-xs p-2.5 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all"
+            className="w-full font-mono text-xs p-2.5 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all mb-2"
             type="text"
             placeholder="https://script.google.com/macros/s/.../exec"
             value={gasUrl}
             onChange={(e) => setGasUrl(e.target.value)}
           />
+          <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1">📄 同期先シート名 (空の場合はデフォルトを使用)</label>
+          <input
+            className="w-full text-xs p-2.5 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all"
+            type="text"
+            placeholder="シート1 (オプション)"
+            value={gasSheetName}
+            onChange={(e) => setGasSheetName(e.target.value)}
+          />
           <p className="text-[9px] text-[var(--muted)] mt-1">
-            Googleスプレッドシートへの保存や、未処理ハイライトの同期で使用するGASの「ウェブアプリURL」を入力します。
+            Googleスプレッドシートへの保存や、未処理ハイライトの同期で使用するGASの「ウェブアプリURL」とシート名を入力します。
           </p>
         </div>
 
