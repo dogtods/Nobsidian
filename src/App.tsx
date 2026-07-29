@@ -87,6 +87,37 @@ const compressContent = (content: string, maxLength: number): string => {
   
   return clean;
 };
+
+const parseAIJSON = (rawText: string) => {
+  let cleanText = rawText.trim();
+  const match = cleanText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (match) {
+    cleanText = match[1].trim();
+  } else if (cleanText.startsWith("```")) {
+    cleanText = cleanText.replace(/^```[a-z]*\n?/, "").replace(/\n?```$/, "").trim();
+  }
+  
+  try {
+    return JSON.parse(cleanText);
+  } catch (e: any) {
+    try {
+      const fixedStr = cleanText.replace(/"([^"\\]|\\.)*"/g, (m: string) => {
+        return m.replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t");
+      });
+      return JSON.parse(fixedStr);
+    } catch (fallbackErr) {
+      const extractMatch = cleanText.match(/(\{|\[)[\s\S]*(\}|\])/);
+      if (extractMatch) {
+        const fixedStr = extractMatch[0].replace(/"([^"\\]|\\.)*"/g, (m: string) => {
+          return m.replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t");
+        });
+        return JSON.parse(fixedStr);
+      }
+      throw e;
+    }
+  }
+};
+
 const getApiUrl = () => {
   try {
     return localStorage.getItem("cn_gas_api_url") || DEFAULT_API_URL;
@@ -1718,7 +1749,7 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
       
       if (!jsonStr) throw new Error("JSONが見つかりません");
       
-      const parsed = JSON.parse(jsonStr);
+      const parsed = parseAIJSON(jsonStr);
       
       if (Array.isArray(parsed)) {
         let updatedCount = 0;
@@ -1798,8 +1829,8 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
       toast("JSONの解析に失敗しました: " + e.message);
     }
   };
-
   const runGeminiAnalysis = async () => {
+
     const active = getActiveNote();
     if (!active) return toast("ノートを選択してください");
     if (active.content.trim().length < 15) return toast("内容が短すぎます");
@@ -1847,7 +1878,7 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
       if (!res.ok) throw new Error("API call failed");
       const rData = await res.json();
       const rawText = rData.candidates?.[0]?.content?.parts?.[0]?.text || "";
-      const resultObj = JSON.parse(rawText);
+      const resultObj = parseAIJSON(rawText);
 
       setAiResults(resultObj);
 
@@ -2330,7 +2361,7 @@ ${listStr}`;
           if (cleanText.startsWith("```")) {
             cleanText = cleanText.replace(/^```json\s*/, "").replace(/^```\s*/, "").replace(/```$/, "").trim();
           }
-          const mapping = JSON.parse(cleanText);
+          const mapping = parseAIJSON(cleanText);
 
           const updatedList = notes.map(n => {
             const nextFolder = mapping[n.id];
@@ -2565,7 +2596,7 @@ ${candidateNotesInfo || "（候補となる既存ノートはありません）"
 
           let aiParsedList: string[] = [];
           try {
-            aiParsedList = JSON.parse(cleanText);
+            aiParsedList = parseAIJSON(cleanText);
           } catch (jsonErr) {
             console.error("Failed to parse AI response JSON:", cleanText);
             setBulkProgress(prev => prev ? {
