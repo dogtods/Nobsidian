@@ -3673,11 +3673,56 @@ ${candidateNotesInfo || "（候補となる既存ノートはありません）"
                   </div>
                 </div>
                 
+                <div className="flex gap-2 mt-2">
+                  <button
+                    onClick={() => {
+                      const today = new Date();
+                      const yyyy = today.getFullYear();
+                      const mm = String(today.getMonth() + 1).padStart(2, "0");
+                      const dd = String(today.getDate()).padStart(2, "0");
+                      const todayStr = `${yyyy}-${mm}-${dd}`;
+                      handleCommonDateFilterChange(todayStr, todayStr);
+                      toast("期間を「今日」に設定しました");
+                    }}
+                    className="flex-1 text-center py-1.5 bg-transparent hover:bg-[var(--border)] border border-[#30363d] text-xs font-semibold rounded-lg text-[var(--subtle)] hover:text-white transition-colors cursor-pointer"
+                    title="今日だけをフィルタ表示"
+                  >
+                    今日
+                  </button>
+                  <button
+                    onClick={() => {
+                      const today = new Date();
+                      const lastWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+                      const yyyy1 = lastWeek.getFullYear();
+                      const mm1 = String(lastWeek.getMonth() + 1).padStart(2, "0");
+                      const dd1 = String(lastWeek.getDate()).padStart(2, "0");
+                      const yyyy2 = today.getFullYear();
+                      const mm2 = String(today.getMonth() + 1).padStart(2, "0");
+                      const dd2 = String(today.getDate()).padStart(2, "0");
+                      handleCommonDateFilterChange(`${yyyy1}-${mm1}-${dd1}`, `${yyyy2}-${mm2}-${dd2}`);
+                      toast("期間を「過去1週間」に設定しました");
+                    }}
+                    className="flex-1 text-center py-1.5 bg-transparent hover:bg-[var(--border)] border border-[#30363d] text-xs font-semibold rounded-lg text-[var(--subtle)] hover:text-white transition-colors cursor-pointer"
+                    title="今日までの1週間をフィルタ表示"
+                  >
+                    過去1週間
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleCommonDateFilterChange("", "");
+                      toast("期間フィルタをリセットしました");
+                    }}
+                    className="flex-1 text-center py-1.5 bg-transparent hover:bg-[var(--border)] border border-[#30363d] text-xs font-semibold rounded-lg text-[var(--subtle)] hover:text-white transition-colors cursor-pointer"
+                    title="期間フィルタを解除して全期間を表示"
+                  >
+                    リセット
+                  </button>
+                </div>
                 <button
                   onClick={() => setIsSettingsOpen(true)}
-                  className="w-full text-center py-1.5 bg-transparent hover:bg-[var(--border)] border border-[#30363d] text-xs font-semibold rounded-lg text-[var(--subtle)] hover:text-white transition-colors cursor-pointer"
+                  className="w-full text-center py-1.5 bg-transparent hover:bg-[var(--border)] border border-[#30363d] text-xs font-semibold rounded-lg text-[var(--subtle)] hover:text-white transition-colors cursor-pointer mt-2"
                 >
-                  フィルター期間を変更 ⚙
+                  詳細に期間を設定 ⚙
                 </button>
               </div>
 
