@@ -64,7 +64,7 @@ import ExternalAiExportModal from "./components/ExternalAiExportModal";
 import SyncManagerModal from "./components/SyncManagerModal";
 import { MermaidViewer } from "./components/MermaidViewer";
 
-const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbyKKnEhgwIjeX0mCHgoBGd2ykw1aSVEw1kNxELsqbeR8ZnIrzMQcvVlE32Er5a1NxiQ/exec";
+const DEFAULT_API_URL = "";
 
 const compressContent = (content: string, maxLength: number): string => {
   if (!content) return "";
@@ -4182,6 +4182,8 @@ ${candidateNotesInfo || "（候補となる既存ノートはありません）"
           isOpen={isTimelineOpen}
           onClose={() => setIsTimelineOpen(false)}
           notes={notes}
+          filterStart={filterStartDate}
+          filterEnd={filterEndDate}
           onSelectNote={(noteId) => {
             setActiveId(noteId);
             setMode("preview");

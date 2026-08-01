@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Note, TimelineItem } from "../types";
+import { getFilteredNotes } from "../utils/graphDataParser";
 import { 
   Calendar, 
   Clock, 
@@ -19,6 +20,8 @@ interface TimelineModalProps {
   notes: Note[];
   onSelectNote: (noteId: string) => void;
   toast: (msg: string) => void;
+  filterStart?: string;
+  filterEnd?: string;
 }
 
 export default function TimelineModal({
@@ -27,6 +30,8 @@ export default function TimelineModal({
   notes,
   onSelectNote,
   toast,
+  filterStart = "",
+  filterEnd = "",
 }: TimelineModalProps) {
   const [items, setItems] = useState<TimelineItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -34,6 +39,11 @@ export default function TimelineModal({
   const [viewMode, setViewMode] = useState<"card" | "table">("card");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+
+  // Derive filtered notes based on global date filter
+  const filteredNotes = useMemo(() => {
+    return getFilteredNotes(notes, filterStart, filterEnd);
+  }, [notes, filterStart, filterEnd]);
 
   useEffect(() => {
     const savedHidden = localStorage.getItem("cn_timeline_hidden_ids");
@@ -59,7 +69,7 @@ export default function TimelineModal({
 
   // Get list of folders for filter
   const folders = useMemo(() => {
-    const list = notes
+    const list = filteredNotes
       .filter(n => {
         const folderName = n.keywords?.match(/\[folder:(.+?)\]/)?.[1] || "未分類";
         return true;
@@ -69,12 +79,12 @@ export default function TimelineModal({
         return match ? match[1] : "未分類";
       });
     return ["all", ...new Set(list)].filter(Boolean);
-  }, [notes]);
+  }, [filteredNotes]);
 
   // Generate a signature of current notes to track changes and dynamically sync chronological events
   const notesSignature = useMemo(() => {
-    return notes.map(n => `${n.id}-${n.updatedAt}-${n.content.length}`).join("|");
-  }, [notes]);
+    return filteredNotes.map(n => `${n.id}-${n.updatedAt}-${n.content.length}`).join("|");
+  }, [filteredNotes]);
 
   const isSystemNoiseLine = (line: string): boolean => {
     const trimmed = line.trim();
@@ -183,7 +193,7 @@ export default function TimelineModal({
   const runLocalExtraction = () => {
     const timelineItemsList: TimelineItem[] = [];
 
-    notes.forEach(note => {
+    filteredNotes.forEach(note => {
       const folderName = note.keywords?.match(/\[folder:(.+?)\]/)?.[1] || "未分類";
       // Exclude 99* folder check removed
 
