@@ -1999,8 +1999,8 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
   const getCategorizedNotes = () => {
     const query = searchQuery.toLowerCase().trim();
     
-    const filterStart = localStorage.getItem("cn_filter_start_date") || "";
-    const filterEnd = localStorage.getItem("cn_filter_end_date") || "";
+    const filterStart = filterStartDate;
+    const filterEnd = filterEndDate;
     const startMilli = filterStart ? new Date(filterStart + "T00:00:00").getTime() : null;
     const endMilli = filterEnd ? new Date(filterEnd + "T23:59:59").getTime() : null;
 
@@ -2673,6 +2673,18 @@ ${candidateNotesInfo || "（候補となる既存ノートはありません）"
   const handleCommonDateFilterChange = (start: string, end: string) => {
     setFilterStartDate(start);
     setFilterEndDate(end);
+    
+    if (start) {
+      localStorage.setItem("cn_filter_start_date", start);
+    } else {
+      localStorage.removeItem("cn_filter_start_date");
+    }
+    
+    if (end) {
+      localStorage.setItem("cn_filter_end_date", end);
+    } else {
+      localStorage.removeItem("cn_filter_end_date");
+    }
   };
 
   const activeNote = getActiveNote();
