@@ -54,9 +54,9 @@ export default function KnowledgeGraphModal({
   // Apply D3 highlight whenever selection states or modes change
   useEffect(() => {
     if (applyHighlightRef.current) {
-      applyHighlightRef.current(activeSelectedNode, activeSelectedFolder, highlightMode, reportSelectedNodes);
+      applyHighlightRef.current(activeSelectedNode, activeSelectedFolder, highlightMode, reportSelectedNodes, searchQuery);
     }
-  }, [highlightMode, activeSelectedNode, activeSelectedFolder, reportSelectedNodes]);
+  }, [highlightMode, activeSelectedNode, activeSelectedFolder, reportSelectedNodes, searchQuery]);
 
   // Report modal states
   const [showReportResult, setShowReportResult] = useState(false);
@@ -569,7 +569,7 @@ export default function KnowledgeGraphModal({
       return found ? getFolderOfNode(found) : "";
     };
 
-    const applyHighlight = (selNode: GraphNode | null, selFolder: string | null, mode: "connection" | "folder", reportNodes?: Map<string, any>) => {
+    const applyHighlight = (selNode: GraphNode | null, selFolder: string | null, mode: "connection" | "folder", reportNodes?: Map<string, any>, searchStr?: string) => {
       const containerValue = d3.select(containerRef.current);
       const svgNodes = d3.select(svgRef.current).selectAll(".graph-node");
       const svgLabels = d3.select(svgRef.current).selectAll(".graph-label");
@@ -580,6 +580,8 @@ export default function KnowledgeGraphModal({
       currentSelectedNode = selNode;
 
       const hasReportNodes = reportNodes && reportNodes.size > 0;
+      const hasSearch = searchStr && searchStr.trim() !== "";
+      const searchVal = searchStr ? searchStr.trim().toLowerCase() : "";
       
       const isNodeInReport = (n: GraphNode) => {
         if (!hasReportNodes) return false;
@@ -588,7 +590,12 @@ export default function KnowledgeGraphModal({
         return false;
       };
 
-      if (!selNode && !selFolderClean && !hasReportNodes) {
+      const isNodeInSearchMatch = (n: GraphNode) => {
+        if (!hasSearch) return false;
+        return n.title.toLowerCase().includes(searchVal);
+      };
+
+      if (!selNode && !selFolderClean && !hasReportNodes && !hasSearch) {
         containerValue.classed("focus-mode", false);
         svgNodes.classed("focused", false);
         svgLabels.classed("focused", false);
@@ -599,9 +606,15 @@ export default function KnowledgeGraphModal({
 
       containerValue.classed("focus-mode", true);
       
-      if (!selNode && !selFolderClean && hasReportNodes) {
-        svgNodes.classed("focused", (n: GraphNode) => isNodeInReport(n));
-        svgLabels.classed("focused", (n: GraphNode) => isNodeInReport(n));
+      if (!selNode && !selFolderClean && !hasReportNodes && hasSearch) {
+        // Only search is active
+        svgNodes.classed("focused", (n: GraphNode) => isNodeInSearchMatch(n));
+        svgLabels.classed("focused", (n: GraphNode) => isNodeInSearchMatch(n));
+        svgLinks.classed("focused", false); // Search doesn't highlight links unless requested, keep it simple
+        d3.selectAll(".legend-item").classed("active", false);
+      } else if (!selNode && !selFolderClean && hasReportNodes) {
+        svgNodes.classed("focused", (n: GraphNode) => isNodeInReport(n) || isNodeInSearchMatch(n));
+        svgLabels.classed("focused", (n: GraphNode) => isNodeInReport(n) || isNodeInSearchMatch(n));
         svgLinks.classed("focused", (l: any) => {
           const srcId = l.source.id ?? l.source;
           const tgtId = l.target.id ?? l.target;
@@ -609,8 +622,8 @@ export default function KnowledgeGraphModal({
         });
         d3.selectAll(".legend-item").classed("active", false);
       } else if (mode === "folder" && selFolderClean) {
-        svgNodes.classed("focused", (n: GraphNode) => getFolderOfNode(n) === selFolderClean || isNodeInReport(n));
-        svgLabels.classed("focused", (n: GraphNode) => getFolderOfNode(n) === selFolderClean || isNodeInReport(n));
+        svgNodes.classed("focused", (n: GraphNode) => getFolderOfNode(n) === selFolderClean || isNodeInReport(n) || isNodeInSearchMatch(n));
+        svgLabels.classed("focused", (n: GraphNode) => getFolderOfNode(n) === selFolderClean || isNodeInReport(n) || isNodeInSearchMatch(n));
         svgLinks.classed("focused", (l: any) => {
           const sf = getFolderOfRef(l.source);
           const tf = getFolderOfRef(l.target);
@@ -636,8 +649,8 @@ export default function KnowledgeGraphModal({
           return (hasReportNodes && (reportNodes!.has(srcId) && reportNodes!.has(tgtId)));
         });
 
-        svgNodes.classed("focused", (n: GraphNode) => adjacentIds.has(n.id) || isNodeInReport(n));
-        svgLabels.classed("focused", (n: GraphNode) => adjacentIds.has(n.id) || isNodeInReport(n));
+        svgNodes.classed("focused", (n: GraphNode) => adjacentIds.has(n.id) || isNodeInReport(n) || isNodeInSearchMatch(n));
+        svgLabels.classed("focused", (n: GraphNode) => adjacentIds.has(n.id) || isNodeInReport(n) || isNodeInSearchMatch(n));
         
         const parentFolder = getFolderOfNode(selNode);
         d3.selectAll(".legend-item").classed("active", function() {
@@ -645,7 +658,7 @@ export default function KnowledgeGraphModal({
         });
       }
     };
-    applyHighlightRef.current = applyHighlight;
+applyHighlightRef.current = applyHighlight;
 
     // Double-click background resetting zoom back to default
     svg.on("dblclick", (event) => {
@@ -723,6 +736,55 @@ export default function KnowledgeGraphModal({
     };
   }, [isOpen, graphViewMode, notes, folderRelationsAI, isFullLabel, filterStart, filterEnd, minStrength]);
 
+
+  const runGraphAiAnalysis = async () => {
+    const apiKey = localStorage.getItem("cn_gemini_key");
+    if (!apiKey) return onSaveToast("APIキーを設定してください ⚙");
+
+    const folderMap = new Map<string, Note[]>();
+    notes.forEach(note => {
+      const folder = getFolderFromKeywords(note.keywords);
+      if (!folderMap.has(folder)) folderMap.set(folder, []);
+      folderMap.get(folder)!.push(note);
+    });
+
+    const folders = Array.from(folderMap.keys()).filter(f => f !== "未分類");
+    if (folders.length < 2) return onSaveToast("解析には最低2つ以上のフォルダが必要です");
+
+    onSaveToast("🤖 フォルダ構造をAI解析中...");
+
+    const folderContexts = folders.map(f => {
+      const folderNotes = folderMap.get(f) || [];
+      const titles = folderNotes.map(n => n.title).join(", ");
+      return `【${f}】含まれるノート: ${titles}`;
+    }).join("\n");
+
+    const prompt = `以下のフォルダ一覧とそれに含まれるノートのタイトルを見て、フォルダ間の関係性（どちらが上位概念か、関連性が深いかなど）を分析してください。\n\n${folderContexts}\n\n出力は以下のJSON配列形式のみとしてください。それ以外のテキストは一切含めないでください。\n[\n  { "source": "フォルダA", "target": "フォルダB", "reason": "関係性の理由" }\n]`;
+
+    try {
+      let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
+      if (model.includes("2.5")) model = "gemini-2.0-flash";
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.1, maxOutputTokens: 2000, responseMimeType: "application/json" }
+        })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message);
+      
+      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
+      const relations = JSON.parse(rawText) as FolderRelation[];
+      
+      saveFolderRelationsLocally(relations, Date.now());
+      onSaveToast(`✅ ${relations.length}件のフォルダ関係性をAIが検出しました`);
+    } catch (e: any) {
+      onSaveToast("AI解析エラー: " + (e.message || "パースに失敗しました"));
+      console.error(e);
+    }
+  };
   const handleZoomReset = () => {
     if (svgRef.current && zoomRef.current) {
       d3.select(svgRef.current)
@@ -735,21 +797,16 @@ export default function KnowledgeGraphModal({
 
   const handleSearchChange = (query: string) => {
     setSearchQuery(query);
-    if (!query.trim()) {
-      d3.selectAll(".graph-node").style("stroke", "#0d1117").style("stroke-width", "1.5px");
-      return;
-    }
+    if (!query.trim()) return;
 
     let firstFound: any = null;
-    d3.selectAll(".graph-node")
-      .style("stroke", (d: any) => {
-        if (d.title.toLowerCase().includes(query.toLowerCase())) {
-          if (!firstFound) firstFound = d;
-          return "var(--bright)";
-        }
-        return "#0d1117";
-      })
-      .style("stroke-width", (d: any) => d.title.toLowerCase().includes(query.toLowerCase()) ? "3.5px" : "1.5px");
+    const nodesData = d3.select(svgRef.current).selectAll(".graph-node").data() as GraphNode[];
+    for (const d of nodesData) {
+      if (d.title.toLowerCase().includes(query.toLowerCase())) {
+        firstFound = d;
+        break;
+      }
+    }
 
     // Center viewport camera on targeted node with zoom bias natively using D3 transform
     if (firstFound && svgRef.current && zoomRef.current && containerRef.current) {
@@ -765,56 +822,6 @@ export default function KnowledgeGraphModal({
             .scale(1.25)
             .translate(-firstFound.x, -firstFound.y)
         );
-    }
-  };
-
-  const runGraphAiAnalysis = async () => {
-    const apiKey = localStorage.getItem("cn_gemini_key");
-    if (!apiKey) return onSaveToast("APIキーを [AI設定 ⚙] より登録してください");
-
-    const { nodes } = buildGraphData();
-    if (nodes.length < 2) return onSaveToast("十分にフォルダがありません。ノートに複数のフォルダ名を設定してください。");
-
-    onSaveToast("全フォルダの類似関係をAI分析中...");
-    try {
-      const activeSummaries = nodes.map(f => {
-        const titles = (f.notes || []).slice(0, 15).map(n => n.title).join(", ");
-        return `[Folder: ${f.title}]\nNotes: ${titles}`;
-      }).join("\n\n");
-
-      const prompt = `あなたは知識管理の専門家です。以下のフォルダ（カテゴリ）の内容を読み、フォルダリストとの間の「意味的な繋がり」や「階層関係」を解析してください。
-
-関係性のルール：
-1. 「AはBの前提条件」「AとBは補完し合っている」など、深い関係を見つけてください。
-2. 出力は必ず以下のJSON形式のみとしてください。
-[{"source": "フォルダA", "target": "フォルダB", "reason": "関係の短い説明"}, ...]
-
-フォルダリスト：
-${activeSummaries}`;
-
-      const model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
-      const temp = parseFloat(localStorage.getItem("cn_gemini_temp") || "0.2");
-      const maxTok = parseInt(localStorage.getItem("cn_gemini_tokens") || "1024", 10);
-
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: temp, maxOutputTokens: maxTok, response_mime_type: "application/json" }
-        })
-      });
-
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const rData = await res.json();
-      const text = rData.candidates?.[0]?.content?.parts?.[0]?.text;
-      const newRels: FolderRelation[] = JSON.parse(text);
-
-      saveFolderRelationsLocally(newRels, Date.now());
-      onSaveToast("フォルダ関連AI分析が完了しました ✦");
-    } catch (e: any) {
-      console.error(e);
-      onSaveToast("AI解析失敗: " + e.message);
     }
   };
 
@@ -1007,7 +1014,8 @@ ${activeSummaries}`;
       const promptTemplate = localStorage.getItem("cn_prompt_report") || DEFAULT_PROMPTS.REPORT;
       const prompt = promptTemplate.replace("{notes_content}", notesContent.substring(0, 20000));
 
-      const model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
+      let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
+      if (model.includes("2.5")) model = "gemini-2.0-flash";
       const temp = parseFloat(localStorage.getItem("cn_gemini_temp") || "0.3");
       const maxTok = parseInt(localStorage.getItem("cn_gemini_tokens") || "2000", 10);
 
@@ -1020,7 +1028,7 @@ ${activeSummaries}`;
         })
       });
 
-      if (!res.ok) throw new Error("API Request failure");
+      if (!res.ok) throw new Error(`HTTP Error ${res.status}: ${res.status === 404 ? "API Endpoint not found. Please check your model settings." : ""}`);
       const rData = await res.json();
       const parsedText = rData.candidates?.[0]?.content?.parts?.[0]?.text || "";
 

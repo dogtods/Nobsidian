@@ -33,7 +33,7 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
       setApiKey(localStorage.getItem("cn_gemini_key") || "");
       setTtsApiKey(localStorage.getItem("cn_gcp_tts_key") || "");
       setTtsSpeed(localStorage.getItem("cn_tts_speed") || "1.2");
-      setModel(localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash");
+      let m = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash"; if(m.includes("2.5")) m="gemini-2.0-flash"; setModel(m);
       setTemp(localStorage.getItem("cn_gemini_temp") || "0.1");
       setTokens(localStorage.getItem("cn_gemini_tokens") || "1024");
       setOptimizeTokens(localStorage.getItem("cn_optimize_api_tokens") !== "false");
@@ -216,8 +216,8 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
           >
             <option value="gemini-flash-lite-latest">Gemini Flash Lite (Latest)</option>
             <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-            <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+            
+            
             <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
             <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
           </select>

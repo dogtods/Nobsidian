@@ -344,9 +344,10 @@ export default function App() {
         headers: { "Content-Type": "text/plain" }, // GAS workaround
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
+      if (!res.ok) throw new Error(`HTTP Error ${res.status}: ${res.status === 404 ? 'API Endpoint not found. Please check your URL or Model settings.' : ''}`);
       return await res.json();
     } catch (e: any) {
+      if (e.message.includes("404")) throw new Error("APIエンドポイントが見つかりません(404)。GASのURL、またはAIモデルの設定を確認してください。");
       if (e.message === "Failed to fetch" || e.name === "TypeError") {
         throw new Error("GAS Webアプリへの接続に失敗しました（Failed to fetch）。GAS側の『新しいデプロイ ＞ アクセスできるユーザー』が『全員』（Anyone）になっているか、URLが最新の /exec の本番用URLであるかご確認ください。");
       }
@@ -368,9 +369,10 @@ export default function App() {
         mode: "cors",
         redirect: "follow"
       });
-      if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
+      if (!res.ok) throw new Error(`HTTP Error ${res.status}: ${res.status === 404 ? 'API Endpoint not found. Please check your URL or Model settings.' : ''}`);
       return await res.json();
     } catch (e: any) {
+      if (e.message.includes("404")) throw new Error("APIエンドポイントが見つかりません(404)。GASのURL、またはAIモデルの設定を確認してください。");
       if (e.message === "Failed to fetch" || e.name === "TypeError") {
         throw new Error("GAS Webアプリへの接続に失敗しました（Failed to fetch）。GAS側の『新しいデプロイ ＞ アクセスできるユーザー』が『全員』（Anyone）になっているか、URLが最新の /exec の本番用URLであるかご確認ください。");
       }
@@ -1409,7 +1411,8 @@ const renderMarkdownToElements = (contentStr: string) => {
     if (btn) btn.classList.add("loading");
 
     try {
-      const model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
+      let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
+      if (model.includes("2.5")) model = "gemini-2.0-flash";
       const promptTemplate = getStoredPrompt("TITLE");
       const prompt = promptTemplate.replace("{content}", active.content.substring(0, 2000));
 
@@ -1423,7 +1426,7 @@ const renderMarkdownToElements = (contentStr: string) => {
         })
       });
 
-      if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
+      if (!res.ok) throw new Error(`HTTP Error ${res.status}: ${res.status === 404 ? 'API Endpoint not found. Please check your URL or Model settings.' : ''}`);
       const data = await res.json();
       let optTitle = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
 
@@ -1861,7 +1864,8 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
     const needKeywords = !(optSkipKeywords && hasKeywords);
 
     try {
-      const model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
+      let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
+      if (model.includes("2.5")) model = "gemini-2.0-flash";
       const temperature = parseFloat(localStorage.getItem("cn_gemini_temp") || "0.1");
       const maxOutputTokens = parseInt(localStorage.getItem("cn_gemini_tokens") || "1200", 10);
 
@@ -2342,7 +2346,8 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
 ノートリスト：
 ${listStr}`;
 
-          const model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
+          let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
+      if (model.includes("2.5")) model = "gemini-2.0-flash";
           const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
             method: "POST",
         referrerPolicy: "no-referrer",
@@ -2571,7 +2576,8 @@ ${candidateNotesInfo || "（候補となる既存ノートはありません）"
 ["タイトルA", "タイトルB"]
 `;
 
-          const model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
+          let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
+      if (model.includes("2.5")) model = "gemini-2.0-flash";
           const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
             method: "POST",
         referrerPolicy: "no-referrer",

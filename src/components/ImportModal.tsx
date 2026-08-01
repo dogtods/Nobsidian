@@ -88,7 +88,8 @@ export default function ImportModal({ isOpen, onClose, onCreateNoteExt, onSaveTo
 
     const sourceSsId = extractSheetId(sheetUrl);
     const apiKey = localStorage.getItem("cn_gemini_key");
-    const importModel = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
+    let importModel = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
+    if (importModel.includes("2.5")) importModel = "gemini-2.0-flash";
 
     setIsProcessing(true);
     setProcessingText("インポート中...");
@@ -268,7 +269,8 @@ ${JSON.stringify(itemsToProcess)}
 
     try {
       const apiKey = localStorage.getItem("cn_gemini_key");
-      const importModel = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
+      let importModel = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
+    if (importModel.includes("2.5")) importModel = "gemini-2.0-flash";
       const importTemp = parseFloat(localStorage.getItem("cn_gemini_temp") || "0.1");
 
       const fetchAiTitle = async (content: string, currentTitle: string) => {
@@ -439,7 +441,7 @@ ${JSON.stringify(itemsToProcess)}
               })
             }
           );
-          if (!r.ok) {
+          if (!r.ok) { throw new Error(`HTTP Error ${r.status}: ${r.status === 404 ? 'API Endpoint not found. Please check your model settings.' : ''}`);
             const de = await r.json();
             throw new Error(de.error?.message || "Wordファイルの解析に失敗しました");
           }
@@ -486,7 +488,7 @@ ${JSON.stringify(itemsToProcess)}
                 })
               }
             );
-            if (!r.ok) {
+            if (!r.ok) { throw new Error(`HTTP Error ${r.status}: ${r.status === 404 ? 'API Endpoint not found. Please check your model settings.' : ''}`);
               const pe = await r.json();
               throw new Error(pe.error?.message || "PDF解析に失敗しました");
             }
@@ -558,7 +560,7 @@ ${JSON.stringify(itemsToProcess)}
               })
             }
           );
-          if (!r.ok) {
+          if (!r.ok) { throw new Error(`HTTP Error ${r.status}: ${r.status === 404 ? 'API Endpoint not found. Please check your model settings.' : ''}`);
             const ae = await r.json();
             throw new Error(ae.error?.message || "AIレスポンスに失敗しました");
           }
