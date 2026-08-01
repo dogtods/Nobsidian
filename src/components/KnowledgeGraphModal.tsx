@@ -49,14 +49,14 @@ export default function KnowledgeGraphModal({
   const [highlightMode, setHighlightMode] = useState<"connection" | "folder">("connection");
   const [activeSelectedNode, setActiveSelectedNode] = useState<GraphNode | null>(null);
   const [activeSelectedFolder, setActiveSelectedFolder] = useState<string | null>(null);
-  const applyHighlightRef = useRef<((selNode: GraphNode | null, selFolder: string | null, mode: "connection" | "folder") => void) | null>(null);
+  const applyHighlightRef = useRef<((selNode: GraphNode | null, selFolder: string | null, mode: "connection" | "folder", reportNodes?: Map<string, {title: string, content: string}>) => void) | null>(null);
 
   // Apply D3 highlight whenever selection states or modes change
   useEffect(() => {
     if (applyHighlightRef.current) {
-      applyHighlightRef.current(activeSelectedNode, activeSelectedFolder, highlightMode);
+      applyHighlightRef.current(activeSelectedNode, activeSelectedFolder, highlightMode, reportSelectedNodes);
     }
-  }, [highlightMode, activeSelectedNode, activeSelectedFolder]);
+  }, [highlightMode, activeSelectedNode, activeSelectedFolder, reportSelectedNodes]);
 
   // Report modal states
   const [showReportResult, setShowReportResult] = useState(false);
@@ -569,18 +569,26 @@ export default function KnowledgeGraphModal({
       return found ? getFolderOfNode(found) : "";
     };
 
-    const applyHighlight = (selNode: GraphNode | null, selFolder: string | null, mode: "connection" | "folder") => {
+    const applyHighlight = (selNode: GraphNode | null, selFolder: string | null, mode: "connection" | "folder", reportNodes?: Map<string, any>) => {
       const containerValue = d3.select(containerRef.current);
       const svgNodes = d3.select(svgRef.current).selectAll(".graph-node");
       const svgLabels = d3.select(svgRef.current).selectAll(".graph-label");
       const svgLinks = d3.select(svgRef.current).selectAll(".graph-link");
 
       const selFolderClean = selFolder || (selNode ? getFolderOfNode(selNode) : null);
-
       currentSelectedFolder = selFolderClean;
       currentSelectedNode = selNode;
 
-      if (!selNode && !selFolderClean) {
+      const hasReportNodes = reportNodes && reportNodes.size > 0;
+      
+      const isNodeInReport = (n: GraphNode) => {
+        if (!hasReportNodes) return false;
+        if (reportNodes!.has(n.id)) return true;
+        if (n.notes && n.notes.some(note => reportNodes!.has(note.id))) return true;
+        return false;
+      };
+
+      if (!selNode && !selFolderClean && !hasReportNodes) {
         containerValue.classed("focus-mode", false);
         svgNodes.classed("focused", false);
         svgLabels.classed("focused", false);
@@ -590,16 +598,26 @@ export default function KnowledgeGraphModal({
       }
 
       containerValue.classed("focus-mode", true);
-
-      if (mode === "folder" && selFolderClean) {
-        svgNodes.classed("focused", (n: GraphNode) => getFolderOfNode(n) === selFolderClean);
-        svgLabels.classed("focused", (n: GraphNode) => getFolderOfNode(n) === selFolderClean);
+      
+      if (!selNode && !selFolderClean && hasReportNodes) {
+        svgNodes.classed("focused", (n: GraphNode) => isNodeInReport(n));
+        svgLabels.classed("focused", (n: GraphNode) => isNodeInReport(n));
+        svgLinks.classed("focused", (l: any) => {
+          const srcId = l.source.id ?? l.source;
+          const tgtId = l.target.id ?? l.target;
+          return reportNodes!.has(srcId) && reportNodes!.has(tgtId); 
+        });
+        d3.selectAll(".legend-item").classed("active", false);
+      } else if (mode === "folder" && selFolderClean) {
+        svgNodes.classed("focused", (n: GraphNode) => getFolderOfNode(n) === selFolderClean || isNodeInReport(n));
+        svgLabels.classed("focused", (n: GraphNode) => getFolderOfNode(n) === selFolderClean || isNodeInReport(n));
         svgLinks.classed("focused", (l: any) => {
           const sf = getFolderOfRef(l.source);
           const tf = getFolderOfRef(l.target);
-          return sf === selFolderClean || tf === selFolderClean;
+          const srcId = l.source.id ?? l.source;
+          const tgtId = l.target.id ?? l.target;
+          return sf === selFolderClean || tf === selFolderClean || (hasReportNodes && (reportNodes!.has(srcId) && reportNodes!.has(tgtId)));
         });
-
         d3.selectAll(".legend-item").classed("active", function() {
           return d3.select(this).attr("data-folder") === selFolderClean;
         });
@@ -615,19 +633,18 @@ export default function KnowledgeGraphModal({
             adjacentIds.add(tgtId);
             return true;
           }
-          return false;
+          return (hasReportNodes && (reportNodes!.has(srcId) && reportNodes!.has(tgtId)));
         });
 
-        svgNodes.classed("focused", (n: GraphNode) => adjacentIds.has(n.id));
-        svgLabels.classed("focused", (n: GraphNode) => adjacentIds.has(n.id));
-
+        svgNodes.classed("focused", (n: GraphNode) => adjacentIds.has(n.id) || isNodeInReport(n));
+        svgLabels.classed("focused", (n: GraphNode) => adjacentIds.has(n.id) || isNodeInReport(n));
+        
         const parentFolder = getFolderOfNode(selNode);
         d3.selectAll(".legend-item").classed("active", function() {
           return d3.select(this).attr("data-folder") === parentFolder;
         });
       }
     };
-
     applyHighlightRef.current = applyHighlight;
 
     // Double-click background resetting zoom back to default
