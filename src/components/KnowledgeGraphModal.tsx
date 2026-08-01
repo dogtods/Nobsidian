@@ -898,10 +898,7 @@ ${activeSummaries}`;
     setPopup(prev => ({ ...prev, show: false })); // dismiss popup
   };
 
-  const generateFocusReport = async (centerNode: GraphNode, depth: number = 1) => {
-    const apiKey = localStorage.getItem("cn_gemini_key");
-    if (!apiKey) return onSaveToast("APIキーを設定してください ⚙");
-
+  const collectFocusNodes = (centerNode: GraphNode, depth: number = 1) => {
     const adjacentIds = new Set<string>();
     adjacentIds.add(centerNode.id);
 
@@ -927,58 +924,52 @@ ${activeSummaries}`;
       currentLevelIds = nextLevelIds;
     }
 
-    const targetNotes = notes.filter(n => adjacentIds.has(n.id));
+    let targetNotes: Note[] = [];
+    if (graphViewMode === "folder") {
+      targetNotes = notes.filter(n => adjacentIds.has(getFolderFromKeywords(n.keywords)));
+    } else {
+      targetNotes = notes.filter(n => adjacentIds.has(n.id));
+    }
+
     if (targetNotes.length === 0) return onSaveToast("接続先の対象ノートがありません");
 
-    setShowReportResult(true);
-    setReportResultText("🔍 周辺情報を抽出・AI解析中...");
-    setIsGeneratingReport(true);
+    const newMap = new Map(reportSelectedNodes);
+    const optimizeEnabled = localStorage.getItem("cn_optimize_api_tokens") !== "false";
 
-    try {
-      const optimizeEnabled = localStorage.getItem("cn_optimize_api_tokens") !== "false";
-      const notesContent = targetNotes
-        .map(n => {
-          if (optimizeEnabled) {
-            const folder = getFolderFromKeywords(n.keywords);
-            const links = extractWikiLinks(n.content);
-            const linkPart = links.length > 0 ? `\n[接続リンク先] ${links.join(", ")}` : "";
-            const summaryPart = n.summary ? `要約: ${n.summary}` : `本文（抜粋）: ${n.content.substring(0, 450)}...`;
-            return `### ${n.title}\n[フォルダ/タグ] ${folder}\n${n.keywords ? `[キーワード] ${n.keywords}` : ""}${linkPart}\n${summaryPart}`;
-          } else {
-            return `### ${n.title}\n${n.content}`;
-          }
-        })
+    targetNotes.forEach(n => {
+      let content = "";
+      if (graphViewMode === "folder") {
+        if (optimizeEnabled) {
+          const folder = getFolderFromKeywords(n.keywords);
+          const linksList = extractWikiLinks(n.content);
+          const linkPart = linksList.length > 0 ? `\n[接続リンク先] ${linksList.join(", ")}` : "";
+          const summaryPart = n.summary ? `要約: ${n.summary}` : `本文（抜粋）: ${n.content.substring(0, 450)}...`;
+          content = `[フォルダ/タグ] ${folder}\n${n.keywords ? `[キーワード] ${n.keywords}` : ""}${linkPart}\n${summaryPart}`;
+        } else {
+          content = n.content ? n.content.substring(0, 450) + "..." : "";
+        }
+      } else {
+        content = n.content || "";
+      }
+      newMap.set(n.id, { title: n.title, content });
+    });
+    setReportSelectedNodes(newMap);
+    setPopup(prev => ({ ...prev, show: false })); // dismiss popup
+    onSaveToast(`${targetNotes.length}件のノートをレポート対象に追加しました`);
+  };
+
+  const copyExternalPrompt = () => {
+    if (reportSelectedNodes.size === 0) return;
+    const notesContent = (Array.from(reportSelectedNodes.values()) as Array<{ title: string; content: string }>)
+        .map(n => `### ${n.title}\n${n.content}`)
         .join("\n\n---\n\n");
 
-      const promptTemplate = localStorage.getItem("cn_prompt_report") || DEFAULT_PROMPTS.REPORT;
-      const prompt = promptTemplate.replace("{notes_content}", notesContent.substring(0, 20000));
-
-      const model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
-      const temp = parseFloat(localStorage.getItem("cn_gemini_temp") || "0.3");
-      const maxTok = parseInt(localStorage.getItem("cn_gemini_tokens") || "2000", 10);
-
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: temp, maxOutputTokens: maxTok }
-        })
-      });
-
-      if (!res.ok) throw new Error("API Request failed");
-      const rData = await res.json();
-      const parsedText = rData.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
-      const usedNotesList = targetNotes.map(n => `- [[${n.title}]]`).join("\n");
-      const fullReport = `${parsedText}\n\n---\n\n## 使用したノート\n${usedNotesList}`;
-
-      setReportResultText(fullReport);
-    } catch (e: any) {
-      setReportResultText("エラー: " + e.message);
-    } finally {
-      setIsGeneratingReport(false);
-    }
+    const promptTemplate = localStorage.getItem("cn_prompt_report") || DEFAULT_PROMPTS.REPORT;
+    const prompt = promptTemplate.replace("{notes_content}", notesContent);
+    
+    navigator.clipboard.writeText(prompt)
+      .then(() => onSaveToast("外部AI用のプロンプトをクリップボードにコピーしました"))
+      .catch(() => onSaveToast("コピーに失敗しました"));
   };
 
   const generateBatchReport = async () => {
@@ -1261,31 +1252,29 @@ ${activeSummaries}`;
                 {reportSelectedNodes.has(popup.node!.id) ? "✦ レポート選択を外す" : "✦ レポート対象に収集"}
               </button>
 
-              {graphViewMode === "note" && (
-                <div className="flex flex-col gap-1.5 w-full bg-[#161b22] border border-[var(--border2)] rounded p-1.5 mt-1">
-                  <span className="text-[9px] text-[var(--muted)] text-center font-bold">🔍 周辺ノードのAIレポート（対象階層）</span>
-                  <div className="flex gap-1 w-full">
-                    <button
-                      className="flex-1 py-1.5 bg-[var(--green)] hover:opacity-80 text-white text-[10px] rounded cursor-pointer font-bold transition-opacity"
-                      onClick={() => generateFocusReport(popup.node!, 1)}
-                    >
-                      1階層先
-                    </button>
-                    <button
-                      className="flex-1 py-1.5 bg-[var(--green)] hover:opacity-80 text-white text-[10px] rounded cursor-pointer font-bold transition-opacity"
-                      onClick={() => generateFocusReport(popup.node!, 2)}
-                    >
-                      2階層先
-                    </button>
-                    <button
-                      className="flex-1 py-1.5 bg-[var(--green)] hover:opacity-80 text-white text-[10px] rounded cursor-pointer font-bold transition-opacity"
-                      onClick={() => generateFocusReport(popup.node!, 3)}
-                    >
-                      3階層先
-                    </button>
-                  </div>
+              <div className="flex flex-col gap-1.5 w-full bg-[#161b22] border border-[var(--border2)] rounded p-1.5 mt-1">
+                <span className="text-[9px] text-[var(--muted)] text-center font-bold">🔍 周辺情報を収集（外部AI等用）</span>
+                <div className="flex gap-1 w-full">
+                  <button
+                    className="flex-1 py-1.5 bg-[var(--green)] hover:opacity-80 text-white text-[10px] rounded cursor-pointer font-bold transition-opacity"
+                    onClick={() => collectFocusNodes(popup.node!, 1)}
+                  >
+                    1階層先
+                  </button>
+                  <button
+                    className="flex-1 py-1.5 bg-[var(--green)] hover:opacity-80 text-white text-[10px] rounded cursor-pointer font-bold transition-opacity"
+                    onClick={() => collectFocusNodes(popup.node!, 2)}
+                  >
+                    2階層先
+                  </button>
+                  <button
+                    className="flex-1 py-1.5 bg-[var(--green)] hover:opacity-80 text-white text-[10px] rounded cursor-pointer font-bold transition-opacity"
+                    onClick={() => collectFocusNodes(popup.node!, 3)}
+                  >
+                    3階層先
+                  </button>
                 </div>
-              )}
+              </div>
 
               <button
                 className="w-full py-1 bg-[var(--surface)] hover:bg-[var(--border)] border border-[var(--border2)] text-[var(--text)] text-[10.5px] rounded cursor-pointer font-medium"
@@ -1320,13 +1309,21 @@ ${activeSummaries}`;
           <div className="text-[10px] text-[var(--subtle)] line-clamp-2 leading-relaxed bg-[var(--bg)] p-1.5 rounded border border-[var(--border2)] overflow-y-auto max-h-[60px]">
             {(Array.from(reportSelectedNodes.values()) as Array<{ title: string; content: string }>).map(n => n.title).join(", ")}
           </div>
-          <button
-            className="w-full py-2 bg-[#a371f720] border border-[#a371f744] hover:bg-[#a371f730] text-[var(--purple)] text-xs font-bold rounded-md cursor-pointer transition-all"
-            onClick={generateBatchReport}
-            disabled={isGeneratingReport}
-          >
-            ✦ 選択したノートの AI 合成レポートを生成
-          </button>
+          <div className="flex gap-2 w-full mt-1">
+            <button
+              className="flex-1 py-2 bg-[#a371f720] border border-[#a371f744] hover:bg-[#a371f730] text-[var(--purple)] text-[11px] font-bold rounded-md cursor-pointer transition-all"
+              onClick={generateBatchReport}
+              disabled={isGeneratingReport}
+            >
+              ✦ 内蔵AIでレポート作成
+            </button>
+            <button
+              className="flex-1 py-2 bg-[#3fb95020] border border-[#3fb95044] hover:bg-[#3fb95030] text-[#7ee787] text-[11px] font-bold rounded-md cursor-pointer transition-all"
+              onClick={copyExternalPrompt}
+            >
+              外部AI用プロンプトをコピー
+            </button>
+          </div>
         </div>
       )}
 
