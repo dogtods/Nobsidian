@@ -335,13 +335,19 @@ export default function App() {
       body.sheetName = sheetName.trim();
     }
     
+    // URLにactionパラメータを付与 (302リダイレクトでGET変換された場合の保険)
+    const actionQuery = body.action ? `?action=${encodeURIComponent(body.action)}` : "";
+    const targetUrl = url.includes("?") 
+      ? (body.action ? `${url}&action=${encodeURIComponent(body.action)}` : url)
+      : `${url}${actionQuery}`;
+
     try {
-      const res = await fetch(url, {
+      const res = await fetch(targetUrl, {
         method: "POST",
         referrerPolicy: "no-referrer",
         mode: "cors",
         redirect: "follow",
-        headers: { "Content-Type": "text/plain" }, // GAS workaround
+        headers: { "Content-Type": "text/plain" },
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`HTTP Error ${res.status}: ${res.status === 404 ? 'API Endpoint not found. Please check your URL or Model settings.' : ''}`);

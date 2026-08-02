@@ -48,16 +48,61 @@ function getSheet() {
   return sheet;
 }
 
-// ==== GETリクエスト（データ取得）のルーティング ====
-function doGet(e) {
-  if (!e || !e.parameter) {
+// ==== 統合リクエスト処理関数（GET/POST両対応、FormData・JSON・クエリパラメータ対応） ====
+function processApiRequest(e) {
+  // GASエディタ画面から直接「実行」ボタンを押した場合の親切メッセージ
+  if (!e) {
     return createJsonResponse({ 
       status: "ok", 
-      message: "Connected Notes Web API (GAS) は正常に稼働しています。このURLをアプリの設定画面に貼り付けてご利用ください。" 
+      message: "Connected Notes Web API (GAS) は正常に稼働しています。このURLをアプリの設定画面に貼り付けてご利用ください。（※GASエディタからの直接実行ではなく、ブラウザやアプリからのアクセスで正常動作します）" 
     });
   }
-  const action = e.parameter.action;
+
+  // 1. リクエストデータ（JSON / FormData / クエリパラメータ）の統合抽出
+  let postData = {};
   
+  // A. postData.contents (JSON形式のPOSTボディ)
+  if (e.postData && e.postData.contents) {
+    try {
+      const parsed = JSON.parse(e.postData.contents);
+      if (parsed && typeof parsed === "object") {
+        postData = parsed;
+      }
+    } catch (jsonErr) {
+      // JSONパース不可の場合はそのまま保持
+    }
+  }
+
+  // B. parameter.payload (FormData または URLSearchParams で送られたJSON文字列)
+  if (!postData.action && e.parameter && e.parameter.payload) {
+    try {
+      const parsedPayload = JSON.parse(e.parameter.payload);
+      if (parsedPayload && typeof parsedPayload === "object") {
+        postData = parsedPayload;
+      }
+    } catch (payloadErr) {
+      // パース不可の場合はスルー
+    }
+  }
+
+  // C. parameter (クエリパラメータまたはフォーム値)
+  if (!postData.action && e.parameter) {
+    postData = e.parameter;
+  }
+
+  const action = postData.action || (e.parameter ? e.parameter.action : "");
+
+  // action未指定の場合（単なるURLアクセス）
+  if (!action) {
+    return createJsonResponse({ 
+      status: "ok", 
+      message: "Connected Notes Web API (GAS) は正常に稼働しています。アプリからデータ同期を行ってください。" 
+    });
+  }
+
+  let result = {};
+
+  // 2. 各アクションの振り分け実行
   if (action === "getNotes") {
     try {
       const sheet = getSheet();
@@ -106,43 +151,43 @@ function doGet(e) {
     } catch (err) {
       return createJsonResponse({ error: err.message });
     }
+  } else if (action === "saveNote") {
+    const note = typeof postData.note === "string" ? JSON.parse(postData.note) : postData.note;
+    result = saveNote(note);
+  } else if (action === "deleteNote") {
+    result = deleteNote(postData.id);
+  } else if (action === "saveAll") {
+    const notes = typeof postData.notes === "string" ? JSON.parse(postData.notes) : postData.notes;
+    result = saveAll(notes);
+  } else if (action === "fetchDriveFile") {
+    result = fetchDriveFile(postData.url);
+  } else if (action === "fetchUnprocessedHighlights") {
+    result = fetchUnprocessedHighlights(postData.sourceSsId, postData.sheetName);
+  } else if (action === "markHighlightsProcessed") {
+    const rowIndices = typeof postData.rowIndices === "string" ? JSON.parse(postData.rowIndices) : postData.rowIndices;
+    result = markHighlightsProcessed(postData.sourceSsId, postData.sheetName, rowIndices);
+  } else if (action === "saveToDrive" || action === "exportToDrive") {
+    result = saveToDrive(postData);
+  } else {
+    result = { success: false, error: "不明なアクション: " + action };
   }
-  
-  return createJsonResponse({ error: "無効なGETアクション、またはアクションが設定されていません。" });
+
+  return createJsonResponse(result);
 }
 
-// ==== POSTリクエスト（データ登録・更新・外部連係）のルーティング ====
+// ==== GETリクエスト（データ取得・リダイレクト救済） ====
+function doGet(e) {
+  try {
+    return processApiRequest(e);
+  } catch (err) {
+    return createJsonResponse({ success: false, error: err.message });
+  }
+}
+
+// ==== POSTリクエスト（データ登録・更新・外部連係） ====
 function doPost(e) {
   try {
-    if (!e || !e.postData || !e.postData.contents) {
-      return createJsonResponse({ 
-        success: false, 
-        error: "POSTデータが存在しません。GASエディタから直接実行せず、アプリ画面から操作してください。" 
-      });
-    }
-    const postData = JSON.parse(e.postData.contents);
-    const action = postData.action;
-    let result = {};
-
-    if (action === "saveNote") {
-      result = saveNote(postData.note);
-    } else if (action === "deleteNote") {
-      result = deleteNote(postData.id);
-    } else if (action === "saveAll") {
-      result = saveAll(postData.notes);
-    } else if (action === "fetchDriveFile") {
-      result = fetchDriveFile(postData.url);
-    } else if (action === "fetchUnprocessedHighlights") {
-      result = fetchUnprocessedHighlights(postData.sourceSsId, postData.sheetName);
-    } else if (action === "markHighlightsProcessed") {
-      result = markHighlightsProcessed(postData.sourceSsId, postData.sheetName, postData.rowIndices);
-    } else if (action === "saveToDrive" || action === "exportToDrive") {
-      result = saveToDrive(postData);
-    } else {
-      result = { success: false, error: "不明なPOSTアクション: " + action };
-    }
-
-    return createJsonResponse(result);
+    return processApiRequest(e);
   } catch (err) {
     return createJsonResponse({ success: false, error: err.message });
   }
@@ -554,10 +599,15 @@ function saveToDrive(data) {
   }
 }
 
-// ==== Google Drive操作の初回権限承認用ダミー関数 ====
-// GASエディタでこの関数を選択して「実行」を押すことで、Google Drive（DriveApp）のアクセス権限を初回承認できます
+// ==== Google Drive操作の初回権限承認用関数 ====
+// GASエディタ上部のドロップダウンから『authorizeDrivePermissions』を選択して「実行」を押すことで、
+// Google Drive（DriveApp: https://www.googleapis.com/auth/drive）の作成・書き込み権限を確実に承認できます。
 function authorizeDrivePermissions() {
-  const folders = DriveApp.getFolders();
-  Logger.log("Drive permissions authorized successfully!");
-  return "OK";
+  // DriveAppのアクセス権限（https://www.googleapis.com/auth/drive）をGAS解析器に認識させる処理
+  const root = DriveApp.getRootFolder();
+  const tempFolder = DriveApp.createFolder("___Drive_Permission_Check___");
+  tempFolder.setTrashed(true);
+  
+  Logger.log("✅ Google Drive (DriveApp) permissions authorized successfully!");
+  return "✅ Google Driveの新規フォルダ作成・保存権限の承認が正常に完了しました！";
 }
