@@ -520,22 +520,92 @@ function saveToDrive(data) {
       combinedText += `\n${noteContent}\n\n`;
       combinedText += `------------------------------------------------------------\n\n`;
 
-      // PDFリンクの探索（sourceUrl および 本文内のURL）
+      // PDF/リンク先ファイルの探索（「リンク先:」などの表記、[ラベル](URL)形式、sourceUrl、および本文内のURL）
       const textToScan = (sourceUrl + "\n" + noteContent);
-      const urlRegex = /(https?:\/\/[^\s<>"'\(\)\]\[]+)/gi;
-      const matches = textToScan.match(urlRegex) || [];
+      
+      const extractedLinkItems = [];
+      const seenUrls = new Set();
 
-      matches.forEach(url => {
-        const cleanUrl = url.replace(/[\.\,\;\:\)]+$/, "");
-        if (downloadedPdfUrls.has(cleanUrl)) return;
+      // 1. Markdown 形式 [表示名](URL) の () 内にあるURLを高精度で抽出
+      const mdRegex = /\[([^\]]*)\]\((https?:\/\/[^\)\s]+)\)/gi;
+      let mdMatch;
+      while ((mdMatch = mdRegex.exec(textToScan)) !== null) {
+        const label = mdMatch[1] ? mdMatch[1].trim() : "";
+        let urlInParen = mdMatch[2] ? mdMatch[2].trim() : "";
+        urlInParen = urlInParen.replace(/[\.\,\;\:]+$/, "");
 
-        // .pdf URL または Google DriveのPDF/PDFダウンロードURL
-        const isPdfUrl = /\.pdf($|\?|#)/i.test(cleanUrl) || 
-                         /drive\.google\.com.*pdf/i.test(cleanUrl) || 
-                         /\/pdf\//i.test(cleanUrl);
+        if (urlInParen && !seenUrls.has(urlInParen)) {
+          seenUrls.add(urlInParen);
+          extractedLinkItems.push({
+            url: urlInParen,
+            label: label,
+            isExplicit: /リンク先/i.test(label) || /リンク先/i.test(textToScan)
+          });
+        }
+      }
 
-        if (isPdfUrl) {
+      // 2. () 形式以外の標準URLも補助抽出
+      const rawUrlRegex = /(https?:\/\/[^\s<>"'\(\)\]\[]+)/gi;
+      let rawMatch;
+      while ((rawMatch = rawUrlRegex.exec(textToScan)) !== null) {
+        let cleanRawUrl = rawMatch[0].replace(/[\.\,\;\:\)]+$/, "").trim();
+        if (cleanRawUrl && !seenUrls.has(cleanRawUrl)) {
+          seenUrls.add(cleanRawUrl);
+          extractedLinkItems.push({
+            url: cleanRawUrl,
+            label: "資料",
+            isExplicit: /リンク先/i.test(textToScan)
+          });
+        }
+      }
+
+      // 各抽出リンクの取得・保存処理
+      for (let k = 0; k < extractedLinkItems.length; k++) {
+        const item = extractedLinkItems[k];
+        const cleanUrl = item.url;
+        if (downloadedPdfUrls.has(cleanUrl)) continue;
+
+        // A. Google Driveリンクの場合 (file/d/ID, open?id=ID, uc?id=ID 等)
+        const driveIdMatch = cleanUrl.match(/drive\.google\.com\/file\/d\/([^\/\?#]+)/i) ||
+                             cleanUrl.match(/drive\.google\.com\/open\?id=([^\&#]+)/i) ||
+                             cleanUrl.match(/drive\.google\.com\/uc\?.*id=([^\&#]+)/i);
+
+        if (driveIdMatch && driveIdMatch[1]) {
+          const fileId = driveIdMatch[1];
           downloadedPdfUrls.add(cleanUrl);
+
+          try {
+            // Google Driveから直接ファイルを取得（中間HTMLページで壊れる不具合の完全防止）
+            const driveFile = DriveApp.getFileById(fileId);
+            const originalName = driveFile.getName() || "Document.pdf";
+            
+            let destName = originalName;
+            if (!/\.[a-zA-Z0-9]+$/.test(destName)) {
+              destName = `${seqStr}_${noteTitle}_${originalName}.pdf`;
+            } else {
+              destName = `${seqStr}_${noteTitle}_${originalName}`;
+            }
+            destName = destName.replace(/[\\/:*?"<>|]/g, "_");
+
+            // 権限のあるDriveAppでフォルダへ直接ファイルコピー作成
+            driveFile.makeCopy(destName, folder);
+            savedPdfCount++;
+            savedFilesCount++;
+            Logger.log("✅ Google Driveファイルを直接コピー保存しました: " + destName);
+            continue; // 次のリンクへ
+          } catch (driveErr) {
+            Logger.log("⚠️ DriveAppによる直接コピー不可、UrlFetchへフォールバックします: " + driveErr.message);
+          }
+        }
+
+        // B. 通常のWeb PDFリンク / 明示的リンクの場合
+        const isPdfTarget = /\.pdf($|\?|#)/i.test(cleanUrl) || 
+                            /\/pdf\//i.test(cleanUrl) || 
+                            item.isExplicit;
+
+        if (isPdfTarget) {
+          downloadedPdfUrls.add(cleanUrl);
+
           try {
             const response = UrlFetchApp.fetch(cleanUrl, {
               muteHttpExceptions: true,
@@ -545,35 +615,45 @@ function saveToDrive(data) {
 
             if (response.getResponseCode() === 200) {
               const blob = response.getBlob();
-              let fileName = "";
+              const bytes = blob.getBytes();
+              const contentType = (response.getHeaders()["Content-Type"] || blob.getContentType() || "").toLowerCase();
 
-              const urlParts = cleanUrl.split('/');
-              const lastPart = urlParts[urlParts.length - 1].split('?')[0].split('#')[0];
-              if (lastPart && lastPart.toLowerCase().endsWith(".pdf")) {
-                try {
-                  fileName = decodeURIComponent(lastPart);
-                } catch (e) {
-                  fileName = lastPart;
+              // データが本当にPDFバイナリ（先頭 %PDF- または application/pdf）か確認
+              const isRealPdf = contentType.includes("application/pdf") ||
+                                (bytes && bytes.length >= 4 && 
+                                 bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46); // %PDF
+
+              if (isRealPdf) {
+                let fileName = "";
+                const urlParts = cleanUrl.split('/');
+                const lastPart = urlParts[urlParts.length - 1].split('?')[0].split('#')[0];
+
+                if (lastPart && lastPart.toLowerCase().endsWith(".pdf")) {
+                  try { fileName = decodeURIComponent(lastPart); } catch (e) { fileName = lastPart; }
+                } else {
+                  const safeLabel = (item.label || "資料").replace(/[\\/:*?"<>|]/g, "_");
+                  fileName = `${seqStr}_${noteTitle}_${safeLabel}_${savedPdfCount + 1}.pdf`;
                 }
+
+                if (!fileName.toLowerCase().endsWith(".pdf")) {
+                  fileName += ".pdf";
+                }
+                fileName = fileName.replace(/[\\/:*?"<>|]/g, "_");
+
+                blob.setName(fileName);
+                folder.createFile(blob);
+                savedPdfCount++;
+                savedFilesCount++;
+                Logger.log("✅ Web上のPDFバイナリを正常保存しました: " + fileName);
               } else {
-                fileName = `${noteTitle}_資料_${savedPdfCount + 1}.pdf`;
+                Logger.log("⚠️ 取得データがPDFバイナリではなくHTML/画像等のため保存をスキップしました: " + cleanUrl + " (Type: " + contentType + ")");
               }
-
-              if (!fileName.toLowerCase().endsWith(".pdf")) {
-                fileName += ".pdf";
-              }
-              fileName = fileName.replace(/[\\/:*?"<>|]/g, "_");
-
-              blob.setName(fileName);
-              folder.createFile(blob);
-              savedPdfCount++;
-              savedFilesCount++;
             }
-          } catch (pdfErr) {
-            Logger.log("PDF fetch skipped/failed for " + cleanUrl + ": " + pdfErr.message);
+          } catch (fetchErr) {
+            Logger.log("⚠️ PDF取得中にエラー発生: " + cleanUrl + " - " + fetchErr.message);
           }
         }
-      });
+      }
     });
 
     // 全文まとめファイル保存

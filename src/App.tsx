@@ -4219,6 +4219,7 @@ ${candidateNotesInfo || "（候補となる既存ノートはありません）"
           onForceRefreshNotes={syncFromServer}
           filterStart={filterStartDate}
           filterEnd={filterEndDate}
+          initialCenterNodeId={activeId || undefined}
         />
       )}
 

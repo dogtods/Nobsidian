@@ -20,6 +20,7 @@ interface KnowledgeGraphModalProps {
   onForceRefreshNotes: () => void;
   filterStart: string;
   filterEnd: string;
+  initialCenterNodeId?: string;
 }
 
 export default function KnowledgeGraphModal({
@@ -33,6 +34,7 @@ export default function KnowledgeGraphModal({
   onForceRefreshNotes,
   filterStart,
   filterEnd,
+  initialCenterNodeId,
 }: KnowledgeGraphModalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -732,10 +734,38 @@ applyHighlightRef.current = applyHighlight;
 
     g.attr("opacity", 0).transition().duration(600).attr("opacity", 1);
 
+    // If an initial node is provided, center on it after the simulation has somewhat settled
+    if (initialCenterNodeId && graphViewMode === "note") {
+      const targetNode = nodes.find(n => n.id === initialCenterNodeId);
+      if (targetNode) {
+        // Highlight the node
+        setActiveSelectedNode(targetNode);
+        setActiveSelectedFolder(targetNode.folder || targetNode.title);
+        setHighlightMode("connection");
+        
+        setTimeout(() => {
+          if (svgRef.current && zoomRef.current && containerRef.current) {
+            const w = containerRef.current.clientWidth;
+            const h = containerRef.current.clientHeight;
+            d3.select(svgRef.current)
+              .transition()
+              .duration(1200)
+              .call(
+                zoomRef.current.transform,
+                d3.zoomIdentity
+                  .translate(w / 2, h / 2)
+                  .scale(1.5)
+                  .translate(-targetNode.x!, -targetNode.y!)
+              );
+          }
+        }, 600); // 600ms is usually enough for the physics layout to settle primarily
+      }
+    }
+
     return () => {
       simulation.stop();
     };
-  }, [isOpen, graphViewMode, notes, folderRelationsAI, isFullLabel, filterStart, filterEnd, minStrength]);
+  }, [isOpen, graphViewMode, notes, folderRelationsAI, isFullLabel, filterStart, filterEnd, minStrength, initialCenterNodeId]);
 
 
   const runGraphAiAnalysis = async () => {
