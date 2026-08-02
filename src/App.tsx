@@ -1419,6 +1419,7 @@ const renderMarkdownToElements = (contentStr: string) => {
     try {
       let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
       if (model.includes("2.5")) model = "gemini-2.0-flash";
+      if (model === "gemini-flash-lite-latest") model = "gemini-2.0-flash-lite-preview-02-05";
       const promptTemplate = getStoredPrompt("TITLE");
       const prompt = promptTemplate.replace("{content}", active.content.substring(0, 2000));
 
@@ -1872,6 +1873,7 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
     try {
       let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
       if (model.includes("2.5")) model = "gemini-2.0-flash";
+      if (model === "gemini-flash-lite-latest") model = "gemini-2.0-flash-lite-preview-02-05";
       const temperature = parseFloat(localStorage.getItem("cn_gemini_temp") || "0.1");
       const maxOutputTokens = parseInt(localStorage.getItem("cn_gemini_tokens") || "1200", 10);
 
@@ -2354,6 +2356,7 @@ ${listStr}`;
 
           let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
       if (model.includes("2.5")) model = "gemini-2.0-flash";
+      if (model === "gemini-flash-lite-latest") model = "gemini-2.0-flash-lite-preview-02-05";
           const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
             method: "POST",
         referrerPolicy: "no-referrer",
@@ -2584,6 +2587,7 @@ ${candidateNotesInfo || "（候補となる既存ノートはありません）"
 
           let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
       if (model.includes("2.5")) model = "gemini-2.0-flash";
+      if (model === "gemini-flash-lite-latest") model = "gemini-2.0-flash-lite-preview-02-05";
           const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
             method: "POST",
         referrerPolicy: "no-referrer",

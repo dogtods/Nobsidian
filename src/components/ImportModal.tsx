@@ -90,6 +90,7 @@ export default function ImportModal({ isOpen, onClose, onCreateNoteExt, onSaveTo
     const apiKey = localStorage.getItem("cn_gemini_key");
     let importModel = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
     if (importModel.includes("2.5")) importModel = "gemini-2.0-flash";
+      if (importModel === "gemini-flash-lite-latest") importModel = "gemini-2.0-flash-lite-preview-02-05";
 
     setIsProcessing(true);
     setProcessingText("インポート中...");
@@ -271,6 +272,7 @@ ${JSON.stringify(itemsToProcess)}
       const apiKey = localStorage.getItem("cn_gemini_key");
       let importModel = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
     if (importModel.includes("2.5")) importModel = "gemini-2.0-flash";
+      if (importModel === "gemini-flash-lite-latest") importModel = "gemini-2.0-flash-lite-preview-02-05";
       const importTemp = parseFloat(localStorage.getItem("cn_gemini_temp") || "0.1");
 
       const fetchAiTitle = async (content: string, currentTitle: string) => {
