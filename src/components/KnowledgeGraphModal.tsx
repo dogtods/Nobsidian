@@ -62,6 +62,7 @@ export default function KnowledgeGraphModal({
   const [showReportResult, setShowReportResult] = useState(false);
   const [reportResultText, setReportResultText] = useState("");
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const [isSavingToDrive, setIsSavingToDrive] = useState(false);
 
   // Popup state
   const [popup, setPopup] = useState<{
@@ -1014,6 +1015,74 @@ applyHighlightRef.current = applyHighlight;
     onSaveToast("プロンプトをテキストファイルとしてダウンロードしました");
   };
 
+  const saveReportAndPdfToDrive = async () => {
+    if (reportSelectedNodes.size === 0) return;
+
+    const gasUrl = localStorage.getItem("cn_gas_api_url");
+    if (!gasUrl || gasUrl.includes("YOUR_")) {
+      onSaveToast("Google Apps Script URLが設定されていません。設定画面⚙でURLを入力してください。");
+      return;
+    }
+
+    setIsSavingToDrive(true);
+    onSaveToast("☁️ Google Driveへフォルダ作成・PDF抽出・記事全件を保存中...");
+
+    try {
+      const selectedEntries = Array.from(reportSelectedNodes.entries());
+      const notesList = selectedEntries.map(([id, item]) => {
+        const fullNote = notes.find(n => n.id === id || n.title === item.title);
+        return {
+          id: fullNote?.id || id,
+          title: item.title,
+          content: fullNote?.content || item.content,
+          folder: fullNote ? getFolderFromKeywords(fullNote.keywords) : "収集レポート",
+          sourceUrl: fullNote?.sourceUrl || "",
+          createdAt: fullNote?.createdAt || Date.now()
+        };
+      });
+
+      // 中心記事の名称 (アクティブな選択ノード、または選択リストの1番目のノート)
+      const centerTitle = activeSelectedNode?.title || notesList[0]?.title || "ネットワークレポート";
+
+      const res = await apiPost({
+        action: "saveToDrive",
+        centerTitle: centerTitle,
+        folderName: "", // GAS側で [中心記事名称]_[日付] に自動設定
+        notes: notesList,
+        reportText: showReportResult ? reportResultText : ""
+      });
+
+      if (res && (res.success || res.status === "success")) {
+        const folderName = res.folderName || `${centerTitle}_${formatDateStr(Date.now()).replace(/-/g, "")}`;
+        const pdfMsg = res.pdfCount ? ` (PDF ${res.pdfCount}件取得)` : "";
+        const msg = res.message || `✅ Google Driveのフォルダ「${folderName}」に全記事およびPDFを保存完了しました！${pdfMsg}`;
+        onSaveToast(msg);
+        
+        if (res.folderUrl) {
+          if (window.confirm(`${msg}\n\nGoogle Driveフォルダを今すぐ開きますか？`)) {
+            window.open(res.folderUrl, "_blank", "noopener,noreferrer");
+          }
+        }
+      } else {
+        throw new Error(res?.error || res?.message || "GASで保存処理エラーが発生しました");
+      }
+    } catch (e: any) {
+      const errMsg = e.message || "";
+      if (errMsg.includes("権限") || errMsg.includes("DriveApp") || errMsg.includes("authorization")) {
+        alert("【Google Driveのアクセス権限が必要です】\n\nGAS側にGoogle Driveへのアクセス権限（DriveApp）が許可されていません。\n\n【解決手順 (2ステップ)】\n1. Google Apps Script エディタを開きます。\n2. 上部の関数選択から『authorizeDrivePermissions』を選択して「実行」をクリックし、権限を承認してください。\n3. 右上の『デプロイ』＞『新しいデプロイ』(アクセス: 全員) を作成して最新のURLを設定してください。");
+        onSaveToast("❌ GAS側でGoogle Driveのアクセス権限を承認してください");
+      } else if (errMsg.includes("404")) {
+        alert("【APIエンドポイントエラー (404)】\n\nGASコード追加後に『新しいデプロイ』を行っていないか、URLが正しく設定されていない可能性があります。\n\n【解決手順】\n1. Google Apps Script エディタに更新した google-apps-script.js をまるごと貼り付けて保存します。\n2. 右上の『デプロイ』＞『新しいデプロイ』をクリックします。\n3. アクセス権を『全員』にして新しいデプロイを発行し、そのURLを設定画面⚙に貼り付けてください。");
+        onSaveToast("❌ GASのURLを確認し、『新しいデプロイ』を行ってください");
+      } else {
+        onSaveToast("❌ Drive保存失敗: " + errMsg);
+      }
+      console.error("saveToDrive error:", e);
+    } finally {
+      setIsSavingToDrive(false);
+    }
+  };
+
   const generateBatchReport = async () => {
     if (reportSelectedNodes.size === 0) return;
 
@@ -1352,22 +1421,30 @@ applyHighlightRef.current = applyHighlight;
           <div className="text-[10px] text-[var(--subtle)] line-clamp-2 leading-relaxed bg-[var(--bg)] p-1.5 rounded border border-[var(--border2)] overflow-y-auto max-h-[60px]">
             {(Array.from(reportSelectedNodes.values()) as Array<{ title: string; content: string }>).map(n => n.title).join(", ")}
           </div>
-                    <div className="flex gap-2 w-full mt-1">
+                    <div className="flex gap-2 w-full mt-1 flex-wrap">
             <button
-              className="flex-1 py-2 bg-[#a371f720] border border-[#a371f744] hover:bg-[#a371f730] text-[var(--purple)] text-[11px] font-bold rounded-md cursor-pointer transition-all"
+              className="flex-1 min-w-[70px] py-2 bg-[#a371f720] border border-[#a371f744] hover:bg-[#a371f730] text-[var(--purple)] text-[11px] font-bold rounded-md cursor-pointer transition-all disabled:opacity-50"
               onClick={generateBatchReport}
-              disabled={isGeneratingReport}
+              disabled={isGeneratingReport || isSavingToDrive}
             >
               ✦ 内蔵AI
             </button>
             <button
-              className="flex-1 py-2 bg-[#3fb95020] border border-[#3fb95044] hover:bg-[#3fb95030] text-[#7ee787] text-[11px] font-bold rounded-md cursor-pointer transition-all"
+              className="flex-1 min-w-[85px] py-2 bg-[#216e3930] border border-[#23863666] hover:bg-[#23863644] text-[#7ee787] text-[11px] font-bold rounded-md cursor-pointer transition-all disabled:opacity-50"
+              onClick={saveReportAndPdfToDrive}
+              disabled={isSavingToDrive}
+              title="選択した記事全文およびリンク先のPDFをGoogle Driveの新規フォルダにまとめて保存"
+            >
+              {isSavingToDrive ? "☁️ 保存中..." : "☁️ Drive保存"}
+            </button>
+            <button
+              className="flex-1 min-w-[70px] py-2 bg-[#3fb95020] border border-[#3fb95044] hover:bg-[#3fb95030] text-[#7ee787] text-[11px] font-bold rounded-md cursor-pointer transition-all"
               onClick={copyExternalPrompt}
             >
               📋 コピー
             </button>
             <button
-              className="flex-1 py-2 bg-[#1cb5b520] border border-[#1cb5b544] hover:bg-[#1cb5b530] text-[#7ee787] text-[11px] font-bold rounded-md cursor-pointer transition-all"
+              className="flex-1 min-w-[70px] py-2 bg-[#1cb5b520] border border-[#1cb5b544] hover:bg-[#1cb5b530] text-[#7ee787] text-[11px] font-bold rounded-md cursor-pointer transition-all"
               onClick={downloadExternalPrompt}
             >
               💾 ダウンロード
@@ -1400,14 +1477,23 @@ applyHighlightRef.current = applyHighlight;
               {reportResultText}
             </div>
 
-            <div className="flex justify-end gap-2 border-t border-[var(--border2)] pt-4 mt-1">
+            <div className="flex justify-end gap-2 border-t border-[var(--border2)] pt-4 mt-1 flex-wrap">
               {!isGeneratingReport && (
-                <button
-                  className="bg-[#2386361a] hover:bg-[#23863633] border border-[#23863644] text-[#7ee787] text-xs font-bold p-2 px-5 rounded-md cursor-pointer transition-colors"
-                  onClick={saveReportAsNewFile}
-                >
-                  ノートとして保存
-                </button>
+                <>
+                  <button
+                    className="bg-[#216e3930] hover:bg-[#23863644] border border-[#23863666] text-[#7ee787] text-xs font-bold p-2 px-4 rounded-md cursor-pointer transition-colors disabled:opacity-50"
+                    onClick={saveReportAndPdfToDrive}
+                    disabled={isSavingToDrive}
+                  >
+                    {isSavingToDrive ? "☁️ 保存中..." : "☁️ Google Driveに保存 (PDF付)"}
+                  </button>
+                  <button
+                    className="bg-[#2386361a] hover:bg-[#23863633] border border-[#23863644] text-[#7ee787] text-xs font-bold p-2 px-5 rounded-md cursor-pointer transition-colors"
+                    onClick={saveReportAsNewFile}
+                  >
+                    ノートとして保存
+                  </button>
+                </>
               )}
               <button
                 className="text-xs text-[var(--subtle)] border border-[var(--border2)] hover:bg-[var(--border)] p-2 px-4 rounded-md cursor-pointer font-medium"

@@ -1,23 +1,24 @@
 /**
  * ====================================================================
- * 本アプリ専用: Google Apps Script (GAS) 同期用スクリプト
+ * 本アプリ専用: Google Apps Script (GAS) 同期 & Google Drive保存用スクリプト
  * ====================================================================
  * 
- * 【導入手順】
- * 1. 保存・編集用のGoogleスプレッドシートを新規作成（または既存のものを用意）します。
- * 2. 上部メニュー [拡張機能] > [Apps Script] を選択します。
- * 3. エディタに配置されているコードをすべて削除し、このコードをまるごと貼り付けます。
- * 4. 保存アイコンを押します。
- * 5. 右上部にある「デプロイ」ボタンから「新しいデプロイ」を選択します。
- *    - 種類の選択：ウェブアプリ
- *    - 説明：任意（例：「データ同期WebAPI」）
- *    - 次のユーザーとして実行：自分（dogtods@gmail.com など管理者ユーザー）
- *    - アクセスできるユーザー：「全員」（重要！認証なしでアプリからアクセスさせるために必要です）
- * 6. 「デプロイ」をクリックし、初回承認フロー（アカウントアクセス許可）を行います。
- *    （※警告が出た場合は「詳細を表示」＞「〇〇（安全ではないページ）に移動」をクリックして進めます）
- * 7. 発行された「ウェブアプリのURL」（https://script.google.com/macros/s/.../exec）をコピーします。
- * 8. 本アプリ（またはスマホ版アプリ）の「設定（Gemini AI設定）」を開き、
- *    「Google Apps Script (GAS) 同期WebアプリURL」欄にコピーしたURLを貼り付けて保存します！
+ * 【重要：今回の追加機能（Google Drive保存）に必要な初回権限設定手順】
+ * 1. エディタ上部の関数選択ドロップダウン（`doGet` や `doPost` などが表示されている場所）から
+ *    『authorizeDrivePermissions』を選択します。
+ * 2. 「実行」ボタンをクリックします。
+ * 3. 「承認が必要です」ポップアップが表示されたら「権限を確認」をクリックし、
+ *    お使いのGoogleアカウントを選択 ＞ 「詳細を表示」 ＞ 「（安全ではないページ）に移動」 ＞ 「許可」 をクリックします。
+ * 
+ * 【デプロイ手順（コード更新後）】
+ * 1. コードを保存（Ctrl+S または ⌘+S）します。
+ * 2. 右上の「デプロイ」 ＞ 「新しいデプロイ」 をクリックします。（※重要：既存のデプロイを更新するのではなく『新しいデプロイ』を作成してください）
+ * 3. 以下の設定を確認します：
+ *    - 種類：ウェブアプリ
+ *    - 次のユーザーとして実行：自分
+ *    - アクセスできるユーザー：「全員」（Anyone）※認証不要にするため必須
+ * 4. 「デプロイ」をクリックし、発行された新しい「ウェブアプリのURL」（.../exec）をコピーします。
+ * 5. 本アプリの「設定⚙（Gemini AI設定）」を開き、GAS URL欄に貼り付けて保存します！
  */
 
 // スプレッドシート内の保存先シートを取得/自動生成する関数
@@ -49,6 +50,12 @@ function getSheet() {
 
 // ==== GETリクエスト（データ取得）のルーティング ====
 function doGet(e) {
+  if (!e || !e.parameter) {
+    return createJsonResponse({ 
+      status: "ok", 
+      message: "Connected Notes Web API (GAS) は正常に稼働しています。このURLをアプリの設定画面に貼り付けてご利用ください。" 
+    });
+  }
   const action = e.parameter.action;
   
   if (action === "getNotes") {
@@ -107,6 +114,12 @@ function doGet(e) {
 // ==== POSTリクエスト（データ登録・更新・外部連係）のルーティング ====
 function doPost(e) {
   try {
+    if (!e || !e.postData || !e.postData.contents) {
+      return createJsonResponse({ 
+        success: false, 
+        error: "POSTデータが存在しません。GASエディタから直接実行せず、アプリ画面から操作してください。" 
+      });
+    }
     const postData = JSON.parse(e.postData.contents);
     const action = postData.action;
     let result = {};
@@ -123,6 +136,8 @@ function doPost(e) {
       result = fetchUnprocessedHighlights(postData.sourceSsId, postData.sheetName);
     } else if (action === "markHighlightsProcessed") {
       result = markHighlightsProcessed(postData.sourceSsId, postData.sheetName, postData.rowIndices);
+    } else if (action === "saveToDrive" || action === "exportToDrive") {
+      result = saveToDrive(postData);
     } else {
       result = { success: false, error: "不明なPOSTアクション: " + action };
     }
@@ -391,4 +406,158 @@ function markHighlightsProcessed(sourceSsId, sheetName, rowIndices) {
   } catch (err) {
     return { success: false, error: "処理済みマーク（チェック）の反映に失敗しました: " + err.message };
   }
+}
+
+// ---- 選択した記事全文・まとめテキスト・リンク先PDFをGoogle Driveの新規フォルダにまとめて保存 ----
+function saveToDrive(data) {
+  try {
+    const notes = data.notes || [];
+    const centerTitle = data.centerTitle || (notes.length > 0 ? notes[0].title : "ネットワーク図レポート");
+    const reportText = data.reportText || "";
+    
+    // 日付文字列 (例: 20260802)
+    const timeZone = Session.getScriptTimeZone() || "GMT+9";
+    const dateStr = Utilities.formatDate(new Date(), timeZone, "yyyyMMdd");
+    
+    // フォルダ名: ネットワーク図の中心となる記事の名称と日付
+    // 例: "AI技術の動向_20260802"
+    const safeCenterTitle = centerTitle.replace(/[\\/:*?"<>|]/g, "_").trim();
+    let folderName = data.folderName;
+    if (!folderName || folderName.trim() === "") {
+      folderName = `${safeCenterTitle}_${dateStr}`;
+    } else {
+      folderName = folderName.replace(/[\\/:*?"<>|]/g, "_").trim();
+    }
+
+    // Google Drive に新しくフォルダを作成
+    const folder = DriveApp.createFolder(folderName);
+
+    let savedFilesCount = 0;
+    let savedPdfCount = 0;
+    const downloadedPdfUrls = new Set();
+
+    // 1. レポート本文が存在する場合は保存 (例: 00_AI生成ナレッジレポート.txt)
+    if (reportText && reportText.trim() !== "") {
+      const reportFileName = `00_AI生成ナレッジレポート_${dateStr}.txt`;
+      folder.createFile(reportFileName, reportText, MimeType.PLAIN_TEXT);
+      savedFilesCount++;
+    }
+
+    // 2. 選択記事全件のまとめファイルを作成
+    let combinedText = `# ネットワーク図収集記事一覧・全文まとめ\n`;
+    combinedText += `作成日時: ${Utilities.formatDate(new Date(), timeZone, "yyyy-MM-dd HH:mm:ss")}\n`;
+    combinedText += `中心記事: ${centerTitle}\n`;
+    combinedText += `収録記事数: ${notes.length}件\n\n`;
+    combinedText += `============================================================\n\n`;
+
+    // 3. 各記事を個別テキストとして保存 & まとめへ追加 & リンク先PDFの抽出・格納
+    notes.forEach((note, index) => {
+      const rawTitle = note.title || `記事_${index + 1}`;
+      const noteTitle = rawTitle.replace(/[\\/:*?"<>|]/g, "_").trim();
+      const noteContent = note.content || "";
+      const sourceUrl = note.sourceUrl || "";
+      const folderPath = note.folder || "";
+
+      // 個別記事テキストファイル
+      let singleFileText = `タイトル: ${rawTitle}\n`;
+      if (folderPath) singleFileText += `フォルダ: ${folderPath}\n`;
+      if (sourceUrl) singleFileText += `URL: ${sourceUrl}\n`;
+      singleFileText += `\n------------------------------------------------------------\n【本文】\n\n${noteContent}`;
+
+      const seqStr = String(index + 1).padStart(2, '0');
+      folder.createFile(`${seqStr}_${noteTitle}.txt`, singleFileText, MimeType.PLAIN_TEXT);
+      savedFilesCount++;
+
+      // まとめファイルに追加
+      combinedText += `【記事 ${index + 1}】 ${rawTitle}\n`;
+      if (folderPath) combinedText += `フォルダ: ${folderPath}\n`;
+      if (sourceUrl) combinedText += `URL: ${sourceUrl}\n`;
+      combinedText += `\n${noteContent}\n\n`;
+      combinedText += `------------------------------------------------------------\n\n`;
+
+      // PDFリンクの探索（sourceUrl および 本文内のURL）
+      const textToScan = (sourceUrl + "\n" + noteContent);
+      const urlRegex = /(https?:\/\/[^\s<>"'\(\)\]\[]+)/gi;
+      const matches = textToScan.match(urlRegex) || [];
+
+      matches.forEach(url => {
+        const cleanUrl = url.replace(/[\.\,\;\:\)]+$/, "");
+        if (downloadedPdfUrls.has(cleanUrl)) return;
+
+        // .pdf URL または Google DriveのPDF/PDFダウンロードURL
+        const isPdfUrl = /\.pdf($|\?|#)/i.test(cleanUrl) || 
+                         /drive\.google\.com.*pdf/i.test(cleanUrl) || 
+                         /\/pdf\//i.test(cleanUrl);
+
+        if (isPdfUrl) {
+          downloadedPdfUrls.add(cleanUrl);
+          try {
+            const response = UrlFetchApp.fetch(cleanUrl, {
+              muteHttpExceptions: true,
+              followRedirects: true,
+              headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" }
+            });
+
+            if (response.getResponseCode() === 200) {
+              const blob = response.getBlob();
+              let fileName = "";
+
+              const urlParts = cleanUrl.split('/');
+              const lastPart = urlParts[urlParts.length - 1].split('?')[0].split('#')[0];
+              if (lastPart && lastPart.toLowerCase().endsWith(".pdf")) {
+                try {
+                  fileName = decodeURIComponent(lastPart);
+                } catch (e) {
+                  fileName = lastPart;
+                }
+              } else {
+                fileName = `${noteTitle}_資料_${savedPdfCount + 1}.pdf`;
+              }
+
+              if (!fileName.toLowerCase().endsWith(".pdf")) {
+                fileName += ".pdf";
+              }
+              fileName = fileName.replace(/[\\/:*?"<>|]/g, "_");
+
+              blob.setName(fileName);
+              folder.createFile(blob);
+              savedPdfCount++;
+              savedFilesCount++;
+            }
+          } catch (pdfErr) {
+            Logger.log("PDF fetch skipped/failed for " + cleanUrl + ": " + pdfErr.message);
+          }
+        }
+      });
+    });
+
+    // 全文まとめファイル保存
+    folder.createFile(`00_全記事全文まとめ.txt`, combinedText, MimeType.PLAIN_TEXT);
+    savedFilesCount++;
+
+    return {
+      success: true,
+      status: "success",
+      folderName: folder.getName(),
+      folderUrl: folder.getUrl(),
+      fileCount: savedFilesCount,
+      pdfCount: savedPdfCount,
+      message: `Google Driveに新規フォルダ「${folder.getName()}」を作成し、記事全文(${notes.length}件)およびPDF(${savedPdfCount}件)を保存しました。`
+    };
+  } catch (err) {
+    return {
+      success: false,
+      status: "error",
+      error: err.message,
+      message: "Google Driveへの保存中にエラーが発生しました: " + err.message
+    };
+  }
+}
+
+// ==== Google Drive操作の初回権限承認用ダミー関数 ====
+// GASエディタでこの関数を選択して「実行」を押すことで、Google Drive（DriveApp）のアクセス権限を初回承認できます
+function authorizeDrivePermissions() {
+  const folders = DriveApp.getFolders();
+  Logger.log("Drive permissions authorized successfully!");
+  return "OK";
 }
