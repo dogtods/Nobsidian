@@ -89,7 +89,7 @@ export default function ImportModal({ isOpen, onClose, onCreateNoteExt, onSaveTo
     const sourceSsId = extractSheetId(sheetUrl);
     const apiKey = localStorage.getItem("cn_gemini_key");
     let importModel = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
-      if (importModel === "gemini-flash-lite-latest") importModel = "gemini-2.0-flash-lite";
+      if (importModel === "gemini-flash-lite-latest") importModel = "gemini-2.5-flash-lite";
 
 
     setIsProcessing(true);
@@ -271,7 +271,7 @@ ${JSON.stringify(itemsToProcess)}
     try {
       const apiKey = localStorage.getItem("cn_gemini_key");
       let importModel = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
-      if (importModel === "gemini-flash-lite-latest") importModel = "gemini-2.0-flash-lite";
+      if (importModel === "gemini-flash-lite-latest") importModel = "gemini-2.5-flash-lite";
 
       const importTemp = parseFloat(localStorage.getItem("cn_gemini_temp") || "0.1");
 
