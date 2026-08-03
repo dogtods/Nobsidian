@@ -33,7 +33,7 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
       setApiKey(localStorage.getItem("cn_gemini_key") || "");
       setTtsApiKey(localStorage.getItem("cn_gcp_tts_key") || "");
       setTtsSpeed(localStorage.getItem("cn_tts_speed") || "1.2");
-      let m = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash"; if(m.includes("2.5")) m="gemini-2.0-flash"; setModel(m);
+      let m = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash"; setModel(m);
       setTemp(localStorage.getItem("cn_gemini_temp") || "0.1");
       setTokens(localStorage.getItem("cn_gemini_tokens") || "1024");
       setOptimizeTokens(localStorage.getItem("cn_optimize_api_tokens") !== "false");

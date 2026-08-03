@@ -794,8 +794,8 @@ applyHighlightRef.current = applyHighlight;
 
     try {
       let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
-      if (model.includes("2.5")) model = "gemini-2.0-flash";
-      if (model === "gemini-flash-lite-latest") model = "gemini-2.0-flash-lite-preview-02-05";
+      if (model === "gemini-flash-lite-latest") model = "gemini-2.0-flash-lite";
+
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1133,8 +1133,8 @@ applyHighlightRef.current = applyHighlight;
       const prompt = promptTemplate.replace("{notes_content}", notesContent.substring(0, 20000));
 
       let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
-      if (model.includes("2.5")) model = "gemini-2.0-flash";
-      if (model === "gemini-flash-lite-latest") model = "gemini-2.0-flash-lite-preview-02-05";
+      if (model === "gemini-flash-lite-latest") model = "gemini-2.0-flash-lite";
+
       const temp = parseFloat(localStorage.getItem("cn_gemini_temp") || "0.3");
       const maxTok = parseInt(localStorage.getItem("cn_gemini_tokens") || "2000", 10);
 

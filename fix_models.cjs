@@ -11,20 +11,35 @@ function processDir(dir) {
             let content = fs.readFileSync(fullPath, 'utf8');
             let changed = false;
             
-            if (content.includes('model.includes("2.5")')) {
+            // Remove the 2.5 fallback
+            if (content.includes('if (model.includes("2.5")) model = "gemini-2.0-flash";')) {
+                content = content.replace(/      if \(model\.includes\("2\.5"\)\) model = "gemini-2\.0-flash";\n/g, '');
+                changed = true;
+            }
+            if (content.includes('if (importModel.includes("2.5")) importModel = "gemini-2.0-flash";')) {
+                content = content.replace(/    if \(importModel\.includes\("2\.5"\)\) importModel = "gemini-2\.0-flash";\n/g, '');
+                changed = true;
+            }
+            
+            // Map gemini-flash-lite-latest to gemini-2.0-flash-lite
+            const mapStrModel = `      if (model === "gemini-flash-lite-latest") model = "gemini-2.0-flash-lite";\n`;
+            if (content.includes('let model = localStorage.getItem("cn_gemini_model")') && !content.includes('model = "gemini-2.0-flash-lite"')) {
                 content = content.replace(
-                    /if \(model\.includes\("2\.5"\)\) model = "gemini-2\.0-flash";/g,
-                    'if (model.includes("2.5")) model = "gemini-2.0-flash";\n      if (model === "gemini-flash-lite-latest") model = "gemini-2.0-flash-lite-preview-02-05";'
+                    /let model = localStorage\.getItem\("cn_gemini_model"\) \|\| "gemini-2\.0-flash";/g,
+                    'let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";\n' + mapStrModel
                 );
                 changed = true;
             }
-            if (content.includes('importModel.includes("2.5")')) {
+            
+            const mapStrImport = `      if (importModel === "gemini-flash-lite-latest") importModel = "gemini-2.0-flash-lite";\n`;
+            if (content.includes('let importModel = localStorage.getItem("cn_gemini_model")') && !content.includes('importModel = "gemini-2.0-flash-lite"')) {
                 content = content.replace(
-                    /if \(importModel\.includes\("2\.5"\)\) importModel = "gemini-2\.0-flash";/g,
-                    'if (importModel.includes("2.5")) importModel = "gemini-2.0-flash";\n      if (importModel === "gemini-flash-lite-latest") importModel = "gemini-2.0-flash-lite-preview-02-05";'
+                    /let importModel = localStorage\.getItem\("cn_gemini_model"\) \|\| "gemini-2\.0-flash";/g,
+                    'let importModel = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";\n' + mapStrImport
                 );
                 changed = true;
             }
+
             if (changed) {
                 fs.writeFileSync(fullPath, content);
                 console.log("Updated " + fullPath);
