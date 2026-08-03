@@ -2367,7 +2367,7 @@ ${listStr}`;
             })
           });
 
-          if (!res.ok) throw new Error("Gemini API call failed.");
+          if (!res.ok) { const errText = await res.text(); throw new Error(`Gemini API call failed: ${res.status} ${errText}`); }
           const rData = await res.json();
           const text = rData.candidates?.[0]?.content?.parts?.[0]?.text;
           
