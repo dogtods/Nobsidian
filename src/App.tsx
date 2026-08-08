@@ -208,6 +208,7 @@ export default function App() {
   const [externalExportTarget, setExternalExportTarget] = useState<{ type: 'single' } | { type: 'folder'; folderName: string } | null>(null);
   const [showSourceMemo, setShowSourceMemo] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [isExtractingStructure, setIsExtractingStructure] = useState(false);
   const [sourceMemoFontSize, setSourceMemoFontSize] = useState<"text-base" | "text-lg" | "text-xl">("text-base");
   const [sourceMemoLineHeight, setSourceMemoLineHeight] = useState<"1.2" | "1.5" | "2.0">("1.5");
 
@@ -1449,8 +1450,8 @@ const renderMarkdownToElements = (contentStr: string) => {
     }
   };
 
-  const buildAnalysisPrompt = (activeNote: Note, options: { allTitles?: boolean; taskBacklink?: boolean; taskAnalysis?: boolean } = {}): string => {
-    const { allTitles = false, taskBacklink = true, taskAnalysis = true } = options;
+  const buildAnalysisPrompt = (activeNote: Note, options: { allTitles?: boolean; taskBacklink?: boolean; taskAnalysis?: boolean; taskStructure?: boolean } = {}): string => {
+    const { allTitles = false, taskBacklink = true, taskAnalysis = true, taskStructure = false } = options;
     const optimizeEnabled = localStorage.getItem("cn_optimize_api_tokens") !== "false";
     const maxCandidatesLimit = parseInt(localStorage.getItem("cn_max_candidates_limit") || "20", 10);
     const maxContentLength = parseInt(localStorage.getItem("cn_max_content_length") || "2500", 10);
@@ -1534,6 +1535,14 @@ const renderMarkdownToElements = (contentStr: string) => {
       jsonFields.push(`  "summary": "このメモの要点を2〜3文で日本語でまとめてください"`);
     }
     
+    if (taskStructure) {
+      jsonFields.push(`    "visual_structure": "該当ノートの比較・時系列・因果関係を示すMermaidコードと簡単な説明文。該当情報がなければ空文字"`);
+      instructions.push(`- visual_structureには、「比較できるもの」「時系列で変化したもの」「因果関係があるもの」をMermaid記法の図として出力してください（目的は要約の網羅性ではなく、理解コストの削減）。`);
+      instructions.push(`- グラフのテーマは %%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#000000', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#ffffff', 'lineColor': '#ffffff', 'textColor': '#ffffff', 'background': '#000000', 'mainBkg': '#000000', 'nodeBorder': '#ffffff', 'clusterBkg': '#000000', 'edgeLabelBackground':'#000000', 'fontSize': '16px' }}}%% のように指定し、グラフの直下に簡単な説明文（100文字程度）をセットで含めてください。`);
+      instructions.push(`- グラフ種別の最適な選択と構文ルール: 量の比較には xychart-beta または pie。xychart-beta の y-axis は必ず「数値」とし、title, x-axis, y-axis, bar ごとに改行を入れること。スケジュールの比較には gantt。時系列の変化には timeline。因果関係には flowchart TD。`);
+      instructions.push(`- flowchartのノード内テキストは、枠からはみ出さないよう極力短く（1行あたり10文字以内目安）し、必要に応じて<br>で改行してください。`);
+    }
+    
     if (taskBacklink) {
       jsonFields.push(`  "related_notes": ["既存ノートタイトル1", "既存ノートタイトル2"]`);
       instructions.push(`- related_notesは既存ノートの中から関連するもの・テーマが著しく類似するもの・相互に補完しあうナレッジを抽出（なければ空配列）`);
@@ -1563,8 +1572,8 @@ ${jsonFields.join(",\n")}
 `;
   };
 
-  const buildBulkAnalysisPrompt = (targetNotesList: Note[], options: { allTitles?: boolean; taskBacklink?: boolean; taskAnalysis?: boolean } = {}): string => {
-    const { allTitles = false, taskBacklink = true, taskAnalysis = true } = options;
+  const buildBulkAnalysisPrompt = (targetNotesList: Note[], options: { allTitles?: boolean; taskBacklink?: boolean; taskAnalysis?: boolean; taskStructure?: boolean } = {}): string => {
+    const { allTitles = false, taskBacklink = true, taskAnalysis = true, taskStructure = false } = options;
     const optimizeEnabled = localStorage.getItem("cn_optimize_api_tokens") !== "false";
     const maxContentLength = parseInt(localStorage.getItem("cn_max_content_length") || "2500", 10);
     
@@ -1586,6 +1595,14 @@ ${jsonFields.join(",\n")}
       if (optSummary) {
         jsonFields.push(`    "summary": "このメモの要点を2〜3文で要約"`);
       }
+    }
+    
+    if (taskStructure) {
+      jsonFields.push(`    "visual_structure": "該当ノートの比較・時系列・因果関係を示すMermaidコードと簡単な説明文。該当情報がなければ空文字"`);
+      instructions.push(`- visual_structureには、「比較できるもの」「時系列で変化したもの」「因果関係があるもの」をMermaid記法の図として出力してください（目的は要約の網羅性ではなく、理解コストの削減）。`);
+      instructions.push(`- グラフのテーマは %%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#000000', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#ffffff', 'lineColor': '#ffffff', 'textColor': '#ffffff', 'background': '#000000', 'mainBkg': '#000000', 'nodeBorder': '#ffffff', 'clusterBkg': '#000000', 'edgeLabelBackground':'#000000', 'fontSize': '16px' }}}%% のように指定し、グラフの直下に簡単な説明文（100文字程度）をセットで含めてください。`);
+      instructions.push(`- グラフ種別の最適な選択と構文ルール: 量の比較には xychart-beta または pie。xychart-beta の y-axis は必ず「数値」とし、title, x-axis, y-axis, bar ごとに改行を入れること。スケジュールの比較には gantt。時系列の変化には timeline。因果関係には flowchart TD。`);
+      instructions.push(`- flowchartのノード内テキストは、枠からはみ出さないよう極力短く（1行あたり10文字以内目安）し、必要に応じて<br>で改行してください。`);
     }
     
     if (taskBacklink) {
@@ -1647,7 +1664,7 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
     setExternalExportTarget({ type: 'folder', folderName });
   };
 
-  const handleExternalAiExport = async (options: { includeAll: boolean; taskBacklink: boolean; taskAnalysis: boolean }) => {
+  const handleExternalAiExport = async (options: { includeAll: boolean; taskBacklink: boolean; taskAnalysis: boolean; taskStructure: boolean }) => {
     const target = externalExportTarget;
     setExternalExportTarget(null);
     if (!target) return;
@@ -1659,7 +1676,8 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
       const prompt = buildAnalysisPrompt(active, {
         allTitles: options.includeAll,
         taskBacklink: options.taskBacklink,
-        taskAnalysis: options.taskAnalysis
+        taskAnalysis: options.taskAnalysis,
+        taskStructure: options.taskStructure
       });
       
       // Create a blob and download it as a .txt file
@@ -1704,7 +1722,8 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
       const prompt = buildBulkAnalysisPrompt(folderNotes, {
         allTitles: options.includeAll,
         taskBacklink: options.taskBacklink,
-        taskAnalysis: options.taskAnalysis
+        taskAnalysis: options.taskAnalysis,
+        taskStructure: options.taskStructure
       });
 
       const blob = new Blob([prompt], { type: 'text/plain;charset=utf-8' });
@@ -1788,6 +1807,9 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
                 newContent = current.content + "\n\n" + newLinks.join('\n');
               }
             }
+            if (resultItem.visual_structure) {
+              newContent = newContent + "\n\n" + resultItem.visual_structure;
+            }
             
             // Setup keywords
             let newKeywords = current.keywords;
@@ -1825,8 +1847,9 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
         setExternalPasteText("");
         
       } else {
+
         if (!parsed.keywords && !parsed.summary && !parsed.related_notes) {
-          throw new Error("必要なプロパティ(keywords, summary, related_notes)が見つかりません");
+          throw new Error("必要なプロパティ(keywords, summary, related_notes 等)が見つかりません");
         }
         
         setAiResults(parsed);
@@ -1839,6 +1862,63 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
       toast("JSONの解析に失敗しました: " + e.message);
     }
   };
+
+  const runVisualExtraction = async () => {
+    const active = getActiveNote();
+    if (!active) return toast("ノートを選択してください");
+    if (active.content.trim().length < 15) return toast("内容が短すぎます");
+    
+    setIsExtractingStructure(true);
+    
+    const promptText = `あなたは記事の内容を視覚的に理解しやすくするための構造抽出アシスタントです。
+以下の記事から、「比較できるもの」「時系列で変化したもの」「因果関係があるもの」を抽出し、それぞれをMermaid記法の図として出力してください。
+目的は「要約の網羅性」ではなく「理解コストの削減」です。数値や時期の変化など、比較・構造・因果関係を持つ情報は、文章ではなく図として表現してください。
+該当する情報がない項目は、その図の出力ごと省略してください（人が「その観点の情報はなかった」と一目でわかることも、理解コストの削減に寄与します）。
+
+記事本文:
+${active.columnJ || active.content}
+
+出力は「Mermaidのコードブロック(\`\`\`mermaid ... \`\`\`)」と「その直後に配置する簡単な説明文（100文字程度）」のセットで出力してください。
+該当する図が複数ある場合は、この「図＋説明文」のセットを続けて出力してください。
+
+【描画環境の制約とMermaid構文ルール】
+出力されたMermaidコードは背景が黒色のビューアで表示されます。またテキストがはみ出さないよう、以下のルールを必ず守ってください。
+
+1. すべてのコードブロックの先頭(グラフ種別の行より前)に、次のinit行を必ず挿入すること。
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#000000', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#ffffff', 'lineColor': '#ffffff', 'textColor': '#ffffff', 'background': '#000000', 'mainBkg': '#000000', 'nodeBorder': '#ffffff', 'clusterBkg': '#000000', 'edgeLabelBackground':'#000000', 'fontSize': '16px' }}}%%
+
+2. 色指定(style, fillなど)は原則使用しませんが、上記のinit行はグラフテーマの指定なので例外として扱います。ノードごとの個別色分けは禁止です。
+
+3. テキストが枠からはみ出さないための厳守事項:
+- 詳しい説明はノード内に書かず、図の下の説明文（100文字程度）に記載して補足してください。
+- flowchartのノード内テキストは、枠からはみ出さないよう極力短く（1行あたり10文字以内目安）し、必要に応じて<br>で改行してください。
+- timelineの各項目テキストも同様に短く区切り、必要に応じて<br>で改行してください。
+- ノードIDと表示テキストを分離し、表示テキストのみを簡潔にしてください。
+
+4. グラフ種別の最適な選択と構文ルール:
+- 量の比較（売上、人数など）には xychart-beta または pie を使用してください。
+  ※ xychart-beta を使う場合は、y-axis は必ず「数値」になるようにしてください。y-axisにカテゴリや文字列（月、名前など）を指定すると構文エラーになります。また、必ずtitle, x-axis, y-axis, bar などの要素ごとに改行を入れてください。
+- スケジュール、期間の比較、遅延の予測などには gantt を使用してください。
+- 単純な時系列の出来事の変化には timeline を使用してください。
+- 因果関係、プロセスの流れには flowchart TD を使用してください。
+
+5. 積み上げ棒グラフなど複数系列を色で区別する場面では、色の濃淡ではなく系列名を凡例(legend)やラベルとして明示し、白黒でも判別できるようにすること。xychart-betaはハッチング柄に対応していないため、系列ごとに棒グラフを分けて並べる、または系列名を直接ラベル表示するなどの代替手段で対応すること。
+
+- ノードIDは半角英数字のみとする
+- 各図の直前に、どの図かわかる一行コメント(例: %% causal_flow %%)を入れる
+`;
+
+    try {
+      await navigator.clipboard.writeText(promptText);
+      toast("外部AI用のプロンプトをコピーしました📋 ChatGPT等に貼り付けて実行し、得られた結果をこのノートの本文に貼り付けてください");
+    } catch (e) {
+      console.error(e);
+      toast("コピーに失敗しました: " + e.message);
+    } finally {
+      setIsExtractingStructure(false);
+    }
+  };
+
   const runGeminiAnalysis = async () => {
 
     const active = getActiveNote();
@@ -3134,6 +3214,16 @@ ${candidateNotesInfo || "（候補となる既存ノートはありません）"
                     <span className="hidden sm:inline">JSON</span>
                   </button>
 
+                  <button
+                    onClick={runVisualExtraction}
+                    disabled={isExtractingStructure}
+                    className={`p-1 px-2.5 bg-transparent border border-[var(--border2)] text-xs font-medium rounded-md cursor-pointer flex items-center gap-1.5 transition-all ${isExtractingStructure ? 'opacity-50 cursor-not-allowed' : 'text-[var(--subtle)] hover:text-white hover:bg-[var(--border)]'}`}
+                    title="記事の図解（比較・時系列・因果）を抽出する"
+                  >
+                    {isExtractingStructure ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-[var(--accent)]" /> : <Grid className="w-3.5 h-3.5 text-[var(--accent)]" />}
+                    <span className="hidden sm:inline">図解抽出</span>
+                  </button>
+
                   {activeNote.columnJ && activeNote.columnJ.trim() !== "" && (
                     <button
                       onClick={() => setShowSourceMemo(!showSourceMemo)}
@@ -3564,6 +3654,34 @@ ${candidateNotesInfo || "（候補となる既存ノートはありません）"
                           onClick={insertRelatedNotesLinks}
                         >
                           <Plus className="w-3.5 h-3.5" /> 関連ノートへのリンクを本文末尾に追記
+                        </button>
+                      </div>
+                    )}
+
+                    {aiResults.visual_structure && (
+                      <div className="mt-4 pt-4 border-t border-[var(--border2)]">
+                        <div className="text-[10px] font-bold text-[var(--purple)] tracking-wider uppercase mb-2">✦ 抽出された図解 (Mermaid)</div>
+                        <pre className="text-[10px] text-[var(--subtle)] whitespace-pre-wrap font-mono p-2 bg-[#0d1117] rounded border border-[var(--border2)] max-h-32 overflow-y-auto mb-2">
+                          {aiResults.visual_structure}
+                        </pre>
+                        <button
+                          className="text-[11px] text-[var(--blue)] border border-[#58a6ff33] rounded p-1.5 px-3 hover:bg-[#58a6ff1a] cursor-pointer font-semibold transition-all flex items-center gap-1"
+                          onClick={() => {
+                            const active = getActiveNote();
+                            if (active) {
+                              const updated = {
+                                ...active,
+                                content: active.content + "\n\n" + aiResults.visual_structure,
+                                updatedAt: Date.now()
+                              };
+                              const newList = notes.map(n => n.id === active.id ? updated : n);
+                              setNotes(newList);
+                              triggerLocalSave(newList, active.id);
+                              toast("図解（Mermaid）を本文末尾に追記しました ✦");
+                            }
+                          }}
+                        >
+                          <Plus className="w-3.5 h-3.5" /> 本文末尾に図解を追記
                         </button>
                       </div>
                     )}

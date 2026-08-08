@@ -4,7 +4,7 @@ import { Download } from "lucide-react";
 interface ExternalAiExportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onExport: (options: { includeAll: boolean; taskBacklink: boolean; taskAnalysis: boolean }) => void;
+  onExport: (options: { includeAll: boolean; taskBacklink: boolean; taskAnalysis: boolean; taskStructure: boolean }) => void;
   isBulk?: boolean;
   targetName?: string;
 }
@@ -13,6 +13,7 @@ export default function ExternalAiExportModal({ isOpen, onClose, onExport, isBul
   const [includeAll, setIncludeAll] = useState(true);
   const [taskBacklink, setTaskBacklink] = useState(true);
   const [taskAnalysis, setTaskAnalysis] = useState(true);
+  const [taskStructure, setTaskStructure] = useState(false);
 
   if (!isOpen) return null;
 
@@ -64,6 +65,21 @@ export default function ExternalAiExportModal({ isOpen, onClose, onExport, isBul
               </span>
             </div>
           </label>
+        
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-0.5 cursor-pointer accent-[var(--purple)]"
+              checked={taskStructure}
+              onChange={(e) => setTaskStructure(e.target.checked)}
+            />
+            <div className="flex-1">
+              <span className="text-xs font-bold text-white block">図解（Mermaid）の抽出</span>
+              <span className="text-[10px] text-[var(--subtle)] mt-0.5 block">
+                比較・時系列・因果関係をMermaid記法の図として抽出する指示を含めます。
+              </span>
+            </div>
+          </label>
         </div>
 
         <div className="bg-[rgba(163,113,247,0.04)] border border-[rgba(163,113,247,0.15)] rounded-lg p-3">
@@ -95,8 +111,8 @@ export default function ExternalAiExportModal({ isOpen, onClose, onExport, isBul
           <button
             type="button"
             className="text-xs p-2 px-5 rounded-md font-bold bg-[#2ea043] hover:bg-[#34b64c] text-white cursor-pointer transition-all shadow-md active:scale-95 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={!taskAnalysis && !taskBacklink}
-            onClick={() => onExport({ includeAll, taskBacklink, taskAnalysis })}
+            disabled={!taskAnalysis && !taskBacklink && !taskStructure}
+            onClick={() => onExport({ includeAll, taskBacklink, taskAnalysis, taskStructure })}
           >
             <Download className="w-3.5 h-3.5" /> ダウンロード
           </button>

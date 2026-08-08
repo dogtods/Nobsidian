@@ -9,7 +9,7 @@ mermaid.initialize({
     htmlLabels: true
   },
   themeVariables: {
-    fontSize: '13px',
+    fontSize: '16px',
     primaryColor: '#121212',
     primaryTextColor: '#c9d1d9',
     primaryBorderColor: '#30363d',
