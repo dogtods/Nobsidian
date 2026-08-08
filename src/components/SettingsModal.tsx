@@ -277,6 +277,14 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
           <p className="text-[9px] text-[var(--muted)] mt-1">
             Googleスプレッドシートへの保存や、未処理ハイライトの同期で使用するGASの「ウェブアプリURL」とシート名を入力します。
           </p>
+          <div className="mt-2.5 p-2.5 bg-[#161b22] border border-[#30363d] rounded-md">
+            <h4 className="text-[10px] text-[var(--purple)] font-bold mb-1 uppercase tracking-wider">Sync Troubleshooting</h4>
+            <ul className="text-[10px] text-[var(--muted)] list-disc list-inside space-y-1">
+              <li><span className="text-[var(--text)]">Failed to fetch</span> エラーが出る場合、GASのデプロイ設定を確認してください。</li>
+              <li>設定方法: <span className="text-[var(--text)]">新しいデプロイ ＞ 種類: ウェブアプリ ＞ アクセスできるユーザー: <strong>全員</strong> (Anyone)</span> に設定し、発行された最新のURLを貼り付けてください。</li>
+              <li>URL末尾が <span className="text-[var(--text)]">/exec</span> で終わっていることを確認してください（/dev は動作しません）。</li>
+            </ul>
+          </div>
         </div>
 
         <div className="border-t border-[var(--border)] pt-3.5">

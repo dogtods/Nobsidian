@@ -7,7 +7,7 @@ import React, { useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
 import { Note, GraphNode, GraphLink, FolderRelation } from "../types";
 import { getFolderFromKeywords, formatDateStr, extractWikiLinks } from "../utils/graphDataParser";
-import { DEFAULT_PROMPTS } from "./PromptSettingsModal";
+import { DEFAULT_PROMPTS, getStoredPrompt } from "./PromptSettingsModal";
 
 interface KnowledgeGraphModalProps {
   isOpen: boolean;
@@ -1020,7 +1020,7 @@ applyHighlightRef.current = applyHighlight;
         .map(n => `### ${n.title}\n${n.content}`)
         .join("\n\n---\n\n");
 
-    const promptTemplate = localStorage.getItem("cn_prompt_report") || DEFAULT_PROMPTS.REPORT;
+    const promptTemplate = getStoredPrompt("REPORT");
     const prompt = promptTemplate.replace("{notes_content}", notesContent);
     
     navigator.clipboard.writeText(prompt)
@@ -1033,7 +1033,7 @@ applyHighlightRef.current = applyHighlight;
     const notesContent = (Array.from(reportSelectedNodes.values()) as Array<{ title: string; content: string }>)
         .map(n => `### ${n.title}\n${n.content}`)
         .join("\n\n---\n\n");
-    const promptTemplate = localStorage.getItem("cn_prompt_report") || DEFAULT_PROMPTS.REPORT;
+    const promptTemplate = getStoredPrompt("REPORT");
     const prompt = promptTemplate.replace("{notes_content}", notesContent);
     
     const blob = new Blob([prompt], { type: 'text/plain' });

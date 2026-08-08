@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from "react";
 import { Note } from "../types";
 import { formatDateStr } from "../utils/graphDataParser";
+import { getStoredPrompt } from "./PromptSettingsModal";
 
 interface ImportModalProps {
   isOpen: boolean;
@@ -111,11 +112,16 @@ export default function ImportModal({ isOpen, onClose, onCreateNoteExt, onSaveTo
             highlightsSnippet: String(item.highlights || "").substring(0, 300)
           }));
 
-          const prompt = `あなたは優秀なエディターです。以下の各記事データの元のタイトルと本文の断片を読み、それぞれに対して最もよく表す、短くて魅力的な日本語のタイトル（20文字以内）を1つずつ提案してください。
-必ず出力は指定のキー（インデックス番号の文字列）に対応するJSONオブジェクトのみとして、説明や余計なマークダウン装飾（\`\`\`json 等）は一切含めないでください。
+          const titleTemplate = getStoredPrompt("TITLE");
+          const prompt = `あなたは優秀なエディターです。以下の各記事データの元のタイトルと本文の断片を読み、それぞれに対して以下のプロンプトの意図に基づき、最もよく表す、短くて魅力的な日本語のタイトル（20文字以内）を1つずつ提案してください。
 
-入力データ：
+【タイトル生成の指示】
+${titleTemplate}
+
+【入力データ：処理対象のインデックスと内容】
 ${JSON.stringify(itemsToProcess)}
+
+必ず出力は指定のキー（インデックス番号の文字列）に対応するJSONオブジェクトのみとして、説明や余計なマークダウン装飾（\`\`\`json 等）は一切含めないでください。
 
 出力形式（例）：
 {
@@ -192,7 +198,8 @@ ${JSON.stringify(itemsToProcess)}
             // Single item, individual fallback API call
             onSaveToast(`AI処理中... (${i + 1}/${selectedItems.length})`);
             try {
-              const prompt = `以下のテキストの内容を最もよく表す、短くて魅力的な日本語のタイトル（20文字以内）を1つだけ提案してください。出力はタイトルのみとし、装飾や説明は不要です。\n\n内容:\n${content.substring(0, 2000)}`;
+              const template = getStoredPrompt("TITLE");
+              const prompt = template.replace("{content}", content.substring(0, 2000));
               const r = await fetch(
                 `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
                 {
@@ -278,7 +285,8 @@ ${JSON.stringify(itemsToProcess)}
       const fetchAiTitle = async (content: string, currentTitle: string) => {
         if (!apiKey || !optimizeTitle) return currentTitle;
         try {
-          const prompt = `以下のテキストの内容を最もよく表す、短くて魅力的な日本語のタイトル（20文字以内）を1つだけ提案してください。出力はタイトルのみとし、装飾や説明は不要です。\n\n内容:\n${content.substring(0, 2000)}`;
+          const template = getStoredPrompt("TITLE");
+          const prompt = template.replace("{content}", content.substring(0, 2000));
           const r = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
             {
@@ -546,8 +554,8 @@ ${JSON.stringify(itemsToProcess)}
           const aiMaxTok = parseInt(localStorage.getItem("cn_gemini_tokens") || "1024", 10);
           
           const promptTemplate = importMode === "summarize"
-            ? (localStorage.getItem("cn_prompt_import_summarize") || "以下の文章を分かりやすく要約してください。\n\n{content}")
-            : (localStorage.getItem("cn_prompt_import_keypoints") || "以下の文章から重要なキーポイントを箇条書きで抽出してください。\n\n{content}");
+            ? getStoredPrompt("IMPORT_SUMMARIZE")
+            : getStoredPrompt("IMPORT_KEYPOINTS");
           
           const prompt = promptTemplate.replace("{content}", text.substring(0, 30000));
 

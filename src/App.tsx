@@ -321,16 +321,48 @@ export default function App() {
     setTimeout(() => setToastMessage(""), 2500);
   };
 
-  // Set visual status
-  const updateSyncStatus = (status: "synced" | "syncing" | "offline" | "error", label: string) => {
-    setSyncStatus(status);
-    setSyncLabel(label);
+  const copyToClipboard = async (text: string, successMsg: string = "コピーしました ✦") => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        toast(successMsg);
+        return true;
+      }
+      throw new Error("Clipboard API unavailable");
+    } catch (e) {
+      console.warn("Clipboard writeText failed, falling back to execCommand", e);
+      try {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-9999px";
+        textArea.style.top = "0";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        const successful = document.execCommand("copy");
+        document.body.removeChild(textArea);
+        if (successful) {
+          toast(successMsg);
+          return true;
+        }
+      } catch (err) {
+        console.error("execCommand copy failed", err);
+      }
+      toast("コピーに失敗しました。お手数ですが手動でコピーしてください。");
+      return false;
+    }
   };
-
-  // REST API calls
-  const apiPost = async (body: any) => {
+   const apiPost = async (body: any) => {
     const url = getApiUrl();
     if (!url || url.includes("YOUR_")) throw new Error("API URL is unconfigured.");
+    
+    // GAS URLの形式チェック
+    if (!url.startsWith("https://script.google.com/macros/s/") || !url.endsWith("/exec")) {
+      console.warn("GAS URL format may be invalid:", url);
+      toast("⚠️ GAS URLの形式が正しくない可能性があります（/exec で終わる必要があります）");
+    }
+
     const sheetName = localStorage.getItem("cn_gas_sheet_name");
     if (sheetName && sheetName.trim() !== "") {
       body.sheetName = sheetName.trim();
@@ -356,7 +388,7 @@ export default function App() {
     } catch (e: any) {
       if (e.message.includes("404")) throw new Error("APIエンドポイントが見つかりません(404)。GASのURL、またはAIモデルの設定を確認してください。");
       if (e.message === "Failed to fetch" || e.name === "TypeError") {
-        throw new Error("GAS Webアプリへの接続に失敗しました（Failed to fetch）。GAS側の『新しいデプロイ ＞ アクセスできるユーザー』が『全員』（Anyone）になっているか、URLが最新の /exec の本番用URLであるかご確認ください。");
+        throw new Error("GAS Webアプリへの接続に失敗しました（Failed to fetch）。\n\n原因の可能性:\n1. GAS側の『新しいデプロイ ＞ アクセスできるユーザー』が『全員』（Anyone）になっていない\n2. URLが最新の /exec の本番用URLではない\n3. ブラウザ（特にiframe環境）によるCORS制限。別タブで開くと解消する場合があります。");
       }
       throw e;
     }
@@ -381,10 +413,16 @@ export default function App() {
     } catch (e: any) {
       if (e.message.includes("404")) throw new Error("APIエンドポイントが見つかりません(404)。GASのURL、またはAIモデルの設定を確認してください。");
       if (e.message === "Failed to fetch" || e.name === "TypeError") {
-        throw new Error("GAS Webアプリへの接続に失敗しました（Failed to fetch）。GAS側の『新しいデプロイ ＞ アクセスできるユーザー』が『全員』（Anyone）になっているか、URLが最新の /exec の本番用URLであるかご確認ください。");
+        throw new Error("GAS Webアプリへの接続に失敗しました（Failed to fetch）。\n\n原因の可能性:\n1. GAS側の『新しいデプロイ ＞ アクセスできるユーザー』が『全員』（Anyone）になっていない\n2. URLが最新の /exec の本番用URLではない\n3. ブラウザ（特にiframe環境）によるCORS制限。別タブで開くと解消する場合があります。");
       }
       throw e;
     }
+  };
+
+  // Set visual status
+  const updateSyncStatus = (status: "synced" | "syncing" | "offline" | "error", label: string) => {
+    setSyncStatus(status);
+    setSyncLabel(label);
   };
 
   // Sync pull & push logic
@@ -1537,10 +1575,16 @@ const renderMarkdownToElements = (contentStr: string) => {
     
     if (taskStructure) {
       jsonFields.push(`    "visual_structure": "該当ノートの比較・時系列・因果関係を示すMermaidコードと簡単な説明文。該当情報がなければ空文字"`);
-      instructions.push(`- visual_structureには、「比較できるもの」「時系列で変化したもの」「因果関係があるもの」をMermaid記法の図として出力してください（目的は要約の網羅性ではなく、理解コストの削減）。`);
-      instructions.push(`- グラフのテーマは %%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#000000', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#ffffff', 'lineColor': '#ffffff', 'textColor': '#ffffff', 'background': '#000000', 'mainBkg': '#000000', 'nodeBorder': '#ffffff', 'clusterBkg': '#000000', 'edgeLabelBackground':'#000000', 'fontSize': '16px' }}}%% のように指定し、グラフの直下に簡単な説明文（100文字程度）をセットで含めてください。`);
-      instructions.push(`- グラフ種別の最適な選択と構文ルール: 量の比較には xychart-beta または pie。xychart-beta の y-axis は必ず「数値」とし、title, x-axis, y-axis, bar ごとに改行を入れること。スケジュールの比較には gantt。時系列の変化には timeline。因果関係には flowchart TD。`);
-      instructions.push(`- flowchartのノード内テキストは、枠からはみ出さないよう極力短く（1行あたり10文字以内目安）し、必要に応じて<br>で改行してください。`);
+      instructions.push(`- visual_structureには、「比較できるもの」「時系列で変化したもの」「因果関係があるもの」「情報の階層構造」をMermaid記法の図として出力してください（目的は要約の網羅性ではなく、理解コストの削減）。`);
+      instructions.push(`- 【重要】出力形式ルール:
+  1. Mermaidの図解は、必ず \`\`\`mermaid [コード] \`\`\` の形式で出力すること。省略や要約（「...」など）をせず、必ず実行可能な完全なコードを出力してください。
+  2. Mermaid以外のテキスト（解説やまとめ）も、必ず見出し(#)、箇条書き(-)、太字(**)などのMarkdown記法を使用して構造化すること。
+  3. すべてのMermaidコードブロックの先頭に必ず次のinit行を挿入すること: %%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#1f6feb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#ffffff', 'lineColor': '#58a6ff', 'textColor': '#ffffff', 'background': '#0d1117', 'mainBkg': '#0d1117', 'nodeBorder': '#ffffff', 'clusterBkg': '#0d1117', 'edgeLabelBackground':'#0d1117', 'fontSize': '16px' }}}%%
+  4. グラフ直下に簡単な説明文（100文字程度）をセットで含めること。
+  5. 枠からはみ出さないよう、flowchartのノード内やtimelineの項目は短く（1行10文字以内目安）し、必要に応じ<br>で改行すること。
+  6. グラフ種別: 量の比較は xychart-beta または pie。xychart-beta は構文が厳格なため、以下の形式を厳守すること。
+     【xychart-beta 正解例】: xychart-beta [改行] title "売上比較" [改行] x-axis ["1月", "2月"] [改行] y-axis "万円" 0 --> 100 [改行] bar [50, 80]
+  7. Mermaidコードブロック前後には必ず空行を入れること。`);
     }
     
     if (taskBacklink) {
@@ -1550,26 +1594,13 @@ const renderMarkdownToElements = (contentStr: string) => {
       instructions.push(`- 既存ノートの持つタグ（フォルダ）や抽出済みキーワード情報を手がかりに、テーマの潜在的なつながりを的確に捉え、リンク判定の抜け漏れがないようにしてください。`);
     }
 
-    return `あなたはナレッジベース管理AIです。以下の【対象のメモ】を読み込み、指定された【指示】と【出力形式】に従ってJSON形式で分析結果を出力してください。
-
-【対象のメモ】
-タイトル: ${activeNote.title}
-本文:
-"""
-${compressedContent}
-"""
-
-【指示】
-${taskBacklink ? "- 上記の【対象のメモ】と、最後にある【既存ノートのタイトル一覧】を必ず最後まで読み込んでから処理を開始してください。" : ""}
-${instructions.join("\n")}
-- JSONのみを返す。マークダウンのコードブロックやテキストによる説明は不要。
-
-【出力形式】
-必ず以下のJSON形式のみで返してください。マークダウンのコードブロック（\`\`\`json など）や余分な解説文字は一切出力しないでください。
-{
-${jsonFields.join(",\n")}
-}${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェック用）】\n"""\n${existingTitles || "（まだ他のノートはありません）"}\n"""` : ""}
-`;
+    const template = getStoredPrompt("ANALYZE");
+    return template
+      .replace("{title}", activeNote.title)
+      .replace("{content}", compressedContent)
+      .replace("{instructions}", instructions.join("\n"))
+      .replace("{jsonFields}", jsonFields.join(",\n"))
+      .replace("{existingTitles}", existingTitles || "（まだ他のノートはありません）");
   };
 
   const buildBulkAnalysisPrompt = (targetNotesList: Note[], options: { allTitles?: boolean; taskBacklink?: boolean; taskAnalysis?: boolean; taskStructure?: boolean } = {}): string => {
@@ -1578,8 +1609,6 @@ ${jsonFields.join(",\n")}
     const maxContentLength = parseInt(localStorage.getItem("cn_max_content_length") || "2500", 10);
     
     const optSummary = localStorage.getItem("cn_ai_opt_summary") === "true";
-    const skipKw = localStorage.getItem("cn_ai_opt_skip_keywords");
-    const optSkipKeywords = skipKw === null ? true : skipKw === "true";
 
     const jsonFields: string[] = [];
     const instructions: string[] = [];
@@ -1590,7 +1619,7 @@ ${jsonFields.join(",\n")}
       jsonFields.push(`    "keywords": ["キーワード1", "キーワード2"]`);
       jsonFields.push(`    "new_keywords": ["新規キーワード1", "新規キーワード2"]`);
       instructions.push(`- keywordsは固有名詞・概念・テーマを3〜5個抽出`);
-      instructions.push(`- new_keywordsは既存ノートにない新しいキーワード`);
+      instructions.push(`- new_keywordsはキーワードの中でまだ既存ノートにないもの`);
       
       if (optSummary) {
         jsonFields.push(`    "summary": "このメモの要点を2〜3文で要約"`);
@@ -1599,10 +1628,16 @@ ${jsonFields.join(",\n")}
     
     if (taskStructure) {
       jsonFields.push(`    "visual_structure": "該当ノートの比較・時系列・因果関係を示すMermaidコードと簡単な説明文。該当情報がなければ空文字"`);
-      instructions.push(`- visual_structureには、「比較できるもの」「時系列で変化したもの」「因果関係があるもの」をMermaid記法の図として出力してください（目的は要約の網羅性ではなく、理解コストの削減）。`);
-      instructions.push(`- グラフのテーマは %%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#000000', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#ffffff', 'lineColor': '#ffffff', 'textColor': '#ffffff', 'background': '#000000', 'mainBkg': '#000000', 'nodeBorder': '#ffffff', 'clusterBkg': '#000000', 'edgeLabelBackground':'#000000', 'fontSize': '16px' }}}%% のように指定し、グラフの直下に簡単な説明文（100文字程度）をセットで含めてください。`);
-      instructions.push(`- グラフ種別の最適な選択と構文ルール: 量の比較には xychart-beta または pie。xychart-beta の y-axis は必ず「数値」とし、title, x-axis, y-axis, bar ごとに改行を入れること。スケジュールの比較には gantt。時系列の変化には timeline。因果関係には flowchart TD。`);
-      instructions.push(`- flowchartのノード内テキストは、枠からはみ出さないよう極力短く（1行あたり10文字以内目安）し、必要に応じて<br>で改行してください。`);
+      instructions.push(`- visual_structureには、「比較できるもの」「時系列で変化したもの」「因果関係があるもの」「情報の階層構造」をMermaid記法の図として出力してください（目的は要約の網羅性ではなく、理解コストの削減）。`);
+      instructions.push(`- 【重要】出力形式ルール:
+  1. Mermaidの図解は、必ず \`\`\`mermaid [コード] \`\`\` の形式で出力すること。省略や要約（「...」など）をせず、必ず実行可能な完全なコードを出力してください。
+  2. Mermaid以外のテキスト（解説やまとめ）も、必ず見出し(#)、箇条書き(-)、太字(**)などのMarkdown記法を使用して構造化すること。
+  3. すべてのMermaidコードブロックの先頭に必ず次のinit行を挿入すること: %%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#1f6feb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#ffffff', 'lineColor': '#58a6ff', 'textColor': '#ffffff', 'background': '#0d1117', 'mainBkg': '#0d1117', 'nodeBorder': '#ffffff', 'clusterBkg': '#0d1117', 'edgeLabelBackground':'#0d1117', 'fontSize': '16px' }}}%%
+  4. グラフ直下に簡単な説明文（100文字程度）をセットで含めること。
+  5. 枠からはみ出さないよう、flowchartのノード内やtimelineの項目は短く（1行10文字以内目安）し、必要に応じ<br>で改行すること。
+  6. グラフ種別: 量の比較は xychart-beta または pie。xychart-beta は構文が厳格なため、以下の形式を厳守すること。
+     【xychart-beta 正解例】: xychart-beta [改行] title "売上比較" [改行] x-axis ["1月", "2月"] [改行] y-axis "万円" 0 --> 100 [改行] bar [50, 80]
+  7. Mermaidコードブロック前後には必ず空行を入れること。`);
     }
     
     if (taskBacklink) {
@@ -1613,7 +1648,7 @@ ${jsonFields.join(",\n")}
 
     let notesText = "";
     targetNotesList.forEach(activeNote => {
-       const compressedContent = compressContent(activeNote.content, Math.min(maxContentLength, 1500)); // 少し短めにする
+       const compressedContent = compressContent(activeNote.content, Math.min(maxContentLength, 1500)); 
        notesText += `\n---\nID: ${activeNote.id}\nタイトル: ${activeNote.title}\n本文:\n"""\n${compressedContent}\n"""\n`;
     });
 
@@ -1631,135 +1666,12 @@ ${jsonFields.join(",\n")}
       })
       .join("\n");
 
-    return `あなたはナレッジベース管理AIです。以下の【対象のメモ一覧】を読み込み、指定された【指示】と【出力形式】に従ってJSON形式で分析結果を出力してください。
-
-【対象のメモ一覧】${notesText}
-【指示】
-${taskBacklink ? "- 上記の【対象のメモ一覧】と、最後にある【既存ノートのタイトル一覧】を必ず最後まで読み込んでから処理を開始してください。" : ""}
-- 【対象のメモ一覧】に含まれるすべてのノートについてそれぞれ分析し、1つのJSON配列として出力してください。
-${instructions.join("\n")}
-- JSONのみを返す。マークダウンのコードブロックやテキストによる説明は不要。
-
-【出力形式】
-必ず以下のJSON配列形式のみで返してください。マークダウンのコードブロック（\`\`\`json など）や余分な解説文字は一切出力しないでください。
-[
-  {
-${jsonFields.join(",\n")}
-  }
-]
-${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェック用）】\n"""\n${existingTitles || "（まだ他のノートはありません）"}\n"""` : ""}
-`;
-  };
-
-  const copyAIPromptForExternal = () => {
-    const active = getActiveNote();
-    if (!active) return toast("ノートを選択してください");
-    if (active.content.trim().length < 15) return toast("内容が短すぎます");
-    setExternalExportTarget({ type: 'single' });
-  };
-
-  const copyAIPromptForFolder = (folderName: string) => {
-    const folderNotes = notes.filter(n => getFolder(n) === folderName);
-    if (folderNotes.length === 0) return toast("ノートがありません");
-    setExternalExportTarget({ type: 'folder', folderName });
-  };
-
-  const handleExternalAiExport = async (options: { includeAll: boolean; taskBacklink: boolean; taskAnalysis: boolean; taskStructure: boolean }) => {
-    const target = externalExportTarget;
-    setExternalExportTarget(null);
-    if (!target) return;
-
-    if (target.type === 'single') {
-      const active = getActiveNote();
-      if (!active) return;
-      
-      const prompt = buildAnalysisPrompt(active, {
-        allTitles: options.includeAll,
-        taskBacklink: options.taskBacklink,
-        taskAnalysis: options.taskAnalysis,
-        taskStructure: options.taskStructure
-      });
-      
-      // Create a blob and download it as a .txt file
-      const blob = new Blob([prompt], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Prompt_AI_Analysis_${active.title.replace(/[\\/:*?"<>|]/g, "_").substring(0, 30)}.txt`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      // Also attempt to copy to clipboard as a bonus
-      try {
-        await navigator.clipboard.writeText(prompt);
-        toast("プロンプトをコピーし、テキストファイルとしてもダウンロードしました ✦");
-      } catch (e: any) {
-        // Fallback for iframe
-        let copied = false;
-        try {
-          const textArea = document.createElement("textarea");
-          textArea.value = prompt;
-          textArea.style.position = "fixed";
-          document.body.appendChild(textArea);
-          textArea.focus();
-          textArea.select();
-          copied = document.execCommand('copy');
-          document.body.removeChild(textArea);
-        } catch (err) {}
-
-        if (copied) {
-          toast("プロンプトをコピーし、テキストファイルとしてもダウンロードしました ✦");
-        } else {
-          toast("プロンプトをテキストファイルとしてダウンロードしました ✦（ファイルを開いてAIに添付してください）");
-        }
-      }
-    } else if (target.type === 'folder') {
-      const folderNotes = notes.filter(n => getFolder(n) === target.folderName && n.content.trim().length >= 15);
-      if (folderNotes.length === 0) return toast("出力できるノートがありません（内容が短すぎます）");
-
-      const prompt = buildBulkAnalysisPrompt(folderNotes, {
-        allTitles: options.includeAll,
-        taskBacklink: options.taskBacklink,
-        taskAnalysis: options.taskAnalysis,
-        taskStructure: options.taskStructure
-      });
-
-      const blob = new Blob([prompt], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const safeFolderName = target.folderName.replace(/[\\/:*?"<>|]/g, "_");
-      a.download = `Bulk_Prompt_${safeFolderName}.txt`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      
-      try {
-        await navigator.clipboard.writeText(prompt);
-        toast(`フォルダ「${target.folderName}」用の一括プロンプトをコピー・ダウンロードしました ✦`);
-      } catch (e: any) {
-        let copied = false;
-        try {
-          const textArea = document.createElement("textarea");
-          textArea.value = prompt;
-          textArea.style.position = "fixed";
-          document.body.appendChild(textArea);
-          textArea.focus();
-          textArea.select();
-          copied = document.execCommand('copy');
-          document.body.removeChild(textArea);
-        } catch (err) {}
-        
-        if (copied) {
-          toast(`フォルダ「${target.folderName}」用の一括プロンプトをコピー・ダウンロードしました ✦`);
-        } else {
-          toast(`フォルダ「${target.folderName}」用の一括プロンプトをダウンロードしました ✦`);
-        }
-      }
-    }
+    const template = getStoredPrompt("ANALYZE_BULK");
+    return template
+      .replace("{notesText}", notesText)
+      .replace("{instructions}", instructions.join("\n"))
+      .replace("{jsonFields}", jsonFields.join(",\n"))
+      .replace("{existingTitles}", existingTitles || "（まだ他のノートはありません）");
   };
 
   const handleApplyExternalJSON = () => {
@@ -1790,7 +1702,6 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
           if (targetIndex !== -1) {
             const current = newNotesList[targetIndex];
             
-            // Generate link string
             let linkStr = "";
             if (resultItem.related_notes && Array.isArray(resultItem.related_notes)) {
               linkStr = resultItem.related_notes
@@ -1798,7 +1709,6 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
                 .join("\n");
             }
             
-            // Append links if content doesn't have them
             let newContent = current.content;
             if (linkStr) {
               const existingLinks = current.content.match(/\[\[(.*?)\]\]/g) || [];
@@ -1808,10 +1718,13 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
               }
             }
             if (resultItem.visual_structure) {
-              newContent = newContent + "\n\n" + resultItem.visual_structure;
+              const trimmed = resultItem.visual_structure.trim();
+              const wrapped = (trimmed.includes('```mermaid')) 
+                ? resultItem.visual_structure 
+                : "```mermaid\n" + trimmed + "\n```";
+              newContent = newContent + "\n\n" + wrapped;
             }
             
-            // Setup keywords
             let newKeywords = current.keywords;
             if (resultItem.keywords && Array.isArray(resultItem.keywords)) {
               const folder = getFolder(current);
@@ -1847,7 +1760,6 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
         setExternalPasteText("");
         
       } else {
-
         if (!parsed.keywords && !parsed.summary && !parsed.related_notes) {
           throw new Error("必要なプロパティ(keywords, summary, related_notes 等)が見つかりません");
         }
@@ -1863,29 +1775,115 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
     }
   };
 
+  const copyAIPromptForExternal = () => {
+    const active = getActiveNote();
+    if (!active) return toast("ノートを選択してください");
+    if (active.content.trim().length < 15) return toast("内容が短すぎます");
+    setExternalExportTarget({ type: 'single' });
+  };
+
+  const copyAIPromptForFolder = (folderName: string) => {
+    const folderNotes = notes.filter(n => getFolder(n) === folderName);
+    if (folderNotes.length === 0) return toast("ノートがありません");
+    setExternalExportTarget({ type: 'folder', folderName });
+  };
+
+  const handleExternalAiExport = async (options: { includeAll: boolean; taskBacklink: boolean; taskAnalysis: boolean; taskStructure: boolean }) => {
+    const target = externalExportTarget;
+    setExternalExportTarget(null);
+    if (!target) return;
+
+    if (target.type === 'single') {
+      const active = getActiveNote();
+      if (!active) return;
+      
+      const prompt = buildAnalysisPrompt(active, {
+        allTitles: options.includeAll,
+        taskBacklink: options.taskBacklink,
+        taskAnalysis: options.taskAnalysis,
+        taskStructure: options.taskStructure
+      });
+      
+      const blob = new Blob([prompt], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Prompt_AI_Analysis_${active.title.replace(/[\\/:*?"<>|]/g, "_").substring(0, 30)}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      await copyToClipboard(prompt, "プロンプトをコピーし、テキストファイルとしてもダウンロードしました ✦");
+    } else if (target.type === 'folder') {
+      const folderNotes = notes.filter(n => getFolder(n) === target.folderName && n.content.trim().length >= 15);
+      if (folderNotes.length === 0) return toast("出力できるノートがありません（内容が短すぎます）");
+
+      const prompt = buildBulkAnalysisPrompt(folderNotes, {
+        allTitles: options.includeAll,
+        taskBacklink: options.taskBacklink,
+        taskAnalysis: options.taskAnalysis,
+        taskStructure: options.taskStructure
+      });
+
+      const blob = new Blob([prompt], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const safeFolderName = target.folderName.replace(/[\\/:*?"<>|]/g, "_");
+      a.download = `Bulk_Prompt_${safeFolderName}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      await copyToClipboard(prompt, `フォルダ「${target.folderName}」用の一括プロンプトをコピー・ダウンロードしました ✦`);
+    }
+  };
+
   const handleAppendFromClipboard = async () => {
     const active = getActiveNote();
     if (!active) return toast("ノートを選択してください");
 
     try {
-      // Note: navigator.clipboard.readText() requires user permission and might be restricted in some iframe environments.
-      const text = await navigator.clipboard.readText();
+      let text = "";
+      try {
+        text = await navigator.clipboard.readText();
+      } catch (clipErr) {
+        console.warn("Clipboard API failed, falling back to prompt", clipErr);
+        const promptText = window.prompt("クリップボードの読み取り許可がありません。ここにテキストを貼り付けてください:");
+        if (promptText === null) return; // User cancelled
+        text = promptText;
+      }
+
       if (!text.trim()) {
-        return toast("クリップボードが空、またはテキストではありません");
+        return toast("テキストが入力されていません");
       }
 
       const updated = {
         ...active,
-        content: active.content.trim() + "\n\n" + text,
+        content: active.content.trim() + "\n\n" + (() => {
+          const trimmed = text.trim();
+          const mermaidKeywords = ['graph', 'flowchart', 'sequenceDiagram', 'classDiagram', 'stateDiagram', 'erDiagram', 'journey', 'gantt', 'pie', 'quadrantChart', 'xychart-beta', 'timeline'];
+          const lines = trimmed.split('\n');
+          const firstLine = lines[0].toLowerCase();
+          const secondLine = lines.length > 1 ? lines[1].toLowerCase() : "";
+          const isMermaid = mermaidKeywords.some(kw => firstLine.includes(kw) || secondLine.includes(kw)) || trimmed.startsWith('%%{init');
+          
+          if (isMermaid && !trimmed.includes('```mermaid')) {
+            return "```mermaid\n" + trimmed + "\n```\n";
+          }
+          return text;
+        })(),
         updatedAt: Date.now()
       };
       const newList = notes.map(n => n.id === active.id ? updated : n);
       setNotes(newList);
       triggerLocalSave(newList, active.id);
-      toast("クリップボードの内容を末尾に追記しました ✦");
+      toast("内容を末尾に追記しました ✦");
     } catch (e: any) {
       console.error(e);
-      toast("貼り付けに失敗しました。ブラウザのクリップボード読み取り許可が必要です。");
+      toast("追記に失敗しました。");
     }
   };
 
@@ -1896,54 +1894,13 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
     
     setIsExtractingStructure(true);
     
-    const promptText = `あなたは記事の内容を視覚的に理解しやすくするための構造抽出アシスタントです。
-以下の記事から、「比較できるもの」「時系列で変化したもの」「因果関係があるもの」を抽出し、それぞれをMermaid記法の図として出力してください。
-目的は「要約の網羅性」ではなく「理解コストの削減」です。数値や時期の変化など、比較・構造・因果関係を持つ情報は、文章ではなく図として表現してください。
-該当する情報がない項目は、その図の出力ごと省略してください（人が「その観点の情報はなかった」と一目でわかることも、理解コストの削減に寄与します）。
+    const template = getStoredPrompt("EXTRACT_STRUCTURE");
+    const promptText = template.replace("{content}", active.columnJ || active.content);
 
-記事本文:
-${active.columnJ || active.content}
-
-出力は「Mermaidのコードブロック(\`\`\`mermaid ... \`\`\`)」と「その直後に配置する簡単な説明文（100文字程度）」のセットで出力してください。
-該当する図が複数ある場合は、この「図＋説明文」のセットを続けて出力してください。
-
-【描画環境の制約とMermaid構文ルール】
-出力されたMermaidコードは背景が黒色のビューアで表示されます。またテキストがはみ出さないよう、以下のルールを必ず守ってください。
-
-1. すべてのコードブロックの先頭(グラフ種別の行より前)に、次のinit行を必ず挿入すること。
-%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#000000', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#ffffff', 'lineColor': '#ffffff', 'textColor': '#ffffff', 'background': '#000000', 'mainBkg': '#000000', 'nodeBorder': '#ffffff', 'clusterBkg': '#000000', 'edgeLabelBackground':'#000000', 'fontSize': '16px' }}}%%
-
-2. 色指定(style, fillなど)は原則使用しませんが、上記のinit行はグラフテーマの指定なので例外として扱います。ノードごとの個別色分けは禁止です。
-
-3. テキストが枠からはみ出さないための厳守事項:
-- 詳しい説明はノード内に書かず、図の下の説明文（100文字程度）に記載して補足してください。
-- flowchartのノード内テキストは、枠からはみ出さないよう極力短く（1行あたり10文字以内目安）し、必要に応じて<br>で改行してください。
-- timelineの各項目テキストも同様に短く区切り、必要に応じて<br>で改行してください。
-- ノードIDと表示テキストを分離し、表示テキストのみを簡潔にしてください。
-
-4. グラフ種別の最適な選択と構文ルール:
-- 量の比較（売上、人数など）には xychart-beta または pie を使用してください。
-  ※ xychart-beta を使う場合は、y-axis は必ず「数値」になるようにしてください。y-axisにカテゴリや文字列（月、名前など）を指定すると構文エラーになります。また、必ずtitle, x-axis, y-axis, bar などの要素ごとに改行を入れてください。
-- スケジュール、期間の比較、遅延の予測などには gantt を使用してください。
-- 単純な時系列の出来事の変化には timeline を使用してください。
-- 因果関係、プロセスの流れには flowchart TD を使用してください。
-
-5. 積み上げ棒グラフなど複数系列を色で区別する場面では、色の濃淡ではなく系列名を凡例(legend)やラベルとして明示し、白黒でも判別できるようにすること。xychart-betaはハッチング柄に対応していないため、系列ごとに棒グラフを分けて並べる、または系列名を直接ラベル表示するなどの代替手段で対応すること。
-
-- ノードIDは半角英数字のみとする
-- 各図の直前に、どの図かわかる一行コメント(例: %% causal_flow %%)を入れる
-`;
-
-    try {
-      await navigator.clipboard.writeText(promptText);
-      toast("外部AI用のプロンプトをコピーしました📋 ChatGPT等に貼り付けて実行し、得られた結果をこのノートの本文に貼り付けてください");
-    } catch (e) {
-      console.error(e);
-      toast("コピーに失敗しました: " + e.message);
-    } finally {
-      setIsExtractingStructure(false);
-    }
+    await copyToClipboard(promptText, "外部AI用のプロンプトをコピーしました📋 ChatGPT等に貼り付けて実行し、得られた結果をこのノートの本文に貼り付けてください");
+    setIsExtractingStructure(false);
   };
+
 
   const runGeminiAnalysis = async () => {
 
@@ -2340,15 +2297,10 @@ ${active.columnJ || active.content}
     }
   };
 
-  const copyNoteToClipboard = () => {
+  const copyNoteToClipboard = async () => {
     const activeNote = getActiveNote();
     if (!activeNote) return;
-    try {
-      navigator.clipboard.writeText(activeNote.content);
-      toast("記事の内容をクリップボードにコピーしました 📋");
-    } catch (e: any) {
-      toast("コピーに失敗しました");
-    }
+    await copyToClipboard(activeNote.content, "記事の内容をクリップボードにコピーしました 📋");
   };
 
   const exportToPDF = async () => {
@@ -2447,18 +2399,8 @@ ${active.columnJ || active.content}
 
         try {
           const listStr = unorganized.map(n => `[ID: ${n.id}, Title: ${n.title}]`).join("\n");
-          const prompt = `あなたはノート整理の専門家です。
-以下のノートのリストを読み、タイトルに基づいて適切なフォルダ（カテゴリ名）に分類してください。
-
-分類のルール：
-1. 4〜8個程度の適切なカテゴリ名を考えてください。
-2. カテゴリ名は短く分かりやすい日本語にしてください。
-3. すでに似たカテゴリがある場合は統合してください。
-4. 出力は必ず以下のJSON形式のみとし、余計な解説は含めないでください。
-{"ID": "カテゴリ名", "ID": "カテゴリ名", ...}
-
-ノートリスト：
-${listStr}`;
+          const template = getStoredPrompt("ORGANIZE_FOLDER");
+          const prompt = template.replace("{listStr}", listStr);
 
           let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
       if (model === "gemini-flash-lite-latest") model = "gemini-2.5-flash-lite";
@@ -2671,25 +2613,11 @@ ${listStr}`;
             })
             .join("\n");
 
-          const prompt = `あなたはナレッジデータベースの関連性探索に特化した優秀な専門AIです。
-以下のノートの本文を深く理解し、提供する「接続可能な既存ノート候補一覧」の中から、このノートとテーマ、コンテキスト、暗黙的なテーマの関連、ナレッジの補完的関係が深く、相互リンク（[[タイトル]]）で繋ぐ価値がある関連ノートを的確・漏れなく抽出してください。
-
-【対象ノートの本文】
-タイトル: ${freshNote.title}
-内容:
-${compressedContent}
-
-【接続可能な既存ノート候補一覧】
-${candidateNotesInfo || "（候補となる既存ノートはありません）"}
-
-【指示ルール】
-1. 暗黙的なテーマ、単語の重なり、論理的つながりをしっかりと読み、テーマが真に合致するノートを最大5件まで不足なく抽出してください。
-2. 出力するタイトル文字列は、必ず上記の候補一覧に表記されている物と一字一句狂わずに完全に一致させてください（記号なども完全一致）。候補に存在しないタイトルを絶対に捏造してはいけません。
-3. 出力形式は、必ず関連ノートのタイトルのみを格納したプレーンなJSONオブジェクト配列のみとし、マークダウンコードブロック（\`\`\`json等）や解説文などの不要な文字は絶対に出力しないでください。
-
-出力例：
-["タイトルA", "タイトルB"]
-`;
+          const template = getStoredPrompt("FIND_RELATED");
+          const prompt = template
+            .replace("{title}", freshNote.title)
+            .replace("{content}", compressedContent)
+            .replace("{candidateNotesInfo}", candidateNotesInfo || "（候補となる既存ノートはありません）");
 
           let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
       if (model === "gemini-flash-lite-latest") model = "gemini-2.5-flash-lite";
@@ -3427,10 +3355,9 @@ ${candidateNotesInfo || "（候補となる既存ノートはありません）"
                       </div>
                       <div className="flex items-center gap-2">
                         <button
-                          onClick={() => {
+                          onClick={async () => {
                             if (activeNote.columnJ) {
-                              navigator.clipboard.writeText(activeNote.columnJ);
-                              toast("記事全文をコピーしました");
+                              await copyToClipboard(activeNote.columnJ, "記事全文をコピーしました");
                             }
                           }}
                           className="p-1 px-2.5 bg-transparent border border-[#30363d] text-xs text-gray-400 hover:text-white hover:bg-[#30363d] font-medium rounded-md cursor-pointer flex items-center gap-1.5 transition-all"
@@ -3706,7 +3633,7 @@ ${candidateNotesInfo || "（候補となる既存ノートはありません）"
                             if (active) {
                               const updated = {
                                 ...active,
-                                content: active.content + "\n\n" + aiResults.visual_structure,
+                                content: active.content + "\n\n" + (aiResults.visual_structure.includes('```mermaid') ? aiResults.visual_structure : "```mermaid\n" + aiResults.visual_structure.trim() + "\n```"),
                                 updatedAt: Date.now()
                               };
                               const newList = notes.map(n => n.id === active.id ? updated : n);
