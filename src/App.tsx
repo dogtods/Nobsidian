@@ -1863,6 +1863,32 @@ ${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェッ�
     }
   };
 
+  const handleAppendFromClipboard = async () => {
+    const active = getActiveNote();
+    if (!active) return toast("ノートを選択してください");
+
+    try {
+      // Note: navigator.clipboard.readText() requires user permission and might be restricted in some iframe environments.
+      const text = await navigator.clipboard.readText();
+      if (!text.trim()) {
+        return toast("クリップボードが空、またはテキストではありません");
+      }
+
+      const updated = {
+        ...active,
+        content: active.content.trim() + "\n\n" + text,
+        updatedAt: Date.now()
+      };
+      const newList = notes.map(n => n.id === active.id ? updated : n);
+      setNotes(newList);
+      triggerLocalSave(newList, active.id);
+      toast("クリップボードの内容を末尾に追記しました ✦");
+    } catch (e: any) {
+      console.error(e);
+      toast("貼り付けに失敗しました。ブラウザのクリップボード読み取り許可が必要です。");
+    }
+  };
+
   const runVisualExtraction = async () => {
     const active = getActiveNote();
     if (!active) return toast("ノートを選択してください");
@@ -3222,6 +3248,15 @@ ${candidateNotesInfo || "（候補となる既存ノートはありません）"
                   >
                     {isExtractingStructure ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-[var(--accent)]" /> : <Grid className="w-3.5 h-3.5 text-[var(--accent)]" />}
                     <span className="hidden sm:inline">図解抽出</span>
+                  </button>
+
+                  <button
+                    onClick={handleAppendFromClipboard}
+                    className="p-1 px-2.5 bg-transparent border border-[var(--border2)] text-xs font-medium rounded-md cursor-pointer flex items-center gap-1.5 transition-all text-[var(--subtle)] hover:text-white hover:bg-[var(--border)]"
+                    title="クリップボードの内容をノートの末尾に追記する"
+                  >
+                    <Clipboard className="w-3.5 h-3.5 text-[var(--blue)]" />
+                    <span className="hidden sm:inline">末尾に貼り付け</span>
                   </button>
 
                   {activeNote.columnJ && activeNote.columnJ.trim() !== "" && (
