@@ -170,29 +170,6 @@ body {
   border-radius: 3px;
 }
 
-.md table {
-  border-collapse: collapse;
-  width: 100%;
-  margin: 16px 0;
-  font-size: 14px;
-}
-
-.md th, .md td {
-  border: 1px solid var(--border2);
-  padding: 8px 12px;
-  text-align: left;
-}
-
-.md th {
-  background: var(--surface);
-  color: var(--bright);
-  font-weight: 600;
-}
-
-.md tr:nth-child(even) {
-  background: rgba(255,255,255,0.02);
-}
-
 /* ===== D3 GRAPH VISUALS ===== */
 .graph-node {
   cursor: pointer;
@@ -346,101 +323,11 @@ body {
     break-inside: avoid;
     margin: 0 auto;
     display: block;
-    max-width: 100% !important;
-    overflow: visible !important;
+    max-width: 170mm !important;
   }
   
   .mermaid-container svg {
     max-width: 100% !important;
     height: auto !important;
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-  }
-
-  /* Mermaid Diagram Overrides for Print - Remove fills, black lines/text */
-  /* General shapes */
-  .mermaid-container svg rect, 
-  .mermaid-container svg circle, 
-  .mermaid-container svg ellipse, 
-  .mermaid-container svg polygon,
-  .mermaid-container svg .node path,
-  .mermaid-container svg .mindmap-node path {
-    fill: #ffffff !important;
-    stroke: #000000 !important;
-    stroke-width: 1px !important;
-  }
-  
-  /* Reset background rect to transparent */
-  .mermaid-container svg > rect:first-child,
-  .mermaid-container svg > g > rect.background {
-    fill: transparent !important;
-    stroke: none !important;
-  }
-  
-  /* Text and HTML labels */
-  .mermaid-container svg text,
-  .mermaid-container svg text *,
-  .mermaid-container svg tspan,
-  .mermaid-container svg span,
-  .mermaid-container svg p,
-  .mermaid-container svg div,
-  .mermaid-container svg foreignObject,
-  .mermaid-container svg .label text {
-    fill: #000000 !important;
-    stroke: none !important;
-    color: #000000 !important;
-  }
-
-  /* Handle HTML labels inside foreignObject */
-  .mermaid-container svg foreignObject > div {
-    background: transparent !important;
-    border-color: #000000 !important;
-  }
-  
-  /* Lines and connectors */
-  .mermaid-container svg path,
-  .mermaid-container svg line {
-    stroke: #000000 !important;
-  }
-
-  /* Ensure connector lines don't get filled */
-  .mermaid-container svg .edgePath path,
-  .mermaid-container svg .mindmap-edges path,
-  .mermaid-container svg path.link,
-  .mermaid-container svg .flowchart-link {
-    fill: none !important;
-    stroke: #000000 !important;
-  }
-
-  /* Arrows/Markers */
-  .mermaid-container svg marker,
-  .mermaid-container svg marker path,
-  .mermaid-container svg .marker,
-  .mermaid-container svg .marker path {
-    fill: #000000 !important;
-    stroke: none !important;
-  }
-
-  /* Table styling for print */
-  .md table {
-    border-collapse: collapse;
-    width: 100%;
-    margin: 1rem 0;
-    page-break-inside: auto;
-  }
-  .md table tr {
-    page-break-inside: avoid;
-    page-break-after: auto;
-  }
-  .md table th, .md table td {
-    border: 1px solid #000000 !important;
-    padding: 6pt;
-    color: #000000 !important;
-    background: transparent !important;
-    font-size: 10pt;
-  }
-  .md table th {
-    background-color: #eeeeee !important;
-    font-weight: bold;
   }
 }

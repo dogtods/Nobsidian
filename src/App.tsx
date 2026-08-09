@@ -375,14 +375,13 @@ export default function App() {
       : `${url}${actionQuery}`;
 
     try {
-      const res = await fetch("/api/gas-proxy", {
+      const res = await fetch(targetUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: targetUrl,
-          method: "POST",
-          body: body
-        }),
+        referrerPolicy: "no-referrer",
+        mode: "cors",
+        redirect: "follow",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`HTTP Error ${res.status}: ${res.status === 404 ? 'API Endpoint not found. Please check your URL or Model settings.' : ''}`);
       return await res.json();
@@ -404,13 +403,10 @@ export default function App() {
       fullUrl += `&sheetName=${encodeURIComponent(sheetName.trim())}`;
     }
     try {
-      const res = await fetch("/api/gas-proxy", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: fullUrl,
-          method: "GET"
-        }),
+      const res = await fetch(fullUrl, {
+        referrerPolicy: "no-referrer",
+        mode: "cors",
+        redirect: "follow"
       });
       if (!res.ok) throw new Error(`HTTP Error ${res.status}: ${res.status === 404 ? 'API Endpoint not found. Please check your URL or Model settings.' : ''}`);
       return await res.json();
