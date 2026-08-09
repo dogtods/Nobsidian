@@ -1457,6 +1457,7 @@ const renderMarkdownToElements = (contentStr: string) => {
 
     try {
       let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
+      if (model.startsWith("gemini-1.5")) model = "gemini-2.0-flash";
       if (model === "gemini-flash-lite-latest") model = "gemini-2.5-flash-lite";
 
       const promptTemplate = getStoredPrompt("TITLE");
@@ -1935,6 +1936,7 @@ const renderMarkdownToElements = (contentStr: string) => {
 
     try {
       let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
+      if (model.startsWith("gemini-1.5")) model = "gemini-2.0-flash";
       if (model === "gemini-flash-lite-latest") model = "gemini-2.5-flash-lite";
 
       const temperature = parseFloat(localStorage.getItem("cn_gemini_temp") || "0.1");
@@ -2403,7 +2405,8 @@ const renderMarkdownToElements = (contentStr: string) => {
           const prompt = template.replace("{listStr}", listStr);
 
           let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
-      if (model === "gemini-flash-lite-latest") model = "gemini-2.5-flash-lite";
+          if (model.startsWith("gemini-1.5")) model = "gemini-2.0-flash";
+          if (model === "gemini-flash-lite-latest") model = "gemini-2.5-flash-lite";
 
           const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
             method: "POST",
@@ -2620,7 +2623,8 @@ const renderMarkdownToElements = (contentStr: string) => {
             .replace("{candidateNotesInfo}", candidateNotesInfo || "（候補となる既存ノートはありません）");
 
           let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
-      if (model === "gemini-flash-lite-latest") model = "gemini-2.5-flash-lite";
+          if (model.startsWith("gemini-1.5")) model = "gemini-2.0-flash";
+          if (model === "gemini-flash-lite-latest") model = "gemini-2.5-flash-lite";
 
           const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
             method: "POST",

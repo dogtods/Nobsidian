@@ -170,6 +170,29 @@ body {
   border-radius: 3px;
 }
 
+.md table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 16px 0;
+  font-size: 14px;
+}
+
+.md th, .md td {
+  border: 1px solid var(--border2);
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.md th {
+  background: var(--surface);
+  color: var(--bright);
+  font-weight: 600;
+}
+
+.md tr:nth-child(even) {
+  background: rgba(255,255,255,0.02);
+}
+
 /* ===== D3 GRAPH VISUALS ===== */
 .graph-node {
   cursor: pointer;
@@ -329,5 +352,56 @@ body {
   .mermaid-container svg {
     max-width: 100% !important;
     height: auto !important;
+  }
+
+  /* Mermaid Diagram Overrides for Print - White background, black lines/text */
+  .mermaid-container svg .node rect, 
+  .mermaid-container svg .node circle, 
+  .mermaid-container svg .node ellipse, 
+  .mermaid-container svg .node polygon,
+  .mermaid-container svg .node path {
+    fill: #ffffff !important;
+    stroke: #000000 !important;
+    stroke-width: 1px !important;
+  }
+  
+  .mermaid-container svg .label text,
+  .mermaid-container svg .edgeLabel text,
+  .mermaid-container svg text {
+    fill: #000000 !important;
+    color: #000000 !important;
+  }
+  
+  .mermaid-container svg .edgePath path {
+    stroke: #000000 !important;
+    stroke-width: 1.5px !important;
+  }
+
+  .mermaid-container svg .marker path {
+    fill: #000000 !important;
+    stroke: #000000 !important;
+  }
+
+  /* Table styling for print */
+  .md table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1rem 0;
+    page-break-inside: auto;
+  }
+  .md table tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+  .md table th, .md table td {
+    border: 1px solid #000000 !important;
+    padding: 6pt;
+    color: #000000 !important;
+    background: transparent !important;
+    font-size: 10pt;
+  }
+  .md table th {
+    background-color: #eeeeee !important;
+    font-weight: bold;
   }
 }
