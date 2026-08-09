@@ -7,7 +7,7 @@ import React, { useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
 import { Note, GraphNode, GraphLink, FolderRelation } from "../types";
 import { getFolderFromKeywords, formatDateStr, extractWikiLinks } from "../utils/graphDataParser";
-import { DEFAULT_PROMPTS, getStoredPrompt } from "./PromptSettingsModal";
+import { DEFAULT_PROMPTS } from "./PromptSettingsModal";
 
 interface KnowledgeGraphModalProps {
   isOpen: boolean;
@@ -794,7 +794,6 @@ applyHighlightRef.current = applyHighlight;
 
     try {
       let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
-      if (model.startsWith("gemini-1.5")) model = "gemini-2.0-flash";
       if (model === "gemini-flash-lite-latest") model = "gemini-2.5-flash-lite";
 
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
@@ -1021,7 +1020,7 @@ applyHighlightRef.current = applyHighlight;
         .map(n => `### ${n.title}\n${n.content}`)
         .join("\n\n---\n\n");
 
-    const promptTemplate = getStoredPrompt("REPORT");
+    const promptTemplate = localStorage.getItem("cn_prompt_report") || DEFAULT_PROMPTS.REPORT;
     const prompt = promptTemplate.replace("{notes_content}", notesContent);
     
     navigator.clipboard.writeText(prompt)
@@ -1034,7 +1033,7 @@ applyHighlightRef.current = applyHighlight;
     const notesContent = (Array.from(reportSelectedNodes.values()) as Array<{ title: string; content: string }>)
         .map(n => `### ${n.title}\n${n.content}`)
         .join("\n\n---\n\n");
-    const promptTemplate = getStoredPrompt("REPORT");
+    const promptTemplate = localStorage.getItem("cn_prompt_report") || DEFAULT_PROMPTS.REPORT;
     const prompt = promptTemplate.replace("{notes_content}", notesContent);
     
     const blob = new Blob([prompt], { type: 'text/plain' });
@@ -1134,7 +1133,6 @@ applyHighlightRef.current = applyHighlight;
       const prompt = promptTemplate.replace("{notes_content}", notesContent.substring(0, 20000));
 
       let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
-      if (model.startsWith("gemini-1.5")) model = "gemini-2.0-flash";
       if (model === "gemini-flash-lite-latest") model = "gemini-2.5-flash-lite";
 
       const temp = parseFloat(localStorage.getItem("cn_gemini_temp") || "0.3");

@@ -6,7 +6,6 @@
 import React, { useState, useEffect } from "react";
 import { Note } from "../types";
 import { formatDateStr } from "../utils/graphDataParser";
-import { getStoredPrompt } from "./PromptSettingsModal";
 
 interface ImportModalProps {
   isOpen: boolean;
@@ -90,8 +89,7 @@ export default function ImportModal({ isOpen, onClose, onCreateNoteExt, onSaveTo
     const sourceSsId = extractSheetId(sheetUrl);
     const apiKey = localStorage.getItem("cn_gemini_key");
     let importModel = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
-    if (importModel.startsWith("gemini-1.5")) importModel = "gemini-2.0-flash";
-    if (importModel === "gemini-flash-lite-latest") importModel = "gemini-2.5-flash-lite";
+      if (importModel === "gemini-flash-lite-latest") importModel = "gemini-2.5-flash-lite";
 
 
     setIsProcessing(true);
@@ -113,16 +111,11 @@ export default function ImportModal({ isOpen, onClose, onCreateNoteExt, onSaveTo
             highlightsSnippet: String(item.highlights || "").substring(0, 300)
           }));
 
-          const titleTemplate = getStoredPrompt("TITLE");
-          const prompt = `あなたは優秀なエディターです。以下の各記事データの元のタイトルと本文の断片を読み、それぞれに対して以下のプロンプトの意図に基づき、最もよく表す、短くて魅力的な日本語のタイトル（20文字以内）を1つずつ提案してください。
-
-【タイトル生成の指示】
-${titleTemplate}
-
-【入力データ：処理対象のインデックスと内容】
-${JSON.stringify(itemsToProcess)}
-
+          const prompt = `あなたは優秀なエディターです。以下の各記事データの元のタイトルと本文の断片を読み、それぞれに対して最もよく表す、短くて魅力的な日本語のタイトル（20文字以内）を1つずつ提案してください。
 必ず出力は指定のキー（インデックス番号の文字列）に対応するJSONオブジェクトのみとして、説明や余計なマークダウン装飾（\`\`\`json 等）は一切含めないでください。
+
+入力データ：
+${JSON.stringify(itemsToProcess)}
 
 出力形式（例）：
 {
@@ -199,8 +192,7 @@ ${JSON.stringify(itemsToProcess)}
             // Single item, individual fallback API call
             onSaveToast(`AI処理中... (${i + 1}/${selectedItems.length})`);
             try {
-              const template = getStoredPrompt("TITLE");
-              const prompt = template.replace("{content}", content.substring(0, 2000));
+              const prompt = `以下のテキストの内容を最もよく表す、短くて魅力的な日本語のタイトル（20文字以内）を1つだけ提案してください。出力はタイトルのみとし、装飾や説明は不要です。\n\n内容:\n${content.substring(0, 2000)}`;
               const r = await fetch(
                 `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
                 {
@@ -279,7 +271,6 @@ ${JSON.stringify(itemsToProcess)}
     try {
       const apiKey = localStorage.getItem("cn_gemini_key");
       let importModel = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
-      if (importModel.startsWith("gemini-1.5")) importModel = "gemini-2.0-flash";
       if (importModel === "gemini-flash-lite-latest") importModel = "gemini-2.5-flash-lite";
 
       const importTemp = parseFloat(localStorage.getItem("cn_gemini_temp") || "0.1");
@@ -287,8 +278,7 @@ ${JSON.stringify(itemsToProcess)}
       const fetchAiTitle = async (content: string, currentTitle: string) => {
         if (!apiKey || !optimizeTitle) return currentTitle;
         try {
-          const template = getStoredPrompt("TITLE");
-          const prompt = template.replace("{content}", content.substring(0, 2000));
+          const prompt = `以下のテキストの内容を最もよく表す、短くて魅力的な日本語のタイトル（20文字以内）を1つだけ提案してください。出力はタイトルのみとし、装飾や説明は不要です。\n\n内容:\n${content.substring(0, 2000)}`;
           const r = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
             {
@@ -556,8 +546,8 @@ ${JSON.stringify(itemsToProcess)}
           const aiMaxTok = parseInt(localStorage.getItem("cn_gemini_tokens") || "1024", 10);
           
           const promptTemplate = importMode === "summarize"
-            ? getStoredPrompt("IMPORT_SUMMARIZE")
-            : getStoredPrompt("IMPORT_KEYPOINTS");
+            ? (localStorage.getItem("cn_prompt_import_summarize") || "以下の文章を分かりやすく要約してください。\n\n{content}")
+            : (localStorage.getItem("cn_prompt_import_keypoints") || "以下の文章から重要なキーポイントを箇条書きで抽出してください。\n\n{content}");
           
           const prompt = promptTemplate.replace("{content}", text.substring(0, 30000));
 
