@@ -346,40 +346,79 @@ body {
     break-inside: avoid;
     margin: 0 auto;
     display: block;
-    max-width: 170mm !important;
+    max-width: 100% !important;
+    overflow: visible !important;
   }
   
   .mermaid-container svg {
     max-width: 100% !important;
     height: auto !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 
-  /* Mermaid Diagram Overrides for Print - White background, black lines/text */
-  .mermaid-container svg .node rect, 
-  .mermaid-container svg .node circle, 
-  .mermaid-container svg .node ellipse, 
-  .mermaid-container svg .node polygon,
-  .mermaid-container svg .node path {
+  /* Mermaid Diagram Overrides for Print - Remove fills, black lines/text */
+  /* General shapes */
+  .mermaid-container svg rect, 
+  .mermaid-container svg circle, 
+  .mermaid-container svg ellipse, 
+  .mermaid-container svg polygon,
+  .mermaid-container svg .node path,
+  .mermaid-container svg .mindmap-node path {
     fill: #ffffff !important;
     stroke: #000000 !important;
     stroke-width: 1px !important;
   }
   
-  .mermaid-container svg .label text,
-  .mermaid-container svg .edgeLabel text,
-  .mermaid-container svg text {
-    fill: #000000 !important;
-    color: #000000 !important;
+  /* Reset background rect to transparent */
+  .mermaid-container svg > rect:first-child,
+  .mermaid-container svg > g > rect.background {
+    fill: transparent !important;
+    stroke: none !important;
   }
   
-  .mermaid-container svg .edgePath path {
-    stroke: #000000 !important;
-    stroke-width: 1.5px !important;
+  /* Text and HTML labels */
+  .mermaid-container svg text,
+  .mermaid-container svg text *,
+  .mermaid-container svg tspan,
+  .mermaid-container svg span,
+  .mermaid-container svg p,
+  .mermaid-container svg div,
+  .mermaid-container svg foreignObject,
+  .mermaid-container svg .label text {
+    fill: #000000 !important;
+    stroke: none !important;
+    color: #000000 !important;
   }
 
+  /* Handle HTML labels inside foreignObject */
+  .mermaid-container svg foreignObject > div {
+    background: transparent !important;
+    border-color: #000000 !important;
+  }
+  
+  /* Lines and connectors */
+  .mermaid-container svg path,
+  .mermaid-container svg line {
+    stroke: #000000 !important;
+  }
+
+  /* Ensure connector lines don't get filled */
+  .mermaid-container svg .edgePath path,
+  .mermaid-container svg .mindmap-edges path,
+  .mermaid-container svg path.link,
+  .mermaid-container svg .flowchart-link {
+    fill: none !important;
+    stroke: #000000 !important;
+  }
+
+  /* Arrows/Markers */
+  .mermaid-container svg marker,
+  .mermaid-container svg marker path,
+  .mermaid-container svg .marker,
   .mermaid-container svg .marker path {
     fill: #000000 !important;
-    stroke: #000000 !important;
+    stroke: none !important;
   }
 
   /* Table styling for print */
