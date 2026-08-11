@@ -17,7 +17,7 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
   const [apiKey, setApiKey] = useState("");
   const [ttsApiKey, setTtsApiKey] = useState("");
   const [ttsSpeed, setTtsSpeed] = useState("1.2");
-  const [model, setModel] = useState("gemini-2.0-flash");
+  const [model, setModel] = useState("gemini-flash-latest");
   const [temp, setTemp] = useState("0.1");
   const [tokens, setTokens] = useState("1024");
   const [filterStart, setFilterStart] = useState("");
@@ -33,7 +33,7 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
       setApiKey(localStorage.getItem("cn_gemini_key") || "");
       setTtsApiKey(localStorage.getItem("cn_gcp_tts_key") || "");
       setTtsSpeed(localStorage.getItem("cn_tts_speed") || "1.2");
-      let m = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash"; setModel(m);
+      let m = localStorage.getItem("cn_gemini_model") || "gemini-flash-latest"; setModel(m);
       setTemp(localStorage.getItem("cn_gemini_temp") || "0.1");
       setTokens(localStorage.getItem("cn_gemini_tokens") || "1024");
       setOptimizeTokens(localStorage.getItem("cn_optimize_api_tokens") !== "false");
@@ -214,14 +214,11 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
             value={model}
             onChange={(e) => setModel(e.target.value)}
           >
-            <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
-            <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite</option>
-            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-            <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-            
-            
-            <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-            <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+            <option value="gemini-flash-lite-latest">gemini-flash-lite-latest</option>
+            <option value="gemini-flash-latest">gemini-flash-latest</option>
+            <option value="gemini-pro-latest">gemini-pro-latest</option>
+            <option value="gemini-3.5-flash">gemini-3.5-flash</option>
+            <option value="gemini-3.1-pro">gemini-3.1-pro</option>
           </select>
         </div>
 

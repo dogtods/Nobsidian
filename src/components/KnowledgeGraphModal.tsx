@@ -793,8 +793,7 @@ applyHighlightRef.current = applyHighlight;
     const prompt = `以下のフォルダ一覧とそれに含まれるノートのタイトルを見て、フォルダ間の関係性（どちらが上位概念か、関連性が深いかなど）を分析してください。\n\n${folderContexts}\n\n出力は以下のJSON配列形式のみとしてください。それ以外のテキストは一切含めないでください。\n[\n  { "source": "フォルダA", "target": "フォルダB", "reason": "関係性の理由" }\n]`;
 
     try {
-      let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
-      if (model === "gemini-flash-lite-latest") model = "gemini-2.5-flash-lite";
+      let model = localStorage.getItem("cn_gemini_model") || "gemini-flash-latest";
 
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
         method: "POST",
@@ -1132,8 +1131,7 @@ applyHighlightRef.current = applyHighlight;
       const promptTemplate = localStorage.getItem("cn_prompt_report") || DEFAULT_PROMPTS.REPORT;
       const prompt = promptTemplate.replace("{notes_content}", notesContent.substring(0, 20000));
 
-      let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
-      if (model === "gemini-flash-lite-latest") model = "gemini-2.5-flash-lite";
+      let model = localStorage.getItem("cn_gemini_model") || "gemini-flash-latest";
 
       const temp = parseFloat(localStorage.getItem("cn_gemini_temp") || "0.3");
       const maxTok = parseInt(localStorage.getItem("cn_gemini_tokens") || "2000", 10);

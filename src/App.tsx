@@ -1456,8 +1456,7 @@ const renderMarkdownToElements = (contentStr: string) => {
     if (btn) btn.classList.add("loading");
 
     try {
-      let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
-      if (model === "gemini-flash-lite-latest") model = "gemini-2.5-flash-lite";
+      let model = localStorage.getItem("cn_gemini_model") || "gemini-flash-latest";
 
       const promptTemplate = getStoredPrompt("TITLE");
       const prompt = promptTemplate.replace("{content}", active.content.substring(0, 2000));
@@ -1987,8 +1986,7 @@ ${active.columnJ || active.content}
     const needKeywords = !(optSkipKeywords && hasKeywords);
 
     try {
-      let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
-      if (model === "gemini-flash-lite-latest") model = "gemini-2.5-flash-lite";
+      let model = localStorage.getItem("cn_gemini_model") || "gemini-flash-latest";
 
       const temperature = parseFloat(localStorage.getItem("cn_gemini_temp") || "0.1");
       const maxOutputTokens = parseInt(localStorage.getItem("cn_gemini_tokens") || "1200", 10);
@@ -2455,8 +2453,7 @@ ${active.columnJ || active.content}
           const template = getStoredPrompt("ORGANIZE_FOLDER");
           const prompt = template.replace("{listStr}", listStr);
 
-          let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
-      if (model === "gemini-flash-lite-latest") model = "gemini-2.5-flash-lite";
+          let model = localStorage.getItem("cn_gemini_model") || "gemini-flash-latest";
 
           const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
             method: "POST",
@@ -2672,8 +2669,7 @@ ${active.columnJ || active.content}
             .replace("{content}", compressedContent)
             .replace("{candidateNotesInfo}", candidateNotesInfo || "（候補となる既存ノートはありません）");
 
-          let model = localStorage.getItem("cn_gemini_model") || "gemini-2.0-flash";
-      if (model === "gemini-flash-lite-latest") model = "gemini-2.5-flash-lite";
+          let model = localStorage.getItem("cn_gemini_model") || "gemini-flash-latest";
 
           const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
             method: "POST",
