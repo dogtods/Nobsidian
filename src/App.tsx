@@ -1593,26 +1593,19 @@ const renderMarkdownToElements = (contentStr: string) => {
       instructions.push(`- 既存ノートの持つタグ（フォルダ）や抽出済みキーワード情報を手がかりに、テーマの潜在的なつながりを的確に捉え、リンク判定の抜け漏れがないようにしてください。`);
     }
 
-    return `あなたはナレッジベース管理AIです。以下の【対象のメモ】を読み込み、指定された【指示】と【出力形式】に従ってJSON形式で分析結果を出力してください。
-
-【対象のメモ】
-タイトル: ${activeNote.title}
-本文:
-"""
-${compressedContent}
-"""
-
-【指示】
-${taskBacklink ? "- 上記の【対象のメモ】と、最後にある【既存ノートのタイトル一覧】を必ず最後まで読み込んでから処理を開始してください。" : ""}
-${instructions.join("\n")}
-- JSONのみを返す。マークダウンのコードブロックやテキストによる説明は不要。
-
-【出力形式】
-必ず以下のJSON形式のみで返してください。マークダウンのコードブロック（\`\`\`json など）や余分な解説文字は一切出力しないでください。
-{
-${jsonFields.join(",\n")}
-}${taskBacklink ? `\n\n【既存ノートのタイトル一覧（関連チェック用）】\n"""\n${existingTitles || "（まだ他のノートはありません）"}\n"""` : ""}
-`;
+    const template = getStoredPrompt("ANALYZE");
+    let prompt = template
+      .replace("{title}", activeNote.title)
+      .replace("{content}", compressedContent)
+      .replace("{instructions}", taskBacklink ? "- 上記の【対象のメモ】と、最後にある【既存ノートのタイトル一覧】を必ず最後まで読み込んでから処理を開始してください。\n" + instructions.join("\n") : instructions.join("\n"))
+      .replace("{jsonFields}", jsonFields.join(",\n"));
+      
+    if (taskBacklink) {
+      prompt = prompt.replace("{existingTitles}", existingTitles || "（まだ他のノートはありません）");
+    } else {
+      prompt = prompt.replace("{existingTitles}", "");
+    }
+    return prompt;
   };
 
   const buildBulkAnalysisPrompt = (targetNotesList: Note[], options: { allTitles?: boolean; taskBacklink?: boolean; taskAnalysis?: boolean; taskStructure?: boolean } = {}): string => {
@@ -1906,48 +1899,8 @@ ${jsonFields.join(",\n")}
     
     setIsExtractingStructure(true);
     
-    const promptText = `あなたは記事の内容を視覚的に理解しやすくするための構造抽出アシスタントです。
-以下の記事から、「比較できるもの」「時系列で変化したもの」「因果関係があるもの」「情報の階層構造」を抽出し、それぞれをMermaid記法の図として出力してください。
-目的は「要約の網羅性」ではなく「理解コストの削減」です。数値や時期の変化など、比較・構造・因果関係を持つ情報は、文章ではなく図として表現してください。
-
-記事本文:
-${active.columnJ || active.content}
-
-【出力形式の厳格な遵守】
-1. Mermaidの図解は、必ず \`\`\`mermaid [コード] \`\`\` の形式で出力してください。コードの一部を省略したり「...」でまとめたりせず、必ず実行可能な完全なコードを出力してください。
-2. Mermaidコードの直後に、その図に関する簡単な説明文（100文字程度）を添えてください。
-3. Mermaid以外の解説テキスト部分（見出し、まとめなど）も、必ず見出し(#)、箇条書き(-)、太字(**)などの標準的なMarkdown記法を適切に使用して構造化してください。
-4. Mermaidのコードブロック前後には必ず空行を入れてください。
-
-【描画環境の制約とMermaid構文ルール】
-出力されたMermaidコードは背景が黒色のビューアで表示されます。またテキストがはみ出さないよう、以下のルールを必ず守ってください。
-
-1. すべてのコードブロックの先頭(グラフ種別の行より前)に、次のinit行を必ず挿入すること。
-%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#1f6feb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#ffffff', 'lineColor': '#58a6ff', 'textColor': '#ffffff', 'background': '#0d1117', 'mainBkg': '#0d1117', 'nodeBorder': '#ffffff', 'clusterBkg': '#0d1117', 'edgeLabelBackground':'#0d1117', 'fontSize': '16px' }}}%%
-
-2. テキストが枠からはみ出さないための厳守事項:
-- 詳しい説明はノード内に書かず、図の下の説明文に記載して補足してください。
-- flowchartのノード内テキストは、枠からはみ出さないよう極力短く（1行あたり10文字以内目安）し、必要に応じて<br>で改行してください。
-- timelineの各項目テキストも同様に短く区切り、必要に応じて<br>で改行してください。
-
-3. グラフ種別の最適な選択と構文ルール:
-- 量の比較（売上、人数など）には xychart-beta または pie を使用してください。
-  ※ xychart-beta は構文が非常に厳格です。以下の【成功例】の形式を完全に守ってください。
-  【xychart-beta 成功例】
-  xychart-beta
-    title "生産能力の比較"
-    x-axis ["買収前", "買収後"]
-    y-axis "生産能力(万トン)" 0 --> 120
-    bar [53, 100]
-  ※ title, x-axis内の各項目, y-axisタイトルは必ず二重引用符(")で囲んでください。
-  ※ y-axis の数値範囲は \`min --> max\` の形式（矢印前後がスペース）にしてください。
-- スケジュール、期間の比較、遅延の予測などには gantt を使用してください。
-- 単純な時系列の出来事の変化には timeline を使用してください。
-- 因果関係、プロセスの流れには flowchart TD を使用してください。
-- 階層構造、関連用語のマッピングには mindmap を使用してください。
-
-- ノードIDは半角英数字のみとする
-`;
+    const template = getStoredPrompt("EXTRACT_STRUCTURE");
+    const promptText = template.replace("{content}", active.columnJ || active.content);
 
     await copyToClipboard(promptText, "外部AI用のプロンプトをコピーしました📋 ChatGPT等に貼り付けて実行し、得られた結果をこのノートの本文に貼り付けてください");
     setIsExtractingStructure(false);
