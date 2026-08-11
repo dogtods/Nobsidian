@@ -15,6 +15,7 @@ export const PROMPT_KEYS = {
   EXTRACT_STRUCTURE: "cn_prompt_extract_structure",
   ORGANIZE_FOLDER: "cn_prompt_organize_folder",
   FIND_RELATED: "cn_prompt_find_related",
+  STREAM_ANALYSIS: "cn_prompt_stream_analysis",
 };
 
 export const DEFAULT_PROMPTS = {
@@ -137,6 +138,16 @@ export const DEFAULT_PROMPTS = {
 
 出力例：
 ["タイトルA", "タイトルB"]`,
+  STREAM_ANALYSIS: `あなたはデータ分析・考察アシスタントです。
+以下のキーワードに関する情報を読み込み、なぜこの期間において当該キーワードが多く取り上げられたのか、背景を含めた深い考察を行ってください。関連するトピックの変遷や外的要因の推測なども含めてください。
+
+【対象キーワード】
+{keywords}
+
+【関連ノート抜粋】
+{notesSummary}
+
+上記の情報を踏まえ、指定キーワードが各タイミングで多く言及された背景と文脈について、見出しや箇条書きを用いて分かりやすく論理的に解説してください。`,
 };
 
 export function getStoredPrompt(key: keyof typeof DEFAULT_PROMPTS): string {
@@ -160,6 +171,7 @@ export default function PromptSettingsModal({ isOpen, onClose, onSettingsClick, 
   const [extractStructurePrompt, setExtractStructurePrompt] = useState("");
   const [organizeFolderPrompt, setOrganizeFolderPrompt] = useState("");
   const [findRelatedPrompt, setFindRelatedPrompt] = useState("");
+  const [streamAnalysisPrompt, setStreamAnalysisPrompt] = useState("");
 
   const [aiOptSummary, setAiOptSummary] = useState(false);
   const [aiOptSkipKeywords, setAiOptSkipKeywords] = useState(true);
@@ -175,6 +187,7 @@ export default function PromptSettingsModal({ isOpen, onClose, onSettingsClick, 
       setExtractStructurePrompt(getStoredPrompt("EXTRACT_STRUCTURE"));
       setOrganizeFolderPrompt(getStoredPrompt("ORGANIZE_FOLDER"));
       setFindRelatedPrompt(getStoredPrompt("FIND_RELATED"));
+      setStreamAnalysisPrompt(getStoredPrompt("STREAM_ANALYSIS"));
 
       setAiOptSummary(localStorage.getItem("cn_ai_opt_summary") === "true");
       const skipKw = localStorage.getItem("cn_ai_opt_skip_keywords");
@@ -192,6 +205,7 @@ export default function PromptSettingsModal({ isOpen, onClose, onSettingsClick, 
     localStorage.setItem(PROMPT_KEYS.EXTRACT_STRUCTURE, extractStructurePrompt);
     localStorage.setItem(PROMPT_KEYS.ORGANIZE_FOLDER, organizeFolderPrompt);
     localStorage.setItem(PROMPT_KEYS.FIND_RELATED, findRelatedPrompt);
+    localStorage.setItem(PROMPT_KEYS.STREAM_ANALYSIS, streamAnalysisPrompt);
 
     localStorage.setItem("cn_ai_opt_summary", String(aiOptSummary));
     localStorage.setItem("cn_ai_opt_skip_keywords", String(aiOptSkipKeywords));
@@ -218,6 +232,7 @@ export default function PromptSettingsModal({ isOpen, onClose, onSettingsClick, 
     setExtractStructurePrompt(DEFAULT_PROMPTS.EXTRACT_STRUCTURE);
     setOrganizeFolderPrompt(DEFAULT_PROMPTS.ORGANIZE_FOLDER);
     setFindRelatedPrompt(DEFAULT_PROMPTS.FIND_RELATED);
+    setStreamAnalysisPrompt(DEFAULT_PROMPTS.STREAM_ANALYSIS);
 
     setAiOptSummary(false);
     setAiOptSkipKeywords(true);
@@ -350,6 +365,16 @@ export default function PromptSettingsModal({ isOpen, onClose, onSettingsClick, 
               rows={5}
               value={reportPrompt}
               onChange={(e) => setReportPrompt(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1">時系列ストリーム 考察プロンプト</label>
+            <textarea
+              className="w-full font-mono text-xs p-2 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all resize-y"
+              rows={6}
+              value={streamAnalysisPrompt}
+              onChange={(e) => setStreamAnalysisPrompt(e.target.value)}
             />
           </div>
         </div>

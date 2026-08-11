@@ -6,7 +6,8 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import * as d3 from "d3";
 import { Note } from "../types";
-import { parseStreamData } from "../utils/graphDataParser";
+import { parseStreamData, formatDateStr } from "../utils/graphDataParser";
+import { getStoredPrompt } from "./PromptSettingsModal";
 
 interface StreamModalProps {
   isOpen: boolean;
@@ -17,6 +18,7 @@ interface StreamModalProps {
   excludedKeywords?: string[];
   onExcludeKeyword?: (kw: string) => void;
   onIncludeKeyword?: (kw: string) => void;
+  onCopy?: (text: string, msg: string) => void;
 }
 
 export default function StreamModal({
@@ -27,12 +29,14 @@ export default function StreamModal({
   filterEnd,
   excludedKeywords = [],
   onExcludeKeyword,
-  onIncludeKeyword
+  onIncludeKeyword,
+  onCopy
 }: StreamModalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [isWeekly, setIsWeekly] = useState(false);
   const [wordLimit, setWordLimit] = useState(12);
+  const [selectedAnalysisKeywords, setSelectedAnalysisKeywords] = useState<string[]>([]);
 
   const [tooltip, setTooltip] = useState<{ show: boolean; x: number; y: number; name: string; color: string }>({
     show: false,
@@ -219,6 +223,49 @@ export default function StreamModal({
 
   }, [isOpen, allStreamData, wordLimit, colorScale]);
 
+  const handleGeneratePrompt = () => {
+    if (selectedAnalysisKeywords.length === 0) return;
+    if (!onCopy) return;
+
+    const relevantNotes = notes.filter(n => {
+      // @ts-ignore
+      const d = n.date || (n.createdAt ? formatDateStr(n.createdAt) : "");
+      if (filterStart && d < filterStart) return false;
+      if (filterEnd && d > filterEnd) return false;
+      return selectedAnalysisKeywords.some(kw => n.content.includes(`[[${kw}]]`));
+    });
+
+    const notesSummary = relevantNotes
+      .sort((a, b) => {
+        // @ts-ignore
+        const aDate = a.date || (a.createdAt ? formatDateStr(a.createdAt) : "");
+        // @ts-ignore
+        const bDate = b.date || (b.createdAt ? formatDateStr(b.createdAt) : "");
+        return aDate.localeCompare(bDate);
+      })
+      // @ts-ignore
+      .map(n => `【日付】${n.date || (n.createdAt ? formatDateStr(n.createdAt) : "不明")}\n【タイトル】${n.title}\n【本文抜粋】\n${n.content.substring(0, 400)}...`)
+      .join("\n\n---\n\n");
+
+    const template = getStoredPrompt("STREAM_ANALYSIS");
+    const prompt = template
+      .replace("{keywords}", selectedAnalysisKeywords.join(", "))
+      .replace("{notesSummary}", notesSummary);
+
+    // テキストファイルとしてダウンロード
+    const blob = new Blob([prompt], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Prompt_Stream_Analysis_${selectedAnalysisKeywords.join("_").substring(0, 30)}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    onCopy(prompt, "プロンプトをコピーし、テキストファイルとしてもダウンロードしました ✦");
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -338,20 +385,57 @@ export default function StreamModal({
           
           {/* Active List */}
           <div>
-            <div className="text-[11px] font-bold text-[var(--muted)] tracking-wider uppercase mb-2 flex justify-between">
+            <div className="text-[11px] font-bold text-[var(--muted)] tracking-wider uppercase mb-2 flex justify-between items-center">
               <span>🌊 現在表示中の {wordLimit} ワード</span>
-              <span className="text-[var(--subtle)]">出現回数</span>
+              <button
+                type="button"
+                onClick={handleGeneratePrompt}
+                disabled={selectedAnalysisKeywords.length === 0}
+                className={`text-[10px] px-2 py-1 rounded border transition-colors ${
+                  selectedAnalysisKeywords.length > 0 
+                    ? "bg-[#a371f715] border-[#a371f744] text-[var(--purple)] cursor-pointer hover:bg-[#a371f725]" 
+                    : "bg-[#21262d] border-[var(--border)] text-[var(--subtle)] cursor-not-allowed opacity-50"
+                }`}
+                title="選択したキーワードの背景考察用AIプロンプトを生成してコピー"
+              >
+                考察プロンプト生成
+              </button>
             </div>
+            
+            {selectedAnalysisKeywords.length > 0 && (
+              <div className="text-[10px] text-[var(--purple)] mb-2 px-2 py-1 bg-[#a371f715] rounded border border-[#a371f722]">
+                {selectedAnalysisKeywords.length} 個選択中 (最大2個)
+              </div>
+            )}
+
             <div className="space-y-1.5">
               {activeSeries.map((s, idx) => {
                 const waveColor = colorScale(s.name) as string;
+                const isSelected = selectedAnalysisKeywords.includes(s.name);
                 return (
                   <div 
                     key={s.name}
-                    className="p-2 py-1.5 rounded bg-[#161b22] border border-[var(--border2)] flex items-center justify-between group"
+                    className="p-2 py-1.5 rounded bg-[#161b22] border border-[var(--border2)] flex items-center justify-between group hover:border-[var(--border)] transition-colors"
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-[10px] text-[var(--muted)] font-mono w-4">#{idx+1}</span>
+                      <input 
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            if (selectedAnalysisKeywords.length >= 2) {
+                              alert("選択できるキーワードは最大2つまでです。");
+                              return;
+                            }
+                            setSelectedAnalysisKeywords(prev => [...prev, s.name]);
+                          } else {
+                            setSelectedAnalysisKeywords(prev => prev.filter(k => k !== s.name));
+                          }
+                        }}
+                        className="w-3.5 h-3.5 rounded border-[var(--border)] bg-[#0d1117] accent-[var(--purple)] cursor-pointer"
+                        title="考察対象として選択"
+                      />
+                      <span className="text-[10px] text-[var(--muted)] font-mono w-4 shrink-0">#{idx+1}</span>
                       <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: waveColor }} />
                       <span className="font-semibold text-[var(--bright)] truncate font-sans text-xs">[[{s.name}]]</span>
                     </div>

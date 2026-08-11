@@ -4246,6 +4246,7 @@ const renderMarkdownToElements = (contentStr: string) => {
           excludedKeywords={excludedKeywords}
           onExcludeKeyword={handleExcludeKeyword}
           onIncludeKeyword={handleIncludeKeyword}
+          onCopy={copyToClipboard}
         />
       )}
 
