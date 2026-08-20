@@ -368,11 +368,14 @@ export default function App() {
       body.sheetName = sheetName.trim();
     }
     
-    // URLにactionパラメータを付与 (302リダイレクトでGET変換された場合の保険)
-    const actionQuery = body.action ? `?action=${encodeURIComponent(body.action)}` : "";
-    const targetUrl = url.includes("?") 
-      ? (body.action ? `${url}&action=${encodeURIComponent(body.action)}` : url)
-      : `${url}${actionQuery}`;
+    // URLにaction及びsheetNameパラメータを付与 (302リダイレクトでGET変換された場合の保険)
+    const params = new URLSearchParams();
+    if (body.action) params.set("action", body.action);
+    if (body.sheetName) params.set("sheetName", body.sheetName);
+    const paramStr = params.toString();
+    const targetUrl = paramStr 
+      ? (url.includes("?") ? `${url}&${paramStr}` : `${url}?${paramStr}`)
+      : url;
 
     try {
       const res = await fetch(targetUrl, {
@@ -439,10 +442,17 @@ export default function App() {
     }
 
     try {
+      const targetSheet = localStorage.getItem("cn_gas_sheet_name") || "Notes";
       const data = await apiGet("getNotes");
       if (data.error) throw new Error(data.error);
 
       if (data.notes) {
+        if (data.sheetName === undefined) {
+           throw new Error("⚠️ GASのコードが古いため、別シートの指定が無視されました。「設定⚙」の「📋 最新GASコードをコピー」から新しいコードをGASに貼り付けて【新しいデプロイ】を行ってください。");
+        } else if (data.sheetName !== targetSheet) {
+           throw new Error(`⚠️ GAS側で読み込まれたシート（${data.sheetName}）が指定したシート（${targetSheet}）と異なります。GASの【新しいデプロイ】が正しく行われているか確認してください。`);
+        }
+
         const serverNotes: Note[] = data.notes;
         const mergedMap: { [id: string]: Note } = {};
 
@@ -512,18 +522,28 @@ export default function App() {
     }
     updateSyncStatus("syncing", "ダウンロード中...");
     try {
+      const targetSheet = localStorage.getItem("cn_gas_sheet_name") || "Notes";
       const data = await apiGet("getNotes");
       if (data && data.error) throw new Error(data.error);
       
+      // 古いGASスクリプトかどうかのチェック
       if (data && data.notes) {
+        if (data.sheetName === undefined) {
+           throw new Error("⚠️ GASのコードが古いため、別シートの指定が無視されました。「設定⚙」の「📋 最新GASコードをコピー」から新しいコードをGASに貼り付けて【新しいデプロイ】を行ってください。");
+        } else if (data.sheetName !== targetSheet) {
+           throw new Error(`⚠️ GAS側で読み込まれたシート（${data.sheetName}）が指定したシート（${targetSheet}）と異なります。GASの【新しいデプロイ】が正しく行われているか確認してください。`);
+        }
+
         const serverNotes: Note[] = data.notes;
         setNotes(serverNotes);
         if (serverNotes.length > 0) {
           setActiveId(serverNotes[0].id);
+        } else {
+          setActiveId(null);
         }
         triggerLocalSave(serverNotes, serverNotes[0]?.id || null);
         updateSyncStatus("synced", "同期済");
-        toast("スプレッドシートからデータを強制ダウンロードし、上書きしました ✦");
+        toast(`シート「${data.sheetName}」から全${serverNotes.length}件をダウンロードし、ローカルを完全上書きしました ✦`);
       } else {
         throw new Error("スプレッドシートにデータが見つかりませんでした。");
       }

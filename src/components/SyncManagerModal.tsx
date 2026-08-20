@@ -98,12 +98,15 @@ export default function SyncManagerModal({
                 }`}
               />
               <span className="font-semibold text-white">{syncLabel}</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#21262d] border border-[#30363d] text-[#c4b5fd]">
+                対象シート: {localStorage.getItem("cn_gas_sheet_name") || "Notes"}
+              </span>
             </div>
           </div>
           <div className="text-right text-[11px] text-gray-500">
             <div>スマートフォン・PC間の不整合を解決します。</div>
             <div className="mt-0.5 text-[var(--subtle)]">
-              ※ GASが正しくセットアップされている必要があります。
+              ※ シートの変更は「設定⚙」からいつでも行えます。
             </div>
           </div>
         </div>

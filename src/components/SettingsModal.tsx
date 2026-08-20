@@ -4,6 +4,8 @@
  */
 
 import React, { useState, useEffect } from "react";
+import { LATEST_GAS_SCRIPT } from "../gasScriptCode";
+import { Copy, Check, FileSpreadsheet, ExternalLink } from "lucide-react";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -27,6 +29,7 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
   const [optimizeTokens, setOptimizeTokens] = useState(true);
   const [maxCandidates, setMaxCandidates] = useState("20");
   const [maxContentLength, setMaxContentLength] = useState("2500");
+  const [isCopiedGas, setIsCopiedGas] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -255,7 +258,23 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
         </div>
 
         <div className="border-t border-[var(--border)] pt-3.5">
-          <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1">🔗 Google Apps Script (GAS) 同期WebアプリURL</label>
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-[11px] text-[var(--subtle)] font-bold block">🔗 Google Apps Script (GAS) 同期WebアプリURL</label>
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(LATEST_GAS_SCRIPT);
+                setIsCopiedGas(true);
+                onSaveToast("最新のGASスクリプトコードをクリップボードにコピーしました！");
+                setTimeout(() => setIsCopiedGas(false), 3000);
+              }}
+              className="flex items-center gap-1.5 px-2 py-1 text-[10px] rounded font-medium bg-[#8b5cf6]/20 text-[#c4b5fd] border border-[#8b5cf6]/40 hover:bg-[#8b5cf6]/30 transition-all cursor-pointer shadow-sm"
+              title="スプレッドシートのGASエディタに貼り付ける最新コードをコピーします"
+            >
+              {isCopiedGas ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+              {isCopiedGas ? "GASコードをコピー完了" : "📋 最新GASコードをコピー"}
+            </button>
+          </div>
           <input
             className="w-full font-mono text-xs p-2.5 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all mb-2"
             type="text"
@@ -263,23 +282,31 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
             value={gasUrl}
             onChange={(e) => setGasUrl(e.target.value)}
           />
-          <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1">📄 同期先シート名 (空の場合はデフォルトを使用)</label>
+          <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1">📄 同期先シート名 (空の場合はデフォルト "Notes" を使用)</label>
           <input
             className="w-full text-xs p-2.5 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all"
             type="text"
-            placeholder="シート1 (オプション)"
+            placeholder="Notes (例: 調査用メモ, アーカイブ, シート2 など)"
             value={gasSheetName}
             onChange={(e) => setGasSheetName(e.target.value)}
           />
           <p className="text-[9px] text-[var(--muted)] mt-1">
-            Googleスプレッドシートへの保存や、未処理ハイライトの同期で使用するGASの「ウェブアプリURL」とシート名を入力します。
+            Googleスプレッドシート内のどのタブ（シート）とデータを読み書きするかを指定できます。
           </p>
-          <div className="mt-2.5 p-2.5 bg-[#161b22] border border-[#30363d] rounded-md">
-            <h4 className="text-[10px] text-[var(--purple)] font-bold mb-1 uppercase tracking-wider">Sync Troubleshooting</h4>
+          <div className="mt-2.5 p-2.5 bg-[#161b22] border border-[#30363d] rounded-md space-y-2">
+            <h4 className="text-[10px] text-[var(--purple)] font-bold uppercase tracking-wider flex items-center gap-1">
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              シート切り替え & GAS同期のポイント
+            </h4>
             <ul className="text-[10px] text-[var(--muted)] list-disc list-inside space-y-1">
-              <li><span className="text-[var(--text)]">Failed to fetch</span> エラーが出る場合、GASのデプロイ設定を確認してください。</li>
-              <li>設定方法: <span className="text-[var(--text)]">新しいデプロイ ＞ 種類: ウェブアプリ ＞ アクセスできるユーザー: <strong>全員</strong> (Anyone)</span> に設定し、発行された最新のURLを貼り付けてください。</li>
-              <li>URL末尾が <span className="text-[var(--text)]">/exec</span> で終わっていることを確認してください（/dev は動作しません）。</li>
+              <li><strong className="text-[var(--text)]">別シートのデータを読み込む手順:</strong>
+                <ol className="list-decimal list-inside pl-2 pt-0.5 space-y-0.5 text-[#8b949e]">
+                  <li>上の「<span className="text-[var(--text)]">同期先シート名</span>」に読み込みたいシートタブ名（例: <span className="text-[#a5d6ff]">シート2</span>）を入力して設定を保存。</li>
+                  <li>ヘッダー右側の「<span className="text-[var(--text)]">☁ クラウド同期</span>」を開き、「<span className="text-[var(--text)]">📥 スプレッドシートから強制ダウンロード</span>」を実行します（ローカルデータが指定シートの内容で完全に置き換わります）。</li>
+                </ol>
+              </li>
+              <li><strong className="text-[var(--text)]">GASコードの更新が必要な場合:</strong> 以前のGASスクリプトをお使いの場合は、右上の「<span className="text-[#c4b5fd]">📋 最新GASコードをコピー</span>」ボタンでコードを取得し、GASエディタに貼り付けて『<span className="text-[var(--text)]">新しいデプロイ</span>』を行ってください。</li>
+              <li>設定方法: <span className="text-[var(--text)]">新しいデプロイ ＞ 種類: ウェブアプリ ＞ アクセスできるユーザー: <strong>全員</strong> (Anyone)</span> に設定し、発行された最新のURL（末尾が <span className="text-[var(--text)]">/exec</span>）を貼り付けてください。</li>
             </ul>
           </div>
         </div>

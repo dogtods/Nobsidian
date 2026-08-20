@@ -1,10 +1,17 @@
 /**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+// 最新のGoogle Apps Script (GAS) コード
+// スプレッドシート同期（シート名切り替え対応） & Google Drive一括保存対応
+export const LATEST_GAS_SCRIPT = `/**
  * ====================================================================
  * 本アプリ専用: Google Apps Script (GAS) 同期 & Google Drive保存用スクリプト
  * ====================================================================
  * 
  * 【重要：今回の追加機能（Google Drive保存）に必要な初回権限設定手順】
- * 1. エディタ上部の関数選択ドロップダウン（`doGet` や `doPost` などが表示されている場所）から
+ * 1. エディタ上部の関数選択ドロップダウン（\`doGet\` や \`doPost\` などが表示されている場所）から
  *    『authorizeDrivePermissions』を選択します。
  * 2. 「実行」ボタンをクリックします。
  * 3. 「承認が必要です」ポップアップが表示されたら「権限を確認」をクリックし、
@@ -304,7 +311,7 @@ function saveAll(notes, targetSheetName) {
 function fetchDriveFile(url) {
   try {
     // Googleドキュメントの判定
-    const docMatch = url.match(/[-\w]{25,}/);
+    const docMatch = url.match(/[-\\w]{25,}/);
     if (url.includes("docs.google.com") && docMatch) {
       const id = docMatch[0];
       const doc = DocumentApp.openById(id);
@@ -318,18 +325,18 @@ function fetchDriveFile(url) {
     }
     
     const html = res.getContentText();
-    const titleMatch = html.match(/<title>([^<]*)<\/title>/i);
+    const titleMatch = html.match(/<title>([^<]*)<\\/title>/i);
     let title = titleMatch ? titleMatch[1].trim() : "取り込んだ記事";
     
     // 不要な要素の除去
     let text = html
-      .replace(/<script[\s\S]*?<\/script>/gi, "")
-      .replace(/<style[\s\S]*?<\/style>/gi, "")
-      .replace(/<nav[\s\S]*?<\/nav>/gi, "")
-      .replace(/<footer[\s\S]*?<\/footer>/gi, "")
-      .replace(/<[^>]+>/g, "\n")
+      .replace(/<script[\\s\\S]*?<\\/script>/gi, "")
+      .replace(/<style[\\s\\S]*?<\\/style>/gi, "")
+      .replace(/<nav[\\s\\S]*?<\\/nav>/gi, "")
+      .replace(/<footer[\\s\\S]*?<\\/footer>/gi, "")
+      .replace(/<[^>]+>/g, "\\n")
       .replace(/&nbsp;/g, " ")
-      .replace(/\n\s*\n/g, "\n")
+      .replace(/\\n\\s*\\n/g, "\\n")
       .trim();
     
     if (text.length > 20000) text = text.substring(0, 20000) + "...(以下省略)";
@@ -369,8 +376,6 @@ function fetchUnprocessedHighlights(sourceSsId, sheetName) {
     if (col.title === -1) col.title = 0;
     if (col.highlights === -1) col.highlights = 1;
 
-    // もし "timeline" や "timeline_data" 的なヘッダー名があればそれを使う、
-    // なければ列数が12列以上ある場合に固定でL列（12番目の列、インデックス11）を取得、そうでなければJ列（10番目の列、インデックス9）から取得
     let timelineColIdx = headers.indexOf("timeline");
     if (timelineColIdx === -1) timelineColIdx = headers.indexOf("timeline_data");
     if (timelineColIdx === -1 && data[0].length >= 12) {
@@ -379,7 +384,6 @@ function fetchUnprocessedHighlights(sourceSsId, sheetName) {
       timelineColIdx = 9; // J列 (10番目の列)
     }
 
-    // I列 (9番目の列、インデックス8) 用のインデックス検出
     let columnIIdx = headers.indexOf("memo");
     if (columnIIdx === -1) columnIIdx = headers.indexOf("comment");
     if (columnIIdx === -1) columnIIdx = headers.indexOf("i");
@@ -387,7 +391,6 @@ function fetchUnprocessedHighlights(sourceSsId, sheetName) {
       columnIIdx = 8; // I列 (9番目の列)
     }
 
-    // nobsidian 列を使う
     let checkColIdx = col.nobsidian;
 
     const items = [];
@@ -405,7 +408,7 @@ function fetchUnprocessedHighlights(sourceSsId, sheetName) {
 
       if (!isProcessed) {
         items.push({
-          rowIndex: i + 1, // シート上の行番号（1-indexed。ヘッダー=1行目なので、インデックスiは row = i + 1）
+          rowIndex: i + 1,
           title: col.title !== -1 ? String(row[col.title]) : "無題",
           url: col.url !== -1 ? String(row[col.url]) : "",
           tags: col.tags !== -1 ? String(row[col.tags]) : "",
@@ -438,13 +441,11 @@ function markHighlightsProcessed(sourceSsId, sheetName, rowIndices) {
       colIndex = 7; // H列 (8番目の列)
     }
 
-    // もし「処理マーク」の列がスプレッドシートに存在しない場合、一番右に自動追加
     if (colIndex === -1) {
       colIndex = headers.length;
       sheet.getRange(1, colIndex + 1).setValue("nobsidian");
     }
 
-    // 指定された行番号に対して true を順次書き込み
     rowIndices.forEach(function(rowIndex) {
       if (rowIndex > 1 && rowIndex <= data.length) {
         sheet.getRange(rowIndex, colIndex + 1).setValue(true);
@@ -464,79 +465,67 @@ function saveToDrive(data) {
     const centerTitle = data.centerTitle || (notes.length > 0 ? notes[0].title : "ネットワーク図レポート");
     const reportText = data.reportText || "";
     
-    // 日付文字列 (例: 20260802)
     const timeZone = Session.getScriptTimeZone() || "GMT+9";
     const dateStr = Utilities.formatDate(new Date(), timeZone, "yyyyMMdd");
     
-    // フォルダ名: ネットワーク図の中心となる記事の名称と日付
-    // 例: "AI技術の動向_20260802"
-    const safeCenterTitle = centerTitle.replace(/[\\/:*?"<>|]/g, "_").trim();
+    const safeCenterTitle = centerTitle.replace(/[\\\\/:*?"<>|]/g, "_").trim();
     let folderName = data.folderName;
     if (!folderName || folderName.trim() === "") {
-      folderName = `${safeCenterTitle}_${dateStr}`;
+      folderName = safeCenterTitle + "_" + dateStr;
     } else {
-      folderName = folderName.replace(/[\\/:*?"<>|]/g, "_").trim();
+      folderName = folderName.replace(/[\\\\/:*?"<>|]/g, "_").trim();
     }
 
-    // Google Drive に新しくフォルダを作成
     const folder = DriveApp.createFolder(folderName);
 
     let savedFilesCount = 0;
     let savedPdfCount = 0;
     const downloadedPdfUrls = new Set();
 
-    // 1. レポート本文が存在する場合は保存 (例: 00_AI生成ナレッジレポート.txt)
     if (reportText && reportText.trim() !== "") {
-      const reportFileName = `00_AI生成ナレッジレポート_${dateStr}.txt`;
+      const reportFileName = "00_AI生成ナレッジレポート_" + dateStr + ".txt";
       folder.createFile(reportFileName, reportText, MimeType.PLAIN_TEXT);
       savedFilesCount++;
     }
 
-    // 2. 選択記事全件のまとめファイルを作成
-    let combinedText = `# ネットワーク図収集記事一覧・全文まとめ\n`;
-    combinedText += `作成日時: ${Utilities.formatDate(new Date(), timeZone, "yyyy-MM-dd HH:mm:ss")}\n`;
-    combinedText += `中心記事: ${centerTitle}\n`;
-    combinedText += `収録記事数: ${notes.length}件\n\n`;
-    combinedText += `============================================================\n\n`;
+    let combinedText = "# ネットワーク図収集記事一覧・全文まとめ\\n";
+    combinedText += "作成日時: " + Utilities.formatDate(new Date(), timeZone, "yyyy-MM-dd HH:mm:ss") + "\\n";
+    combinedText += "中心記事: " + centerTitle + "\\n";
+    combinedText += "収録記事数: " + notes.length + "件\\n\\n";
+    combinedText += "============================================================\\n\\n";
 
-    // 3. 各記事を個別テキストとして保存 & まとめへ追加 & リンク先PDFの抽出・格納
     notes.forEach((note, index) => {
-      const rawTitle = note.title || `記事_${index + 1}`;
-      const noteTitle = rawTitle.replace(/[\\/:*?"<>|]/g, "_").trim();
+      const rawTitle = note.title || ("記事_" + (index + 1));
+      const noteTitle = rawTitle.replace(/[\\\\/:*?"<>|]/g, "_").trim();
       const noteContent = note.content || "";
       const sourceUrl = note.sourceUrl || "";
       const folderPath = note.folder || "";
 
-      // 個別記事テキストファイル
-      let singleFileText = `タイトル: ${rawTitle}\n`;
-      if (folderPath) singleFileText += `フォルダ: ${folderPath}\n`;
-      if (sourceUrl) singleFileText += `URL: ${sourceUrl}\n`;
-      singleFileText += `\n------------------------------------------------------------\n【本文】\n\n${noteContent}`;
+      let singleFileText = "タイトル: " + rawTitle + "\\n";
+      if (folderPath) singleFileText += "フォルダ: " + folderPath + "\\n";
+      if (sourceUrl) singleFileText += "URL: " + sourceUrl + "\\n";
+      singleFileText += "\\n------------------------------------------------------------\\n【本文】\\n\\n" + noteContent;
 
       const seqStr = String(index + 1).padStart(2, '0');
-      folder.createFile(`${seqStr}_${noteTitle}.txt`, singleFileText, MimeType.PLAIN_TEXT);
+      folder.createFile(seqStr + "_" + noteTitle + ".txt", singleFileText, MimeType.PLAIN_TEXT);
       savedFilesCount++;
 
-      // まとめファイルに追加
-      combinedText += `【記事 ${index + 1}】 ${rawTitle}\n`;
-      if (folderPath) combinedText += `フォルダ: ${folderPath}\n`;
-      if (sourceUrl) combinedText += `URL: ${sourceUrl}\n`;
-      combinedText += `\n${noteContent}\n\n`;
-      combinedText += `------------------------------------------------------------\n\n`;
+      combinedText += "【記事 " + (index + 1) + "】 " + rawTitle + "\\n";
+      if (folderPath) combinedText += "フォルダ: " + folderPath + "\\n";
+      if (sourceUrl) combinedText += "URL: " + sourceUrl + "\\n";
+      combinedText += "\\n" + noteContent + "\\n\\n";
+      combinedText += "------------------------------------------------------------\\n\\n";
 
-      // PDF/リンク先ファイルの探索（「リンク先:」などの表記、[ラベル](URL)形式、sourceUrl、および本文内のURL）
-      const textToScan = (sourceUrl + "\n" + noteContent);
-      
+      const textToScan = (sourceUrl + "\\n" + noteContent);
       const extractedLinkItems = [];
       const seenUrls = new Set();
 
-      // 1. Markdown 形式 [表示名](URL) の () 内にあるURLを高精度で抽出
-      const mdRegex = /\[([^\]]*)\]\((https?:\/\/[^\)\s]+)\)/gi;
+      const mdRegex = /\\[([^\\]]*)\\]\\((https?:\\/\\/[^\\)\\s]+)\\)/gi;
       let mdMatch;
       while ((mdMatch = mdRegex.exec(textToScan)) !== null) {
         const label = mdMatch[1] ? mdMatch[1].trim() : "";
         let urlInParen = mdMatch[2] ? mdMatch[2].trim() : "";
-        urlInParen = urlInParen.replace(/[\.\,\;\:]+$/, "");
+        urlInParen = urlInParen.replace(/[\\.\\,\\;\\:]+$/, "");
 
         if (urlInParen && !seenUrls.has(urlInParen)) {
           seenUrls.add(urlInParen);
@@ -548,11 +537,10 @@ function saveToDrive(data) {
         }
       }
 
-      // 2. () 形式以外の標準URLも補助抽出
-      const rawUrlRegex = /(https?:\/\/[^\s<>"'\(\)\]\[]+)/gi;
+      const rawUrlRegex = /(https?:\\/\\/[^\\s<>"'\\(\\)\\]\\[]+)/gi;
       let rawMatch;
       while ((rawMatch = rawUrlRegex.exec(textToScan)) !== null) {
-        let cleanRawUrl = rawMatch[0].replace(/[\.\,\;\:\)]+$/, "").trim();
+        let cleanRawUrl = rawMatch[0].replace(/[\\.\\,\\;\\:\\)]+$/, "").trim();
         if (cleanRawUrl && !seenUrls.has(cleanRawUrl)) {
           seenUrls.add(cleanRawUrl);
           extractedLinkItems.push({
@@ -563,48 +551,43 @@ function saveToDrive(data) {
         }
       }
 
-      // 各抽出リンクの取得・保存処理
       for (let k = 0; k < extractedLinkItems.length; k++) {
         const item = extractedLinkItems[k];
         const cleanUrl = item.url;
         if (downloadedPdfUrls.has(cleanUrl)) continue;
 
-        // A. Google Driveリンクの場合 (file/d/ID, open?id=ID, uc?id=ID 等)
-        const driveIdMatch = cleanUrl.match(/drive\.google\.com\/file\/d\/([^\/\?#]+)/i) ||
-                             cleanUrl.match(/drive\.google\.com\/open\?id=([^\&#]+)/i) ||
-                             cleanUrl.match(/drive\.google\.com\/uc\?.*id=([^\&#]+)/i);
+        const driveIdMatch = cleanUrl.match(/drive\\.google\\.com\\/file\\/d\\/([^\\/\\?#]+)/i) ||
+                             cleanUrl.match(/drive\\.google\\.com\\/open\\?id=([^\\&#]+)/i) ||
+                             cleanUrl.match(/drive\\.google\\.com\\/uc\\?.*id=([^\\&#]+)/i);
 
         if (driveIdMatch && driveIdMatch[1]) {
           const fileId = driveIdMatch[1];
           downloadedPdfUrls.add(cleanUrl);
 
           try {
-            // Google Driveから直接ファイルを取得（中間HTMLページで壊れる不具合の完全防止）
             const driveFile = DriveApp.getFileById(fileId);
             const originalName = driveFile.getName() || "Document.pdf";
             
             let destName = originalName;
-            if (!/\.[a-zA-Z0-9]+$/.test(destName)) {
-              destName = `${seqStr}_${noteTitle}_${originalName}.pdf`;
+            if (!/\\.[a-zA-Z0-9]+$/.test(destName)) {
+              destName = seqStr + "_" + noteTitle + "_" + originalName + ".pdf";
             } else {
-              destName = `${seqStr}_${noteTitle}_${originalName}`;
+              destName = seqStr + "_" + noteTitle + "_" + originalName;
             }
-            destName = destName.replace(/[\\/:*?"<>|]/g, "_");
+            destName = destName.replace(/[\\\\/:*?"<>|]/g, "_");
 
-            // 権限のあるDriveAppでフォルダへ直接ファイルコピー作成
             driveFile.makeCopy(destName, folder);
             savedPdfCount++;
             savedFilesCount++;
             Logger.log("✅ Google Driveファイルを直接コピー保存しました: " + destName);
-            continue; // 次のリンクへ
+            continue;
           } catch (driveErr) {
             Logger.log("⚠️ DriveAppによる直接コピー不可、UrlFetchへフォールバックします: " + driveErr.message);
           }
         }
 
-        // B. 通常のWeb PDFリンク / 明示的リンクの場合
-        const isPdfTarget = /\.pdf($|\?|#)/i.test(cleanUrl) || 
-                            /\/pdf\//i.test(cleanUrl) || 
+        const isPdfTarget = /\\.pdf($|\\?|#)/i.test(cleanUrl) || 
+                            /\\/pdf\\//i.test(cleanUrl) || 
                             item.isExplicit;
 
         if (isPdfTarget) {
@@ -622,10 +605,9 @@ function saveToDrive(data) {
               const bytes = blob.getBytes();
               const contentType = (response.getHeaders()["Content-Type"] || blob.getContentType() || "").toLowerCase();
 
-              // データが本当にPDFバイナリ（先頭 %PDF- または application/pdf）か確認
               const isRealPdf = contentType.includes("application/pdf") ||
                                 (bytes && bytes.length >= 4 && 
-                                 bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46); // %PDF
+                                 bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46);
 
               if (isRealPdf) {
                 let fileName = "";
@@ -635,22 +617,20 @@ function saveToDrive(data) {
                 if (lastPart && lastPart.toLowerCase().endsWith(".pdf")) {
                   try { fileName = decodeURIComponent(lastPart); } catch (e) { fileName = lastPart; }
                 } else {
-                  const safeLabel = (item.label || "資料").replace(/[\\/:*?"<>|]/g, "_");
-                  fileName = `${seqStr}_${noteTitle}_${safeLabel}_${savedPdfCount + 1}.pdf`;
+                  const safeLabel = (item.label || "資料").replace(/[\\\\/:*?"<>|]/g, "_");
+                  fileName = seqStr + "_" + noteTitle + "_" + safeLabel + "_" + (savedPdfCount + 1) + ".pdf";
                 }
 
                 if (!fileName.toLowerCase().endsWith(".pdf")) {
                   fileName += ".pdf";
                 }
-                fileName = fileName.replace(/[\\/:*?"<>|]/g, "_");
+                fileName = fileName.replace(/[\\\\/:*?"<>|]/g, "_");
 
                 blob.setName(fileName);
                 folder.createFile(blob);
                 savedPdfCount++;
                 savedFilesCount++;
                 Logger.log("✅ Web上のPDFバイナリを正常保存しました: " + fileName);
-              } else {
-                Logger.log("⚠️ 取得データがPDFバイナリではなくHTML/画像等のため保存をスキップしました: " + cleanUrl + " (Type: " + contentType + ")");
               }
             }
           } catch (fetchErr) {
@@ -660,8 +640,7 @@ function saveToDrive(data) {
       }
     });
 
-    // 全文まとめファイル保存
-    folder.createFile(`00_全記事全文まとめ.txt`, combinedText, MimeType.PLAIN_TEXT);
+    folder.createFile("00_全記事全文まとめ.txt", combinedText, MimeType.PLAIN_TEXT);
     savedFilesCount++;
 
     return {
@@ -671,7 +650,7 @@ function saveToDrive(data) {
       folderUrl: folder.getUrl(),
       fileCount: savedFilesCount,
       pdfCount: savedPdfCount,
-      message: `Google Driveに新規フォルダ「${folder.getName()}」を作成し、記事全文(${notes.length}件)およびPDF(${savedPdfCount}件)を保存しました。`
+      message: "Google Driveに新規フォルダ「" + folder.getName() + "」を作成し、記事全文(" + notes.length + "件)およびPDF(" + savedPdfCount + "件)を保存しました。"
     };
   } catch (err) {
     return {
@@ -684,10 +663,7 @@ function saveToDrive(data) {
 }
 
 // ==== Google Drive操作の初回権限承認用関数 ====
-// GASエディタ上部のドロップダウンから『authorizeDrivePermissions』を選択して「実行」を押すことで、
-// Google Drive（DriveApp: https://www.googleapis.com/auth/drive）の作成・書き込み権限を確実に承認できます。
 function authorizeDrivePermissions() {
-  // DriveAppのアクセス権限（https://www.googleapis.com/auth/drive）をGAS解析器に認識させる処理
   const root = DriveApp.getRootFolder();
   const tempFolder = DriveApp.createFolder("___Drive_Permission_Check___");
   tempFolder.setTrashed(true);
@@ -695,3 +671,4 @@ function authorizeDrivePermissions() {
   Logger.log("✅ Google Drive (DriveApp) permissions authorized successfully!");
   return "✅ Google Driveの新規フォルダ作成・保存権限の承認が正常に完了しました！";
 }
+`;
