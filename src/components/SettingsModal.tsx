@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from "react";
 import { LATEST_GAS_SCRIPT } from "../gasScriptCode";
-import { Copy, Check, FileSpreadsheet, ExternalLink } from "lucide-react";
+import { Copy, Check, FileSpreadsheet, ExternalLink, HelpCircle } from "lucide-react";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -30,6 +30,7 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
   const [maxCandidates, setMaxCandidates] = useState("20");
   const [maxContentLength, setMaxContentLength] = useState("2500");
   const [isCopiedGas, setIsCopiedGas] = useState(false);
+  const [showGasUrlHelp, setShowGasUrlHelp] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -259,7 +260,17 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
 
         <div className="border-t border-[var(--border)] pt-3.5">
           <div className="flex items-center justify-between mb-1">
-            <label className="text-[11px] text-[var(--subtle)] font-bold block">🔗 Google Apps Script (GAS) 同期WebアプリURL</label>
+            <div className="flex items-center gap-2">
+              <label className="text-[11px] text-[var(--subtle)] font-bold block">🔗 Google Apps Script (GAS) 同期WebアプリURL</label>
+              <button
+                type="button"
+                onClick={() => setShowGasUrlHelp(!showGasUrlHelp)}
+                className="text-[10px] text-[var(--purple)] font-bold hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <HelpCircle className="w-3 h-3" />
+                何のリンク？
+              </button>
+            </div>
             <button
               type="button"
               onClick={() => {
@@ -275,6 +286,18 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
               {isCopiedGas ? "GASコードをコピー完了" : "📋 最新GASコードをコピー"}
             </button>
           </div>
+          
+          {showGasUrlHelp && (
+            <div className="mb-3 mt-1 p-3 bg-[var(--purple)]/10 border border-[var(--purple)]/30 rounded-md text-[11px] text-[var(--text)] leading-relaxed">
+              <p className="font-bold mb-1 text-[var(--purple)]">📝 ここに貼るリンク：</p>
+              <p className="mb-2">右上の「📋 最新GASコードをコピー」でコードをコピーし、スプレッドシートの<strong>「拡張機能」＞「Apps Script」</strong>に貼り付けてから、<strong>「デプロイ」＞「新しいデプロイ」</strong>（全員にアクセス許可）を実行して発行されるURLです。</p>
+              <p className="font-mono bg-[var(--bg)] p-1.5 rounded text-[10px] text-[var(--subtle)] break-all mb-2">
+                例: https://script.google.com/macros/s/〜ランダムな英数字〜/exec
+              </p>
+              <p className="text-[10px] text-[var(--muted)]">※ スプレッドシート本体のURL（docs.google.com〜）とは異なります！</p>
+            </div>
+          )}
+
           <input
             className="w-full font-mono text-xs p-2.5 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all mb-2"
             type="text"

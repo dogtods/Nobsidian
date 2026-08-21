@@ -391,7 +391,11 @@ export default function App() {
     } catch (e: any) {
       if (e.message.includes("404")) throw new Error("APIエンドポイントが見つかりません(404)。GASのURL、またはAIモデルの設定を確認してください。");
       if (e.message === "Failed to fetch" || e.name === "TypeError") {
-        throw new Error("GAS Webアプリへの接続に失敗しました（Failed to fetch）。\n\n原因の可能性:\n1. GAS側の『新しいデプロイ ＞ アクセスできるユーザー』が『全員』（Anyone）になっていない\n2. URLが最新の /exec の本番用URLではない\n3. ブラウザ（特にiframe環境）によるCORS制限。別タブで開くと解消する場合があります。");
+        const isIframe = window !== window.top;
+        if (isIframe) {
+          throw new Error("⚠️ プレビュー画面ではGoogleのセキュリティ仕様によりGAS接続がブロックされます。\n画面右上の「別タブで開く」アイコン(↗️)から新しいタブで開いて実行してください。");
+        }
+        throw new Error("GAS Webアプリへの接続に失敗しました。\n\n原因:\n1. GAS側の『新しいデプロイ ＞ アクセスできるユーザー』が『全員』（Anyone）になっていない\n2. URLが最新の /exec の本番用URLではない");
       }
       throw e;
     }
@@ -416,7 +420,11 @@ export default function App() {
     } catch (e: any) {
       if (e.message.includes("404")) throw new Error("APIエンドポイントが見つかりません(404)。GASのURL、またはAIモデルの設定を確認してください。");
       if (e.message === "Failed to fetch" || e.name === "TypeError") {
-        throw new Error("GAS Webアプリへの接続に失敗しました（Failed to fetch）。\n\n原因の可能性:\n1. GAS側の『新しいデプロイ ＞ アクセスできるユーザー』が『全員』（Anyone）になっていない\n2. URLが最新の /exec の本番用URLではない\n3. ブラウザ（特にiframe環境）によるCORS制限。別タブで開くと解消する場合があります。");
+        const isIframe = window !== window.top;
+        if (isIframe) {
+          throw new Error("⚠️ プレビュー画面ではGoogleのセキュリティ仕様によりGAS接続がブロックされます。\n画面右上の「別タブで開く」アイコン(↗️)から新しいタブで開いて実行してください。");
+        }
+        throw new Error("GAS Webアプリへの接続に失敗しました。\n\n原因:\n1. GAS側の『新しいデプロイ ＞ アクセスできるユーザー』が『全員』（Anyone）になっていない\n2. URLが最新の /exec の本番用URLではない");
       }
       throw e;
     }
@@ -2816,10 +2824,17 @@ const renderMarkdownToElements = (contentStr: string) => {
             </button>
             <button
               onClick={() => setIsImportOpen(true)}
-              className="p-2 px-3 bg-transparent border border-[var(--border2)] text-xs rounded-lg hover:bg-[var(--border)] cursor-pointer transition-colors"
-                title="外部ドキュメント・PDF取り込み"
+              className="p-2 px-3 bg-transparent border border-[var(--border2)] text-xs rounded-lg hover:bg-[var(--border)] hover:text-white cursor-pointer transition-colors"
+              title="外部ドキュメント・PDF取り込み"
             >
               📥
+            </button>
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="p-2 px-3 bg-transparent border border-[var(--border2)] text-[var(--subtle)] text-xs rounded-lg hover:bg-[var(--border)] hover:text-white cursor-pointer transition-colors"
+              title="AI / 全体設定"
+            >
+              <Settings className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -3306,14 +3321,6 @@ const renderMarkdownToElements = (contentStr: string) => {
                   >
                     <Sparkles className="w-3.5 h-3.5" /> ✦ <span className="hidden sm:inline">AI解析</span>
                   </button>
-
-                  <button
-                    onClick={() => setIsSettingsOpen(true)}
-                    className="p-1.5 bg-transparent border border-[var(--border2)] rounded-md hover:bg-[var(--border)] cursor-pointer text-[var(--subtle)]"
-                    title="設定"
-                  >
-                    <Settings className="w-4 h-4" />
-                  </button>
                 </div>
               </div>
             </div>
@@ -3721,6 +3728,13 @@ const renderMarkdownToElements = (contentStr: string) => {
                   title="外部取り込み"
                 >
                   📥
+                </button>
+                <button
+                  onClick={() => setIsSettingsOpen(true)}
+                  className="p-2 border border-[#30363d] bg-[#161b22] text-[var(--subtle)] text-xs rounded-lg hover:bg-[#30363d] hover:text-white cursor-pointer"
+                  title="AI / 全体設定"
+                >
+                  <Settings className="w-4 h-4" />
                 </button>
               </div>
             </div>

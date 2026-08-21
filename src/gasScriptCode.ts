@@ -186,6 +186,12 @@ function processApiRequest(e) {
   return createJsonResponse(result);
 }
 
+// ==== CORS Preflight (OPTIONS) リクエスト対応 ====
+function doOptions(e) {
+  return ContentService.createTextOutput("")
+    .setMimeType(ContentService.MimeType.TEXT);
+}
+
 // ==== GETリクエスト（データ取得・リダイレクト救済） ====
 function doGet(e) {
   try {

@@ -7,6 +7,7 @@ import React, { useState, useEffect } from "react";
 import { Note } from "../types";
 import { formatDateStr } from "../utils/graphDataParser";
 import { getStoredPrompt } from "./PromptSettingsModal";
+import { HelpCircle } from "lucide-react";
 
 interface ImportModalProps {
   isOpen: boolean;
@@ -30,6 +31,7 @@ export default function ImportModal({ isOpen, onClose, onCreateNoteExt, onSaveTo
   const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
   
   // Local files
+  const [showSheetUrlHelp, setShowSheetUrlHelp] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   // Loading indicator states
@@ -736,7 +738,29 @@ ${JSON.stringify(itemsToProcess)}
 
         {/* Spreadsheet Integration Portal */}
         <div className="border-t border-[var(--border)] pt-4">
-          <label className="text-[11px] text-[var(--subtle)] font-bold block mb-2">3. スプレッドシートから連携して取り込み</label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-[11px] text-[var(--subtle)] font-bold block">3. スプレッドシートから連携して取り込み</label>
+            <button
+              type="button"
+              onClick={() => setShowSheetUrlHelp(!showSheetUrlHelp)}
+              className="text-[10px] text-[var(--purple)] font-bold hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              <HelpCircle className="w-3 h-3" />
+              何のリンクを貼るの？
+            </button>
+          </div>
+          
+          {showSheetUrlHelp && (
+            <div className="mb-3 p-3 bg-[var(--purple)]/10 border border-[var(--purple)]/30 rounded-md text-[11px] text-[var(--text)] leading-relaxed">
+              <p className="font-bold mb-1 text-[var(--purple)]">📝 ここに貼るリンク：</p>
+              <p className="mb-2">普段ブラウザでスプレッドシートを開いたときに、<strong>上部のアドレスバーに表示されているURL</strong>をそのままコピーして貼り付けてください。</p>
+              <p className="font-mono bg-[var(--bg)] p-1.5 rounded text-[10px] text-[var(--subtle)] break-all mb-2">
+                例: https://docs.google.com/spreadsheets/d/1adkx60a.../edit
+              </p>
+              <p className="text-[10px] text-[var(--muted)]">※ GASのWebアプリURL（/execで終わるもの）ではなく、スプレッドシート本体のURLです。</p>
+            </div>
+          )}
+
           <div className="flex flex-col gap-2">
             <input
               type="text"
