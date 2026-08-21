@@ -289,8 +289,10 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
           
           {showGasUrlHelp && (
             <div className="mb-3 mt-1 p-3 bg-[var(--purple)]/10 border border-[var(--purple)]/30 rounded-md text-[11px] text-[var(--text)] leading-relaxed">
-              <p className="font-bold mb-1 text-[var(--purple)]">📝 ここに貼るリンク：</p>
-              <p className="mb-2">右上の「📋 最新GASコードをコピー」でコードをコピーし、スプレッドシートの<strong>「拡張機能」＞「Apps Script」</strong>に貼り付けてから、<strong>「デプロイ」＞「新しいデプロイ」</strong>（全員にアクセス許可）を実行して発行されるURLです。</p>
+              <p className="font-bold mb-1 text-[var(--purple)]">📝 💾 同期先・データベース（データを移される・保存される側）</p>
+              <p className="mb-2"><strong>新しく作成した空のスプレッドシート</strong>を使うのがおすすめです。（必要な列やシートは自動で作成されます）<br/>
+              このアプリで書いたノートが、ここに入力したスプレッドシートに保存されていきます。</p>
+              <p className="mb-2">設定手順：<br/>そのスプレッドシートの<strong>「拡張機能」＞「Apps Script」</strong>に右上の最新GASコードを貼り付けてから、<strong>「デプロイ」＞「新しいデプロイ」</strong>（全員にアクセス許可）を実行して発行されるURLをここに入力します。</p>
               <p className="font-mono bg-[var(--bg)] p-1.5 rounded text-[10px] text-[var(--subtle)] break-all mb-2">
                 例: https://script.google.com/macros/s/〜ランダムな英数字〜/exec
               </p>

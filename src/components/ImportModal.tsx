@@ -21,7 +21,7 @@ interface ImportModalProps {
 export default function ImportModal({ isOpen, onClose, onCreateNoteExt, onSaveToast, apiPost, onNotesUpdateBatch }: ImportModalProps) {
   const [importUrl, setImportUrl] = useState("");
   const [importMode, setImportMode] = useState("raw");
-  const [optimizeTitle, setOptimizeTitle] = useState(true);
+  const [optimizeTitle, setOptimizeTitle] = useState(false);
   const [sheetUrl, setSheetUrl] = useState("https://docs.google.com/spreadsheets/d/1adkx60akE6nOZI2DUq_ne1MO2kERBzRiLc1fFxz0pnM/edit?usp=sharing");
   const [sheetName, setSheetName] = useState("シート1");
   const [overwriteBatch, setOverwriteBatch] = useState(false); // Default to false (Integration / Merge)
@@ -752,12 +752,14 @@ ${JSON.stringify(itemsToProcess)}
           
           {showSheetUrlHelp && (
             <div className="mb-3 p-3 bg-[var(--purple)]/10 border border-[var(--purple)]/30 rounded-md text-[11px] text-[var(--text)] leading-relaxed">
-              <p className="font-bold mb-1 text-[var(--purple)]">📝 ここに貼るリンク：</p>
-              <p className="mb-2">普段ブラウザでスプレッドシートを開いたときに、<strong>上部のアドレスバーに表示されているURL</strong>をそのままコピーして貼り付けてください。</p>
+              <p className="font-bold mb-1 text-[var(--purple)]">📝 📥 読み込み元（データを取られる側）</p>
+              <p className="mb-2"><strong>すでにデータが入っているスプレッドシート</strong>、または<strong>新しく作成した空のスプレッドシート</strong>のURLを入力します。<br/>ここに入力したシートから、このアプリ内へデータを取り込みます。</p>
+              <p className="mb-2">対象のスプレッドシートをブラウザで開き、<strong>上部のアドレスバーに表示されているURL</strong>をそのままコピーして貼り付けてください。</p>
               <p className="font-mono bg-[var(--bg)] p-1.5 rounded text-[10px] text-[var(--subtle)] break-all mb-2">
                 例: https://docs.google.com/spreadsheets/d/1adkx60a.../edit
               </p>
-              <p className="text-[10px] text-[var(--muted)]">※ GASのWebアプリURL（/execで終わるもの）ではなく、スプレッドシート本体のURLです。</p>
+              <p className="text-[10px] text-[var(--muted)]">※ 末尾に ?usp=drivesdk や ?usp=sharing 等が付いていてもそのまま貼って大丈夫です。</p>
+              <p className="text-[10px] text-[var(--muted)] mt-1">※ GASのWebアプリURL（/execで終わるもの）ではなく、スプレッドシート本体のURLです。</p>
             </div>
           )}
 
