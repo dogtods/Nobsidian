@@ -25,12 +25,13 @@ export default function SyncManagerModal({
   syncStatus,
   syncLabel
 }: SyncManagerModalProps) {
-  const [loadingType, setLoadingType] = useState<"merge" | "download" | "upload" | null>(null);
+  const [loadingType, setLoadingType] = useState<"merge" | "download" | "upload" | "workspace" | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [workspaceSheet, setWorkspaceSheet] = useState(localStorage.getItem("cn_gas_sheet_name") || "Notes");
 
   if (!isOpen) return null;
 
-  const handleAction = async (type: "merge" | "download" | "upload", action: () => Promise<void>) => {
+  const handleAction = async (type: "merge" | "download" | "upload" | "workspace", action: () => Promise<void>) => {
     setLoadingType(type);
     setErrorMessage(null);
     try {
@@ -198,6 +199,53 @@ export default function SyncManagerModal({
               </p>
             </div>
           </button>
+
+          {/* 4. Workspace Switch */}
+          <div className="group w-full text-left bg-[#21262d]/50 border border-[#30363d] rounded-xl p-3.5 flex flex-col gap-3">
+            <div className="flex gap-3">
+              <div className="p-2 rounded-lg bg-purple-500/5 text-[var(--purple)] self-start mt-0.5">
+                <Cloud className={`w-4.5 h-4.5 ${loadingType === "workspace" ? "animate-pulse" : ""}`} />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-white">
+                    ④ ワークスペースの切り替え（別シート読込）
+                  </span>
+                  <span className="text-[9px] bg-purple-500/10 text-[var(--purple)] font-bold px-1.5 py-0.5 rounded-full">
+                    完全入れ替え
+                  </span>
+                </div>
+                <p className="text-[11px] text-[var(--subtle)] mt-1 leading-relaxed">
+                  指定したシートからデータを読み込み、現在のアプリ内のデータを<strong>完全に上書き（入れ替え）</strong>します。プロジェクトごとにシートを分けて管理・グラフ化したい場合に最適です。
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2 items-center pl-[52px]">
+              <input
+                type="text"
+                value={workspaceSheet}
+                onChange={(e) => setWorkspaceSheet(e.target.value)}
+                placeholder="シート名 (例: ProjectA)"
+                className="flex-1 bg-[#0d1117] border border-[#30363d] rounded-md px-3 py-1.5 text-xs text-white outline-none focus:border-[var(--purple)] transition-colors"
+                disabled={isAnyLoading}
+              />
+              <button
+                type="button"
+                disabled={isAnyLoading}
+                onClick={() => {
+                  if (!workspaceSheet.trim()) {
+                    setErrorMessage("シート名を入力してください。");
+                    return;
+                  }
+                  localStorage.setItem("cn_gas_sheet_name", workspaceSheet.trim());
+                  handleAction("workspace", onForceDownload);
+                }}
+                className="bg-[#238636] hover:bg-[#2ea043] text-white font-bold text-[11px] px-4 py-1.5 rounded-md transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                入れ替える
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Warning Footer info */}
