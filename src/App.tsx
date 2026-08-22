@@ -363,9 +363,11 @@ export default function App() {
       toast("⚠️ GAS URLの形式が正しくない可能性があります（/exec で終わる必要があります）");
     }
 
-    const sheetName = localStorage.getItem("cn_gas_sheet_name");
-    if (sheetName && sheetName.trim() !== "") {
-      body.sheetName = sheetName.trim();
+    const targetSheetName = localStorage.getItem("cn_gas_sheet_name");
+    if (targetSheetName && targetSheetName.trim() !== "") {
+      if (!body.sheetName) {
+        body.sheetName = targetSheetName.trim();
+      }
     }
     
     // URLにaction及びsheetNameパラメータを付与 (302リダイレクトでGET変換された場合の保険)
