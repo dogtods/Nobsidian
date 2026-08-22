@@ -17,8 +17,13 @@ async function startServer() {
 
       const fetchRes = await fetch(targetUrl, {
         method: "POST",
-        headers: { "Content-Type": "text/plain" },
-        body: JSON.stringify(req.body)
+        headers: { 
+          "Content-Type": "text/plain",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "application/json, text/plain, */*"
+        },
+        body: JSON.stringify(req.body),
+        redirect: "follow"
       });
       
       const text = await fetchRes.text();
@@ -27,8 +32,8 @@ async function startServer() {
         res.json(data);
       } catch (e) {
         let errorMsg = `GASからの応答がJSONではありませんでした (HTTP ${fetchRes.status})`;
-        if (fetchRes.status === 404) {
-          errorMsg = "GAS Webアプリが見つかりません(404)。GASエディタで『新しいデプロイ』を作成し、発行された最新URL（末尾が /exec）を設定してください。";
+        if (fetchRes.status === 404 || text.toLowerCase().includes("page cannot") || text.toLowerCase().includes("page could not")) {
+          errorMsg = "GAS Webアプリが見つかりません(404)。GASエディタのデプロイ設定で「アクセスできるユーザー」が『全員（Anyone）』になっているか確認し、『新しいデプロイ』を作成してください。";
         } else if (text.includes("accounts.google.com") || text.includes("ServiceLogin") || text.includes("Google Accounts")) {
           errorMsg = "Googleログイン画面にリダイレクトされました。GASのデプロイ設定で「アクセスできるユーザー」を『全員（Anyone）』に変更してください。";
         }
@@ -49,7 +54,12 @@ async function startServer() {
       if (!targetUrl) return res.status(400).json({ error: "URLパラメータが指定されていません" });
       
       const fetchRes = await fetch(targetUrl, {
-        method: "GET"
+        method: "GET",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "application/json, text/plain, */*"
+        },
+        redirect: "follow"
       });
       
       const text = await fetchRes.text();
@@ -58,8 +68,8 @@ async function startServer() {
         res.json(data);
       } catch (e) {
         let errorMsg = `GASからの応答がJSONではありませんでした (HTTP ${fetchRes.status})`;
-        if (fetchRes.status === 404) {
-          errorMsg = "GAS Webアプリが見つかりません(404)。GASエディタで『新しいデプロイ』を作成し、発行された最新URL（末尾が /exec）を設定してください。";
+        if (fetchRes.status === 404 || text.toLowerCase().includes("page cannot") || text.toLowerCase().includes("page could not")) {
+          errorMsg = "GAS Webアプリが見つかりません(404)。GASエディタのデプロイ設定で「アクセスできるユーザー」が『全員（Anyone）』になっているか確認し、『新しいデプロイ』を作成してください。";
         } else if (text.includes("accounts.google.com") || text.includes("ServiceLogin") || text.includes("Google Accounts")) {
           errorMsg = "Googleログイン画面にリダイレクトされました。GASのデプロイ設定で「アクセスできるユーザー」を『全員（Anyone）』に変更してください。";
         }

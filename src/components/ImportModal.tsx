@@ -192,36 +192,90 @@ export default function ImportModal({
 
   // Test GAS Connection
   const handleTestConnection = async () => {
-    const trimmed = gasUrl.trim();
-    if (!trimmed) {
+    // Sanitize URL (strip quotes, spaces, newlines, fullwidth spaces)
+    const cleaned = gasUrl.replace(/^[\s\u3000"'`]+|[\s\u3000"'`]+$/g, '').replace(/[\r\n\t]/g, '').trim();
+    if (cleaned !== gasUrl) {
+      setGasUrl(cleaned);
+    }
+
+    if (!cleaned) {
       setTestStatus("error");
       setTestMessage("WebアプリURLが入力されていません。");
       return;
     }
-    if (!trimmed.startsWith("https://script.google.com/macros/s/") || !trimmed.endsWith("/exec")) {
+    if (!cleaned.startsWith("https://script.google.com/macros/s/") || !cleaned.endsWith("/exec")) {
       setTestStatus("error");
-      setTestMessage("URLの形式が正しくありません。「https://script.google.com/macros/s/〜/exec」の形式（本番デプロイURL）を入力してください。");
+      setTestMessage("URLの形式が正しくありません。「https://script.google.com/macros/s/.../exec」の形式（本番デプロイURL）を入力してください。末尾が /dev のテストURLは動作しません。");
       return;
     }
 
-    saveAllSettings(trimmed);
+    saveAllSettings(cleaned);
     setTestStatus("testing");
-    setTestMessage("GAS Webアプリに接続中...");
+    setTestMessage("GAS Webアプリに疎通確認中（Pingテスト実行中）...");
 
     try {
+      // Step 1: Base URL Ping Test (confirms Web API deployment and doGet response)
+      let pingSuccess = false;
+      let pingMessage = "";
+      try {
+        const pingRes = await fetch(`/api/proxy?url=${encodeURIComponent(cleaned)}`);
+        const pingText = await pingRes.text();
+        const pingJson = JSON.parse(pingText);
+        if (pingRes.ok && (pingJson.status === "ok" || pingJson.message || pingJson.success !== false)) {
+          pingSuccess = true;
+          pingMessage = pingJson.message || "GAS Web API は正常に応答しています。";
+        }
+      } catch (pingErr) {
+        // Continue to check via query parameters
+      }
+
+      // Step 2: Spreadsheet / Sheet Access Test
       const targetSheet = externalSyncSheetName.trim() || gasSheetName.trim() || "Notes";
-      const testUrl = `${trimmed}?action=getNotes&sheetName=${encodeURIComponent(targetSheet)}`;
+      const testUrl = `${cleaned}?action=getNotes&sheetName=${encodeURIComponent(targetSheet)}`;
       const res = await fetch(`/api/proxy?url=${encodeURIComponent(testUrl)}`);
-      const data = await res.json();
+      
+      let data: any = null;
+      let rawText = "";
+      try {
+        rawText = await res.text();
+        data = JSON.parse(rawText);
+      } catch (parseErr) {
+        if (pingSuccess) {
+          setTestStatus("success");
+          setTestMessage(`✅ Webアプリへの通信は成功しています！（Ping: ${pingMessage}）。スプレッドシートの取得処理を行ってください。`);
+          return;
+        }
+
+        if (rawText.toLowerCase().includes("page cannot") || rawText.toLowerCase().includes("page could not") || rawText.includes("404")) {
+          setTestStatus("error");
+          setTestMessage("⚠️ GAS側で『The page cannot be found (404)』が返されました。Googleのアクセス制限により、外部からの接続がブロックされています。");
+          return;
+        }
+        if (rawText.includes("accounts.google.com") || rawText.includes("ServiceLogin")) {
+          setTestStatus("error");
+          setTestMessage("⚠️ Googleログイン画面にリダイレクトされました。GASのデプロイ設定で「アクセスできるユーザー」を『全員（Anyone）』にする必要があります。");
+          return;
+        }
+        setTestStatus("error");
+        setTestMessage(`GASからの応答がJSONではありませんでした (HTTP ${res.status}): ${rawText.substring(0, 150)}`);
+        return;
+      }
 
       if (!res.ok || data.error) {
+        if (pingSuccess || data.status === "ok") {
+          const errDetail = data?.error || "スプレッドシートへのアクセスに失敗しました";
+          setTestStatus("success");
+          setTestMessage(`✅ WebアプリのAPI疎通は成功しました！ （※スプレッドシート側: ${errDetail}。シート名「${targetSheet}」またはスクリプトプロパティの SHEET_ID をご確認ください）`);
+          return;
+        }
+
         setTestStatus("error");
         setTestMessage(data.error || `接続エラー (HTTP ${res.status})`);
         return;
       }
 
       setTestStatus("success");
-      setTestMessage(`✅ 接続成功！GAS Webアプリは正常に応答しています（指定シート: ${data.sheetName || targetSheet}、ノート数: ${data.notes?.length ?? 0}件）`);
+      setTestMessage(`✅ 接続テスト完全成功！GAS Webアプリ疎通およびスプレッドシート（シート: ${data.sheetName || targetSheet}、現在のノート数: ${data.notes?.length ?? 0}件）の読み取りが確認できました。`);
     } catch (e: any) {
       setTestStatus("error");
       setTestMessage(e.message || "接続テストに失敗しました");
@@ -806,25 +860,78 @@ ${JSON.stringify(itemsToProcess)}
 
               {/* Test Status Alert */}
               {testStatus !== "idle" && (
-                <div className={`p-2.5 rounded-lg text-xs flex items-start gap-2 border leading-relaxed ${
+                <div className={`p-3 rounded-lg text-xs flex flex-col gap-2 border leading-relaxed ${
                   testStatus === "success" 
                     ? "bg-emerald-950/40 border-emerald-500/40 text-emerald-300"
                     : testStatus === "error"
                     ? "bg-red-950/40 border-red-500/40 text-red-300"
                     : "bg-blue-950/40 border-blue-500/40 text-blue-300"
                 }`}>
-                  {testStatus === "success" && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />}
-                  {testStatus === "error" && <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />}
-                  {testStatus === "testing" && <Loader2 className="w-4 h-4 animate-spin text-blue-400 shrink-0 mt-0.5" />}
-                  <div className="flex-1">
-                    <p className="font-semibold">{testMessage}</p>
-                    {testStatus === "error" && (
-                      <div className="mt-1 pt-1 border-t border-red-500/20 text-[10px] text-red-200/90 space-y-0.5">
-                        <p>・GASで「デプロイ」＞「新しいデプロイ」を実行しましたか？</p>
-                        <p>・アクセスできるユーザーが「全員」になっていますか？</p>
-                      </div>
-                    )}
+                  <div className="flex items-start gap-2">
+                    {testStatus === "success" && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />}
+                    {testStatus === "error" && <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />}
+                    {testStatus === "testing" && <Loader2 className="w-4 h-4 animate-spin text-blue-400 shrink-0 mt-0.5" />}
+                    <div className="flex-1">
+                      <p className="font-semibold text-sm">{testMessage}</p>
+                    </div>
                   </div>
+
+                  {testStatus === "error" && (
+                    <div className="mt-1 pt-2 border-t border-red-500/30 text-[11px] text-red-200/90 space-y-2">
+                      <div className="p-2 bg-black/40 rounded border border-red-500/20 space-y-1">
+                        <p className="font-bold text-amber-300">🔍 なぜブラウザで見えるのに接続テストが失敗するのか？</p>
+                        <p className="text-gray-300 text-[10.5px]">
+                          ブラウザの通常タブはGoogleにログイン済みのため表示されますが、アプリは未ログイン状態でアクセスするため、GASの公開権限が「全員」でないとGoogleがブロックします。
+                        </p>
+                      </div>
+
+                      <div className="space-y-1.5 text-[11px]">
+                        <p className="font-bold text-white">🛠️ 解決のための3点チェックリスト：</p>
+                        <div className="bg-[#161b22] p-2.5 rounded border border-[#30363d] space-y-1.5 text-gray-200">
+                          <div className="flex items-start gap-1.5">
+                            <span className="text-purple-400 font-bold">1.</span>
+                            <span>
+                              <strong>「新しいデプロイ」を作成</strong>（※「デプロイを管理」の更新では反映されないGASの不具合があります）
+                            </span>
+                          </div>
+                          <div className="flex items-start gap-1.5">
+                            <span className="text-purple-400 font-bold">2.</span>
+                            <span>
+                              次のユーザーとして実行: <strong className="text-emerald-300">「自分 (Me)」</strong>
+                            </span>
+                          </div>
+                          <div className="flex items-start gap-1.5">
+                            <span className="text-purple-400 font-bold">3.</span>
+                            <span>
+                              アクセスできるユーザー: <strong className="text-emerald-300">「全員 (Anyone)」</strong><br/>
+                              <span className="text-[10px] text-gray-400">※「自分のみ」や「組織内のユーザー」は外部アクセス不可</span>
+                            </span>
+                          </div>
+                          <div className="flex items-start gap-1.5">
+                            <span className="text-purple-400 font-bold">4.</span>
+                            <span>
+                              新しく発行されたURL（末尾 <code>/exec</code>）を再コピーして貼り付け
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (gasUrl.trim()) {
+                              navigator.clipboard.writeText(gasUrl.trim());
+                              onSaveToast("URLをコピーしました！シークレットウィンドウで開いてみてください");
+                            }
+                          }}
+                          className="px-2.5 py-1 text-[10.5px] bg-red-900/40 hover:bg-red-900/60 border border-red-400/40 rounded text-red-200 transition flex items-center gap-1 cursor-pointer"
+                        >
+                          📋 URLをコピーして「シークレットウィンドウ」でテストする
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

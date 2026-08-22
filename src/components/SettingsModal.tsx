@@ -57,39 +57,85 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
   }, [isOpen]);
 
   const handleTestConnection = async () => {
-    const trimmed = gasUrl.trim();
-    if (!trimmed) {
+    const cleaned = gasUrl.replace(/^[\s\u3000"'`]+|[\s\u3000"'`]+$/g, '').replace(/[\r\n\t]/g, '').trim();
+    if (!cleaned) {
       setTestStatus("error");
       setTestMessage("WebアプリURLが入力されていません。");
       return;
     }
 
-    if (!trimmed.startsWith("https://script.google.com/macros/s/") || !trimmed.endsWith("/exec")) {
+    if (!cleaned.startsWith("https://script.google.com/macros/s/") || !cleaned.endsWith("/exec")) {
       setTestStatus("error");
-      setTestMessage("URLの形式が正しくありません。「https://script.google.com/macros/s/〜/exec」の形式である必要があります。");
+      setTestMessage("URLの形式が正しくありません。「https://script.google.com/macros/s/.../exec」の形式である必要があります。");
       return;
     }
 
     setTestStatus("testing");
-    setTestMessage("GAS Webアプリに接続確認中...");
+    setTestMessage("GAS Webアプリに疎通確認中（Pingテスト実行中）...");
 
     try {
-      let testUrl = `${trimmed}?action=getNotes`;
+      // Step 1: Base URL Ping Test
+      let pingSuccess = false;
+      let pingMessage = "";
+      try {
+        const pingRes = await fetch(`/api/proxy?url=${encodeURIComponent(cleaned)}`);
+        const pingText = await pingRes.text();
+        const pingJson = JSON.parse(pingText);
+        if (pingRes.ok && (pingJson.status === "ok" || pingJson.message || pingJson.success !== false)) {
+          pingSuccess = true;
+          pingMessage = pingJson.message || "GAS Web API は正常に応答しています。";
+        }
+      } catch (pingErr) {}
+
+      // Step 2: Spreadsheet GetNotes
+      let testUrl = `${cleaned}?action=getNotes`;
       if (gasSheetName.trim()) {
         testUrl += `&sheetName=${encodeURIComponent(gasSheetName.trim())}`;
       }
 
       const res = await fetch(`/api/proxy?url=${encodeURIComponent(testUrl)}`);
-      const data = await res.json();
+      let data: any = null;
+      let rawText = "";
+      try {
+        rawText = await res.text();
+        data = JSON.parse(rawText);
+      } catch (parseErr) {
+        if (pingSuccess) {
+          setTestStatus("success");
+          setTestMessage(`✅ Webアプリ通信は成功しています！（Ping: ${pingMessage}）`);
+          return;
+        }
+
+        if (rawText.toLowerCase().includes("page cannot") || rawText.toLowerCase().includes("page could not") || rawText.includes("404")) {
+          setTestStatus("error");
+          setTestMessage("⚠️ GAS Webアプリが見つかりません(404)。GASエディタ右上の「デプロイ」>「デプロイを管理」にて、【アクセスできるユーザー】が『全員（Anyone）』になっているか確認し、【新しいデプロイ】を作成して発行されたURLを再設定してください。");
+          return;
+        }
+        if (rawText.includes("accounts.google.com") || rawText.includes("ServiceLogin")) {
+          setTestStatus("error");
+          setTestMessage("⚠️ Googleログイン画面に阻まれました。GASエディタのデプロイ設定で【アクセスできるユーザー】を『全員（Anyone）』に変更してください。");
+          return;
+        }
+        setTestStatus("error");
+        setTestMessage(`GASからの応答がJSONではありませんでした (HTTP ${res.status}): ${rawText.substring(0, 150)}`);
+        return;
+      }
 
       if (!res.ok || data.error) {
+        if (pingSuccess || data.status === "ok") {
+          const errDetail = data?.error || "スプレッドシートへのアクセスに失敗しました";
+          setTestStatus("success");
+          setTestMessage(`✅ WebアプリのAPI疎通は成功しました！ （※スプレッドシート側: ${errDetail}。シート名またはスクリプトプロパティの SHEET_ID をご確認ください）`);
+          return;
+        }
+
         setTestStatus("error");
         setTestMessage(data.error || `接続エラー (HTTP ${res.status})`);
         return;
       }
 
       setTestStatus("success");
-      setTestMessage(`接続成功！GAS Webアプリは正常に応答しています（シート: ${data.sheetName || "Notes"}、取得ノート数: ${data.notes?.length ?? 0}件）`);
+      setTestMessage(`✅ 接続成功！GAS Webアプリは正常に応答しています（シート: ${data.sheetName || "Notes"}、取得ノート数: ${data.notes?.length ?? 0}件）`);
     } catch (e: any) {
       setTestStatus("error");
       setTestMessage(e.message || "接続に失敗しました");

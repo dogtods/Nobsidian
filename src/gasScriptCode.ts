@@ -182,7 +182,9 @@ function processApiRequest(e) {
   let result = {};
 
   try {
-    if (action === "getNotes") {
+    if (action === "ping" || action === "test" || action === "health") {
+      result = { success: true, status: "ok", message: "Connected Notes Web API (GAS) は正常に応答しています。" };
+    } else if (action === "getNotes") {
       result = handleGetNotes(targetSheet);
     } else if (action === "saveNote") {
       const note = typeof postData.note === "string" ? JSON.parse(postData.note) : postData.note;
