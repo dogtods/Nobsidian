@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from "react";
 import { LATEST_GAS_SCRIPT } from "../gasScriptCode";
-import { Copy, Check, FileSpreadsheet, ExternalLink, HelpCircle } from "lucide-react";
+import { Copy, Check, FileSpreadsheet, ExternalLink, HelpCircle, Activity, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -32,6 +32,9 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
   const [isCopiedGas, setIsCopiedGas] = useState(false);
   const [showGasUrlHelp, setShowGasUrlHelp] = useState(false);
 
+  const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
+  const [testMessage, setTestMessage] = useState("");
+
   useEffect(() => {
     if (isOpen) {
       setApiKey(localStorage.getItem("cn_gemini_key") || "");
@@ -46,10 +49,52 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
       
       setFilterStart(localStorage.getItem("cn_filter_start_date") || "");
       setFilterEnd(localStorage.getItem("cn_filter_end_date") || "");
-      setGasUrl(localStorage.getItem("cn_gas_api_url") || "https://script.google.com/macros/s/AKfycbwURzm-X3meCgYanIU4C-F5yW1dLC2vV_x09pBn-HuZvriVsCekp7X1_g9CuhZmdyRy/exec");
+      setGasUrl(localStorage.getItem("cn_gas_api_url") || "");
       setGasSheetName(localStorage.getItem("cn_gas_sheet_name") || "");
+      setTestStatus("idle");
+      setTestMessage("");
     }
   }, [isOpen]);
+
+  const handleTestConnection = async () => {
+    const trimmed = gasUrl.trim();
+    if (!trimmed) {
+      setTestStatus("error");
+      setTestMessage("WebアプリURLが入力されていません。");
+      return;
+    }
+
+    if (!trimmed.startsWith("https://script.google.com/macros/s/") || !trimmed.endsWith("/exec")) {
+      setTestStatus("error");
+      setTestMessage("URLの形式が正しくありません。「https://script.google.com/macros/s/〜/exec」の形式である必要があります。");
+      return;
+    }
+
+    setTestStatus("testing");
+    setTestMessage("GAS Webアプリに接続確認中...");
+
+    try {
+      let testUrl = `${trimmed}?action=getNotes`;
+      if (gasSheetName.trim()) {
+        testUrl += `&sheetName=${encodeURIComponent(gasSheetName.trim())}`;
+      }
+
+      const res = await fetch(`/api/proxy?url=${encodeURIComponent(testUrl)}`);
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        setTestStatus("error");
+        setTestMessage(data.error || `接続エラー (HTTP ${res.status})`);
+        return;
+      }
+
+      setTestStatus("success");
+      setTestMessage(`接続成功！GAS Webアプリは正常に応答しています（シート: ${data.sheetName || "Notes"}、取得ノート数: ${data.notes?.length ?? 0}件）`);
+    } catch (e: any) {
+      setTestStatus("error");
+      setTestMessage(e.message || "接続に失敗しました");
+    }
+  };
 
   const handleSave = () => {
     if (apiKey.trim()) {
@@ -300,13 +345,65 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
             </div>
           )}
 
-          <input
-            className="w-full font-mono text-xs p-2.5 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all mb-2"
-            type="text"
-            placeholder="https://script.google.com/macros/s/.../exec"
-            value={gasUrl}
-            onChange={(e) => setGasUrl(e.target.value)}
-          />
+          <div className="flex gap-2 mb-2">
+            <input
+              className="flex-1 font-mono text-xs p-2.5 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all"
+              type="text"
+              placeholder="https://script.google.com/macros/s/.../exec"
+              value={gasUrl}
+              onChange={(e) => {
+                setGasUrl(e.target.value);
+                setTestStatus("idle");
+              }}
+            />
+            <button
+              type="button"
+              onClick={handleTestConnection}
+              disabled={testStatus === "testing"}
+              className="px-3 py-2 text-xs font-semibold rounded bg-[#8b5cf6]/20 text-[#c4b5fd] border border-[#8b5cf6]/40 hover:bg-[#8b5cf6]/30 disabled:opacity-50 transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+              title="GAS Webアプリとの接続をテストします"
+            >
+              {testStatus === "testing" ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  確認中...
+                </>
+              ) : (
+                <>
+                  <Activity className="w-3.5 h-3.5" />
+                  接続テスト
+                </>
+              )}
+            </button>
+          </div>
+
+          {testStatus !== "idle" && (
+            <div className={`mb-3 p-2.5 rounded text-xs flex items-start gap-2 border leading-relaxed ${
+              testStatus === "success" 
+                ? "bg-emerald-950/40 border-emerald-500/40 text-emerald-300"
+                : testStatus === "error"
+                ? "bg-red-950/40 border-red-500/40 text-red-300"
+                : "bg-blue-950/40 border-blue-500/40 text-blue-300"
+            }`}>
+              {testStatus === "success" && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />}
+              {testStatus === "error" && <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />}
+              {testStatus === "testing" && <Loader2 className="w-4 h-4 animate-spin text-blue-400 shrink-0 mt-0.5" />}
+              <div className="flex-1">
+                <p className="font-semibold">{testMessage}</p>
+                {testStatus === "error" && (
+                  <div className="mt-1.5 pt-1.5 border-t border-red-500/20 text-[11px] text-red-200/90 space-y-1">
+                    <p className="font-bold">💡 解決チェックリスト:</p>
+                    <ul className="list-disc list-inside space-y-0.5 text-[10px]">
+                      <li>GASエディタで<strong>「デプロイ」＞「新しいデプロイ」</strong>を実行しましたか？（保存だけでは反映されません）</li>
+                      <li>「アクセスできるユーザー」を<strong>『全員 (Anyone)』</strong>に設定しましたか？</li>
+                      <li>URLの末尾が <strong>/exec</strong> で終わっていますか？（テスト用の /dev は使えません）</li>
+                      <li>GASエディタ右上の「📋 最新GASコードをコピー」の内容を貼り付けましたか？</li>
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1">📄 同期先シート名 (空の場合はデフォルト "Notes" を使用)</label>
           <input
             className="w-full text-xs p-2.5 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all"

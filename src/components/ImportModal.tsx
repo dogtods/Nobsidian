@@ -636,6 +636,31 @@ ${JSON.stringify(itemsToProcess)}
                 チェックを入れた外部ソースから最新データを取得し、Gemini AIで自動解析・要約してスプレッドシート（A〜M列）へ保存し、アプリへ自動同期します。
               </p>
 
+              {/* GAS URL Status Notice */}
+              {(() => {
+                const currentGasUrl = (localStorage.getItem("cn_gas_api_url") || "").trim();
+                const isConfigured = currentGasUrl.startsWith("https://script.google.com/macros/s/") && currentGasUrl.endsWith("/exec");
+                if (!isConfigured) {
+                  return (
+                    <div className="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-md text-[11px] text-amber-200 flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold">⚠️ 同期先GAS WebアプリURLが未設定です</span>
+                        <p className="text-[10px] text-amber-300/80 mt-0.5 leading-relaxed">
+                          取り込みを実行する前に、画面右上の「⚙ 設定」を開き、スプレッドシートのGASで「デプロイ」したWebアプリURL（末尾が <code>/exec</code>）を入力してください。
+                        </p>
+                      </div>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="p-2 bg-[#161b22] border border-[#30363d] rounded-md text-[10px] text-gray-300 flex items-center justify-between gap-2">
+                    <span className="truncate">🔗 接続先GAS: <code className="text-purple-300 font-mono">{currentGasUrl}</code></span>
+                    <span className="text-[9px] text-green-400 font-semibold px-1.5 py-0.5 bg-green-500/10 rounded shrink-0">設定済</span>
+                  </div>
+                );
+              })()}
+
               {/* Raindrop Checkbox */}
               <label className="flex items-start gap-2.5 p-2 rounded-md hover:bg-[#ffffff06] cursor-pointer transition-colors border border-transparent hover:border-[var(--border2)]">
                 <input

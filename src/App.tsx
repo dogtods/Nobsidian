@@ -385,10 +385,20 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error(`HTTP Error ${res.status}: ${res.status === 404 ? 'API Endpoint not found. Please check your URL or Model settings.' : ''}`);
-      return await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch (jsonErr) {
+        // non json
+      }
+
+      if (!res.ok) {
+        const errorDetail = data?.error || `HTTP Error ${res.status}`;
+        throw new Error(errorDetail);
+      }
+      return data;
     } catch (e: any) {
-      if (e.message.includes("404")) throw new Error("APIエンドポイントが見つかりません(404)。GASのURL、またはAIモデルの設定を確認してください。");
+      if (e.message.includes("404")) throw new Error("GAS Webアプリが見つかりません(404)。GASエディタで『新しいデプロイ』を発行し、最新のURL（末尾が /exec）を設定してください。");
       if (e.message === "Failed to fetch" || e.name === "TypeError") {
         throw new Error("GAS Webアプリへの接続に失敗しました。\n\n原因:\n1. GAS側の『新しいデプロイ ＞ アクセスできるユーザー』が『全員』（Anyone）になっていない\n2. URLが最新の /exec の本番用URLではない");
       }
@@ -406,10 +416,18 @@ export default function App() {
     }
     try {
       const res = await fetch(`/api/proxy?url=${encodeURIComponent(fullUrl)}`);
-      if (!res.ok) throw new Error(`HTTP Error ${res.status}: ${res.status === 404 ? 'API Endpoint not found. Please check your URL or Model settings.' : ''}`);
-      return await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch (jsonErr) {}
+
+      if (!res.ok) {
+        const errorDetail = data?.error || `HTTP Error ${res.status}`;
+        throw new Error(errorDetail);
+      }
+      return data;
     } catch (e: any) {
-      if (e.message.includes("404")) throw new Error("APIエンドポイントが見つかりません(404)。GASのURL、またはAIモデルの設定を確認してください。");
+      if (e.message.includes("404")) throw new Error("GAS Webアプリが見つかりません(404)。GASエディタで『新しいデプロイ』を発行し、最新のURL（末尾が /exec）を設定してください。");
       if (e.message === "Failed to fetch" || e.name === "TypeError") {
         throw new Error("GAS Webアプリへの接続に失敗しました。\n\n原因:\n1. GAS側の『新しいデプロイ ＞ アクセスできるユーザー』が『全員』（Anyone）になっていない\n2. URLが最新の /exec の本番用URLではない");
       }

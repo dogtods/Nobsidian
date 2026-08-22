@@ -13,7 +13,7 @@ async function startServer() {
   app.post("/api/proxy", async (req, res) => {
     try {
       const targetUrl = req.query.url as string;
-      if (!targetUrl) return res.status(400).json({ error: "Missing url parameter" });
+      if (!targetUrl) return res.status(400).json({ error: "URLパラメータが指定されていません" });
 
       const fetchRes = await fetch(targetUrl, {
         method: "POST",
@@ -26,17 +26,27 @@ async function startServer() {
         const data = JSON.parse(text);
         res.json(data);
       } catch (e) {
-        res.status(fetchRes.status).send(text);
+        let errorMsg = `GASからの応答がJSONではありませんでした (HTTP ${fetchRes.status})`;
+        if (fetchRes.status === 404) {
+          errorMsg = "GAS Webアプリが見つかりません(404)。GASエディタで『新しいデプロイ』を作成し、発行された最新URL（末尾が /exec）を設定してください。";
+        } else if (text.includes("accounts.google.com") || text.includes("ServiceLogin") || text.includes("Google Accounts")) {
+          errorMsg = "Googleログイン画面にリダイレクトされました。GASのデプロイ設定で「アクセスできるユーザー」を『全員（Anyone）』に変更してください。";
+        }
+        res.status(fetchRes.status >= 400 ? fetchRes.status : 500).json({
+          error: errorMsg,
+          rawStatus: fetchRes.status,
+          rawResponse: text.substring(0, 300)
+        });
       }
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: `プロキシ通信エラー: ${e.message}` });
     }
   });
 
   app.get("/api/proxy", async (req, res) => {
     try {
       const targetUrl = req.query.url as string;
-      if (!targetUrl) return res.status(400).json({ error: "Missing url parameter" });
+      if (!targetUrl) return res.status(400).json({ error: "URLパラメータが指定されていません" });
       
       const fetchRes = await fetch(targetUrl, {
         method: "GET"
@@ -47,10 +57,20 @@ async function startServer() {
         const data = JSON.parse(text);
         res.json(data);
       } catch (e) {
-        res.status(fetchRes.status).send(text);
+        let errorMsg = `GASからの応答がJSONではありませんでした (HTTP ${fetchRes.status})`;
+        if (fetchRes.status === 404) {
+          errorMsg = "GAS Webアプリが見つかりません(404)。GASエディタで『新しいデプロイ』を作成し、発行された最新URL（末尾が /exec）を設定してください。";
+        } else if (text.includes("accounts.google.com") || text.includes("ServiceLogin") || text.includes("Google Accounts")) {
+          errorMsg = "Googleログイン画面にリダイレクトされました。GASのデプロイ設定で「アクセスできるユーザー」を『全員（Anyone）』に変更してください。";
+        }
+        res.status(fetchRes.status >= 400 ? fetchRes.status : 500).json({
+          error: errorMsg,
+          rawStatus: fetchRes.status,
+          rawResponse: text.substring(0, 300)
+        });
       }
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: `プロキシ通信エラー: ${e.message}` });
     }
   });
 
