@@ -1,0 +1,1217 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>📚 ナレッジレポート プレビュー</title>
+  <style>
+    html, body { 
+      margin: 0; padding: 0; width: 100%; min-height: 100%; 
+      -webkit-text-size-adjust: 100%; 
+    }
+    * { box-sizing: border-box; }
+    :root {
+      --primary-color: #1a73e8; --primary-hover: #1557b0;
+      --bg-color: #f8f9fa; --card-bg: #ffffff;
+      --text-main: #202124; --text-sub: #5f6368;
+      --border-color: #dadce0; --error-color: #d93025; --success-color: #1e8e3e;
+    }
+    body { font-family: 'Roboto', 'Helvetica Neue', Arial, sans-serif; background-color: var(--bg-color); color: var(--text-main); line-height: 1.6; font-size: 16px; overflow-x: hidden; }
+    header { background-color: var(--card-bg); padding: 16px 24px; box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15); position: sticky; top: 0; z-index: 100; width: 100%; }
+    h1 { margin: 0; font-size: 20px; font-weight: 500; }
+    main { max-width: 800px; width: 100%; margin: 24px auto; padding: 0 16px; display: block; }
+    .panel { background-color: var(--card-bg); border-radius: 8px; padding: 24px; margin-bottom: 24px; border: 1px solid var(--border-color); }
+    h2 { font-size: 16px; margin-top: 0; margin-bottom: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; }
+    
+    .control-group { margin-bottom: 20px; }
+    .control-label { display: flex; justify-content: space-between; font-weight: 500; margin-bottom: 8px; }
+    .control-desc { font-size: 12px; color: var(--text-sub); margin-top: 4px; }
+    input[type=range] { width: 100%; cursor: pointer; }
+    
+    button, .btn-link { 
+      display: inline-block;
+      box-sizing: border-box;
+      background-color: var(--card-bg); 
+      color: var(--primary-color); 
+      border: 1px solid var(--border-color); 
+      border-radius: 4px; 
+      padding: 8px 16px; 
+      font-size: 14px; 
+      font-weight: 500; 
+      cursor: pointer; 
+      transition: all 0.2s; 
+      text-decoration: none;
+      text-align: center;
+      line-height: 1.4;
+      vertical-align: middle;
+    }
+    button:hover:not(:disabled), .btn-link:hover { background-color: #f1f3f4; }
+    button.primary, .btn-link.primary { background-color: var(--primary-color); color: white; border: none; }
+    button.primary:hover:not(:disabled), .btn-link.primary:hover { background-color: var(--primary-hover); box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3); }
+    button:disabled { background-color: #f1f3f4; color: #9aa0a6; cursor: not-allowed; border: none; }
+    
+    .article-card { border: 1px solid var(--border-color); border-radius: 6px; padding: 16px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
+    .article-title { font-size: 18px; line-height: 1.5; font-weight: bold; color: #111; margin-bottom: 8px; }
+    .article-url { font-size: 14px; word-break: break-all; margin-bottom: 12px; }
+    .article-url a { color: var(--primary-color); text-decoration: none; }
+    .article-meta { 
+      font-size: 18px; 
+      line-height: 1.7; 
+      color: #333; 
+      padding: 12px;
+      background-color: var(--bg-color); 
+      border-radius: 4px;
+      position: relative;
+      transition: max-height 0.3s ease;
+    }
+    .article-meta.is-truncated {
+      max-height: 100px;
+      overflow: hidden;
+    }
+    .article-meta.is-truncated::after {
+      content: "";
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 40px;
+      background: linear-gradient(transparent, var(--bg-color));
+      pointer-events: none;
+    }
+    .btn-toggle-summary {
+      background: none; border: none; color: var(--primary-color);
+      font-size: 14px; font-weight: bold; cursor: pointer;
+      padding: 4px 0; margin-top: 4px; display: inline-flex; align-items: center; gap: 4px;
+      width: auto;
+    }
+    
+    .status-text { margin-bottom: 16px; font-weight: 500; }
+    .error-text { color: var(--error-color); margin-top: 12px; font-size: 14px; }
+    .success-text { color: var(--success-color); font-weight: 500; margin-top: 12px; }
+    
+    .spinner { display: inline-block; width: 20px; height: 20px; border: 3px solid rgba(26,115,232,0.3); border-radius: 50%; border-top-color: var(--primary-color); animation: spin 1s ease-in-out infinite; vertical-align: middle; margin-right: 8px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-area { display: none; margin-top: 16px; color: var(--text-sub); }
+    .doc-link { display: inline-block; margin-top: 12px; text-decoration: none; }
+
+    .summary-text-box { background-color: #f1f3f4; border: 1px solid var(--border-color); border-radius: 4px; padding: 16px; margin-top: 16px; white-space: pre-wrap; font-size: 14px; max-height: 300px; overflow-y: auto; }
+    .voice-control-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 12px; padding: 12px; background-color: var(--card-bg); border: 1px solid var(--border-color); border-radius: 4px; }
+    .voice-control-bar select, .voice-control-bar button { padding: 8px 12px; font-size: 14px; }
+
+    /* スマホ向けレスポンシブデザイン（読みやすさ特化） */
+    @media (max-width: 600px) {
+      body { font-size: 18px; line-height: 1.6; width: 100%; }
+      header { padding: 12px 16px; width: 100%; }
+      h1 { font-size: 20px; }
+      h2 { font-size: 19px; padding-bottom: 6px; margin-bottom: 12px; }
+      main { margin: 0; padding: 12px; width: 100% !important; max-width: none !important; }
+      .panel { padding: 16px; margin-bottom: 16px; border-radius: 8px; width: 100%; }
+      
+      /* 設定パネルを少しコンパクトに */
+      .control-group { margin-bottom: 16px; }
+      .control-desc { font-size: 14px; }
+      
+      /* ボタンをさらに大きく押しやすく */
+      button { width: 100%; padding: 18px; font-size: 18px; font-weight: bold; margin-bottom: 12px; border-radius: 10px; }
+      .voice-control-bar { flex-direction: column; align-items: stretch; gap: 10px; }
+      .voice-control-bar select, .voice-control-bar button { width: 100%; height: 60px; font-size: 18px; }
+      
+      /* チェックボックスのタップ領域を極大化 */
+      #checkbox-group label, #voice-checkbox-group label { padding: 18px 0; border-bottom: 1px solid #f1f3f4; font-size: 18px; }
+      
+      /* 記事カード：ニュースアプリ風の大きな見出しと余白 */
+      .article-card { padding: 20px; gap: 16px; margin-bottom: 20px; box-shadow: 0 3px 12px rgba(0,0,0,0.08); border-color: #eee; }
+      .article-checkbox { width: 36px; height: 36px; }
+      .article-title { font-size: 22px; line-height: 1.4; color: #000; }
+      .article-url { font-size: 14px; color: var(--primary-color); margin-bottom: 10px; }
+      .article-meta { 
+        font-size: 22px; 
+        line-height: 1.6; 
+        padding: 10px 0;
+        background-color: transparent;
+      }
+      .article-meta.is-truncated {
+        max-height: 100px;
+      }
+      .article-meta.is-truncated::after {
+        background: linear-gradient(transparent, #fff); /* スマホの背景白に合わせる */
+      }
+      .btn-read-more { display: block; width: 100%; padding: 18px; font-size: 18px; background-color: #f1f3f4; color: #1a73e8; border: 1px solid #d1d4d9; }
+      .btn-processed { display: block; width: 100%; padding: 18px; font-size: 18px; background-color: #e6ffed; color: #1e8e3e; border: 1px solid #c6e6cd; margin-top: 10px; }
+      
+      /* リーダーモードもスマホではさらに大きく */
+      .reader-body { font-size: 22px; line-height: 1.8; }
+      .reader-title { font-size: 28px; }
+    }
+
+    .btn-processed { 
+      background-color: #e6ffed; color: #1e8e3e; border: 1px solid #c6e6cd; 
+      margin-top: 8px; font-weight: bold; width: auto; 
+    }
+    .btn-processed:hover { background-color: #d0f5d7; }
+
+    /* リーダーモード（別画面表示）のスタイル */
+    #reader-modal {
+      display: none;
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background-color: #fff;
+      z-index: 9999;
+      overflow-y: auto;
+      padding-bottom: 40px;
+    }
+    .reader-header {
+      position: sticky; top: 0;
+      background-color: #fff;
+      border-bottom: 1px solid var(--border-color);
+      padding: 12px 16px;
+      display: flex; align-items: center;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .btn-back {
+      background: none; border: none; color: var(--primary-color);
+      font-size: 16px; font-weight: bold; cursor: pointer;
+      padding: 8px 16px 8px 0; margin: 0; width: auto;
+    }
+    .reader-content {
+      padding: 24px 20px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .reader-title {
+      font-size: 26px; font-weight: bold; line-height: 1.4; margin-bottom: 16px; color: #000;
+    }
+    .reader-meta {
+      font-size: 15px; color: var(--text-sub); margin-bottom: 24px; border-bottom: 1px solid #eee; padding-bottom: 16px;
+    }
+    .reader-body {
+      font-size: 20px; line-height: 1.8; color: #111; white-space: pre-wrap;
+    }
+    .btn-read-more {
+      width: 100%; background-color: #e8f0fe; color: var(--primary-color);
+      border: none; border-radius: 4px; padding: 12px; margin-top: 8px;
+      font-weight: bold; font-size: 15px; cursor: pointer;
+    }
+
+    /* リーダーモード用ツールバー */
+    .reader-toolbar {
+      display: flex; align-items: center; gap: 16px;
+      padding: 8px 16px; background-color: #f8f9fa;
+      border-bottom: 1px solid #dadce0;
+      position: sticky; top: 49px; z-index: 99;
+    }
+    .reader-toolbar label { font-size: 13px; font-weight: 500; color: #5f6368; }
+    .reader-toolbar input[type="range"] { width: 120px; }
+    .reader-toolbar .btn-save { 
+      margin-left: auto; background-color: #1e8e3e; color: white; border: none;
+      padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer;
+    }
+    .reader-toolbar .btn-save:disabled { background-color: #dadce0; cursor: not-allowed; }
+    
+    .reader-body {
+      font-size: 20px; line-height: 1.8; color: #111; white-space: pre-wrap;
+      padding: 10px; border: 1px solid transparent; border-radius: 4px;
+      min-height: 300px; outline: none;
+    }
+    .reader-body:focus { border-color: #1a73e8; background-color: #fff; }
+    
+    .loading-spinner-inline {
+      display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(26,115,232,0.3);
+      border-radius: 50%; border-top-color: #1a73e8; animation: spin 1s linear infinite;
+      margin-right: 8px;
+    }
+
+    /* 履歴表示用 */
+    .history-container { margin-top: 16px; border-top: 1px solid #eee; padding-top: 12px; }
+    .history-list { max-height: 200px; overflow-y: auto; margin-top: 8px; border: 1px solid #f1f1f1; border-radius: 4px; }
+    .history-item { 
+      padding: 8px; border-bottom: 1px solid #f1f1f1; cursor: pointer; font-size: 13px;
+      display: flex; flex-direction: column; gap: 2px;
+    }
+    .history-item:last-child { border-bottom: none; }
+    .history-item:hover { background-color: #f9f9f9; }
+    .history-date { color: #5f6368; font-size: 11px; }
+    .history-title { font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--primary-color); }
+  </style>
+</head>
+<body>
+
+  <!-- リーダーモード用モーダル -->
+  <div id="reader-modal">
+    <div class="reader-header">
+      <button class="btn-back" onclick="closeReader()">← 戻る</button>
+      <div id="reader-loading-status" style="margin-left: auto; font-size: 14px; color: #5f6368; display: none;">
+        <div class="loading-spinner-inline"></div> 全文を取得中...
+      </div>
+    </div>
+    <div class="reader-toolbar">
+      <label>文字サイズ: <span id="reader-fs-val">20</span>px</label>
+      <input type="range" id="reader-fs-slider" min="14" max="40" value="20" oninput="updateReaderFontSize(this.value)">
+      <button id="btn-save-reader" class="btn-save" onclick="saveReaderContent()">💾 変更を保存</button>
+    </div>
+    <div class="reader-content">
+      <div id="reader-title" class="reader-title"></div>
+      <div id="reader-meta" class="reader-meta"></div>
+      <div id="reader-body" class="reader-body" contenteditable="true" oninput="onReaderInput()"></div>
+    </div>
+  </div>
+
+  <header style="display: flex; justify-content: space-between; align-items: center;">
+    <h1>📚 ナレッジレポート プレビュー</h1>
+    <button onclick="toggleSettings()" style="width: auto; margin: 0; background: none; border: 1px solid var(--border-color); font-size: 20px; padding: 4px 12px; border-radius: 4px;">⚙️</button>
+  </header>
+
+  <main>
+    <section class="panel">
+      <h2>⚙️ 共通: 生成設定</h2>
+      <div class="control-group">
+        <div class="control-label"><span>Max Tokens</span><span id="tokens-val">1000</span></div>
+        <input type="range" id="max-tokens" min="100" max="8000" step="100" value="1000">
+        <div class="control-desc">出力の長さ（推奨: 800〜2000。大きくすると詳細になりますがトークンを消費します）</div>
+      </div>
+      <div class="control-group">
+        <div class="control-label"><span>Temperature</span><span id="temp-val">0.2</span></div>
+        <input type="range" id="temperature" min="0" max="1.4" step="0.1" value="0.2">
+        <div class="control-desc">0=安定・節約 / 1=創造的・多様</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>📂 共通: 対象データ</h2>
+      
+      <div style="margin-bottom: 16px; padding: 12px; background-color: #f1f3f4; border: 1px solid var(--border-color); border-radius: 8px;">
+        <div style="font-weight: bold; margin-bottom: 10px; font-size: 14px; color: #3c4043;">取り込みオプション</div>
+        <label style="display: flex; align-items: center; margin-bottom: 12px; cursor: pointer; font-size: 15px;">
+          <input type="checkbox" id="sync-raindrop" style="width: 20px; height: 20px; margin-right: 10px;"> 
+          Raindrop (Web記事) を同期
+        </label>
+        <label style="display: flex; align-items: center; cursor: pointer; font-size: 15px;">
+          <input type="checkbox" id="sync-drive" style="width: 20px; height: 20px; margin-right: 10px;"> 
+          Googleドライブ (画像/PDF解析) を実行
+          <span style="color: #d93025; font-size: 12px; margin-left: 8px;">※解析に数分かかります</span>
+        </label>
+      </div>
+
+      <button id="btn-load" class="primary" style="width: 100%; padding: 14px;">未処理記事を同期・読み込む</button>
+      <div id="articles-status" class="status-text" style="margin-top: 16px;"></div>
+      <div id="articles-container"></div>
+    </section>
+
+    <section class="panel">
+      <h2>📄 ドキュメント出力（環境営業戦略モード）</h2>
+      <div id="checkbox-group" style="margin-bottom: 20px;">
+        <!-- 項目リストに基づき動的に生成されます -->
+      </div>
+      <div class="control-group" style="margin-bottom: 20px;">
+        <div class="control-label"><span>スポット指示（チェックボックスを無視して上書き）</span></div>
+        <textarea id="custom-prompt" rows="3" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; box-sizing: border-box;" placeholder="※通常は空白でOKです。"></textarea>
+      </div>
+      <button id="btn-generate" class="primary" disabled>レポートを生成してGoogleドキュメントに出力</button>
+      <div id="doc-loading-area" class="loading-area"><div class="spinner"></div> レポートを生成しています...</div>
+      <div id="doc-result-area"></div>
+    </section>
+
+    <section class="panel">
+      <h2>🎧 音声要約と読み上げ</h2>
+      <div id="voice-checkbox-group" style="margin-bottom: 20px;">
+        <!-- 項目リストに基づき動的に生成されます -->
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+        <button id="btn-generate-voice" class="primary" disabled style="flex: 1; margin: 0;">画面上に音声要約を生成</button>
+        <label style="display: flex; align-items: center; cursor: pointer; font-size: 14px; white-space: nowrap; user-select: none;">
+          <input type="checkbox" id="voice-english-mode" style="width: 18px; height: 18px; margin-right: 6px;"> 英語で出力
+        </label>
+      </div>
+      <div id="voice-loading-area" class="loading-area"><div class="spinner"></div> 要約テキストを生成しています...</div>
+      <div id="summary-result-text" class="summary-text-box" style="display: none;"></div>
+      
+      <div id="voice-panel" class="voice-control-bar" style="display: none;">
+        <select id="voice-select" style="max-width: 250px; border: 1px solid var(--border-color); border-radius: 4px;"></select>
+        <button onclick="startVoice()">▶ 再生</button>
+        <button onclick="pauseVoice()">⏸ 一時停止</button>
+        <button onclick="stopVoice()">⏹ 停止</button>
+        <div style="display: flex; align-items: center; gap: 8px; margin-left: auto;">
+          <span style="font-size: 14px; font-weight: 500;">速度</span>
+          <input type="range" id="voice-speed" min="0.5" max="2.0" step="0.1" value="1.2" oninput="updateSpeed(this.value)" style="width: 100px;">
+          <span id="speed-val" style="font-size: 14px; font-weight: 500; min-width: 32px;">1.2x</span>
+        </div>
+      </div>
+
+      <!-- 英語学習セクション -->
+      <div style="display: flex; align-items: center; gap: 12px; margin-top: 16px; padding: 16px; background-color: #f1f3f4; border-radius: 8px; border: 1px solid var(--border-color);">
+        <div style="flex: 1;">
+          <div style="font-size: 11px; color: var(--text-sub); margin-bottom: 4px;">学習レベル (CEFR)</div>
+          <select id="english-level" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; font-size: 14px;">
+            <option value="A2 レベル（初級）">A2 (初級)</option>
+            <option value="B1 レベル（中級）" selected>B1 (中級)</option>
+            <option value="B2 レベル（準上級）">B2 (準上級)</option>
+          </select>
+        </div>
+        <button id="btn-generate-english" class="btn-link primary" style="flex: 2; margin: 0; padding: 12px;">📖 英語学習テキスト生成</button>
+      </div>
+      <div id="english-loading-area" class="loading-area" style="text-align: center; margin-top: 8px;"><div class="spinner"></div> 英語教材を作成しています...</div>
+
+      <div id="voice-history" class="history-container">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <h3 style="font-size: 14px; margin: 0; color: #5f6368;">📜 過去の要約履歴 (Spreadsheet保存分)</h3>
+          <button onclick="loadSummaryHistory()" style="width: auto; padding: 4px 8px; font-size: 11px; margin: 0;">読み込み</button>
+        </div>
+        <div id="history-list" class="history-list">
+          <div style="color: #999; text-align: center; padding: 10px; font-size: 12px;">「読み込み」を押すと履歴を表示します</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- システム設定パネル（初期は非表示） -->
+    <section id="settings-panel" class="panel" style="display: none; border-color: var(--primary-color); border-width: 2px;">
+      <h2 style="color: var(--primary-color);">🛠️ システム設定（管理者用）</h2>
+      <div class="control-group">
+        <div class="control-label"><span>Gemini モデル</span></div>
+        <select id="settings-model" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px;">
+          <option value="gemini-flash-lite-latest">gemini-flash-lite-latest (高速・安価)</option>
+          <option value="gemini-1.5-flash">Gemini 1.5 Flash (高速・安価)</option>
+          <option value="gemini-1.5-pro">Gemini 1.5 Pro (高精度・複雑な分析)</option>
+          <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash Exp (最新・実験的)</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <div class="control-label"><span>AI ペルソナ設定 (共通)</span></div>
+        <textarea id="settings-persona" rows="2" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px;"></textarea>
+      </div>
+      <div class="control-group">
+        <div class="control-label"><span>記事の同期・解析プロンプト</span></div>
+        <textarea id="settings-sync-prompt" rows="4" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px;"></textarea>
+      </div>
+      <div class="control-group">
+        <div class="control-label"><span>週次レポート生成プロンプト</span></div>
+        <textarea id="settings-report-prompt" rows="3" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px;"></textarea>
+      </div>
+      <div class="control-group">
+        <div class="control-label"><span>音声要約用プロンプト</span></div>
+        <textarea id="settings-voice-prompt" rows="3" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px;"></textarea>
+      </div>
+      <div class="control-group">
+        <div class="control-label"><span>週次レポート 項目リスト (1行に1項目)</span></div>
+        <textarea id="settings-report-items" rows="4" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; font-size: 13px;"></textarea>
+      </div>
+      <div class="control-group">
+        <div class="control-label"><span>音声要約 項目リスト (1行に1項目)</span></div>
+        <textarea id="settings-voice-items" rows="3" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; font-size: 13px;"></textarea>
+      </div>
+      <div class="control-group">
+        <div class="control-label"><span>英語学習用プロンプト</span></div>
+        <textarea id="settings-english-prompt" rows="5" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; font-size: 13px;"></textarea>
+      </div>
+      <div style="display: flex; gap: 12px;">
+        <button id="btn-save-settings" class="primary" onclick="saveSettings()" style="flex: 1;">設定を保存する</button>
+        <button onclick="toggleSettings()" style="flex: 1;">閉じる</button>
+      </div>
+      <div id="settings-status" class="status-text" style="margin-top: 12px; text-align: center;"></div>
+    </section>
+  </main>
+
+  <script>
+    // --- グローバル変数 ---
+    window.currentArticles = [];
+    window.originalArticles = [];
+    window.currentArticlesSortOrder = 'default';
+    window.currentFilterDate = '';
+    let currentUtterance = null;
+    let availableVoices = [];
+
+    // --- 初期化（安全なDOMロード後処理） ---
+    document.addEventListener('DOMContentLoaded', () => {
+      // 1. 各スライダー要素を取得
+      const tokensSlider = document.getElementById('max-tokens');
+      const tempSlider = document.getElementById('temperature');
+      const speedSlider = document.getElementById('voice-speed');
+
+      // 2. ブラウザのキャッシュを無視して、初期値とテキストを強制的に同期
+      if (tokensSlider) {
+        tokensSlider.value = "1000";
+        document.getElementById('tokens-val').textContent = "1000";
+      }
+      if (tempSlider) {
+        tempSlider.value = "0.2";
+        document.getElementById('temp-val').textContent = "0.2";
+      }
+      if (speedSlider) {
+        speedSlider.value = "1.2";
+        document.getElementById('speed-val').textContent = "1.2x";
+      }
+
+      // 3. UIイベントの紐付け（動かした時の連動）
+      tokensSlider.addEventListener('input', (e) => document.getElementById('tokens-val').textContent = e.target.value);
+      tempSlider.addEventListener('input', (e) => document.getElementById('temp-val').textContent = parseFloat(e.target.value).toFixed(1));
+      
+      // ボタンアクションの紐付け
+      document.getElementById('btn-load').addEventListener('click', loadArticles);
+      document.getElementById('btn-generate').addEventListener('click', generateReport);
+      document.getElementById('btn-generate-voice').addEventListener('click', generateVoiceSummary);
+      document.getElementById('btn-generate-english').addEventListener('click', generateEnglishLearningText);
+
+      // 音声エンジンの初期化（Chrome対応の非同期監視）
+      populateVoiceList();
+      if (window.speechSynthesis && window.speechSynthesis.onvoiceschanged !== undefined) {
+        window.speechSynthesis.onvoiceschanged = populateVoiceList;
+      }
+
+      // システム設定の読み込み
+      loadSettings();
+    });
+
+    // --- システム設定の制御 ---
+    function toggleSettings() {
+      const panel = document.getElementById('settings-panel');
+      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+      if (panel.style.display === 'block') panel.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function loadSettings() {
+      google.script.run.withSuccessHandler((json) => {
+        const settings = JSON.parse(json);
+        document.getElementById('settings-model').value = settings.GEMINI_MODEL;
+        document.getElementById('settings-persona').value = settings.SYSTEM_PERSONA;
+        document.getElementById('settings-sync-prompt').value = settings.SYNC_PROMPT;
+        document.getElementById('settings-report-prompt').value = settings.REPORT_PROMPT;
+        document.getElementById('settings-voice-prompt').value = settings.VOICE_PROMPT;
+        document.getElementById('settings-report-items').value = settings.REPORT_ITEMS;
+        document.getElementById('settings-voice-items').value = settings.VOICE_ITEMS;
+        document.getElementById('settings-english-prompt').value = settings.ENGLISH_PROMPT;
+        
+        // メイン画面のチェックボックスを生成
+        renderCheckboxes(settings.REPORT_ITEMS, 'checkbox-group');
+        renderCheckboxes(settings.VOICE_ITEMS, 'voice-checkbox-group');
+      }).getSystemSettings();
+    }
+
+    function renderCheckboxes(itemsText, containerId) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      container.innerHTML = '';
+      if (!itemsText) return;
+      const items = itemsText.split('\n').map(i => i.trim()).filter(i => i !== '');
+      items.forEach((item, index) => {
+        const label = document.createElement('label');
+        label.style.cssText = 'display: flex; align-items: center; margin-bottom: 8px; cursor: pointer;';
+        label.innerHTML = `<input type="checkbox" value="${item}" checked style="margin-right: 8px;"> ${index + 1}. ${item}`;
+        container.appendChild(label);
+      });
+    }
+
+    function saveSettings() {
+      const btn = document.getElementById('btn-save-settings');
+      const status = document.getElementById('settings-status');
+      const settings = {
+        GEMINI_MODEL: document.getElementById('settings-model').value,
+        SYSTEM_PERSONA: document.getElementById('settings-persona').value,
+        SYNC_PROMPT: document.getElementById('settings-sync-prompt').value,
+        REPORT_PROMPT: document.getElementById('settings-report-prompt').value,
+        VOICE_PROMPT: document.getElementById('settings-voice-prompt').value,
+        REPORT_ITEMS: document.getElementById('settings-report-items').value,
+        VOICE_ITEMS: document.getElementById('settings-voice-items').value,
+        ENGLISH_PROMPT: document.getElementById('settings-english-prompt').value
+      };
+
+      btn.disabled = true;
+      btn.textContent = '⌛ 保存中...';
+      status.textContent = '';
+
+      google.script.run.withSuccessHandler((res) => {
+        btn.disabled = false;
+        btn.textContent = '設定を保存する';
+        if (res.success) {
+          status.className = 'success-text';
+          status.textContent = '✅ 設定を保存しました。画面を再読み込みして反映してください。';
+          setTimeout(() => location.reload(), 1500);
+        } else {
+          status.className = 'error-text';
+          status.textContent = '❌ 保存に失敗しました: ' + res.error;
+        }
+      }).saveSystemSettings(JSON.stringify(settings));
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+    }
+
+    // --- 1. 記事同期と描画 ---
+    function loadArticles() {
+      const statusDiv = document.getElementById('articles-status');
+      const containerDiv = document.getElementById('articles-container');
+      const generateBtn = document.getElementById('btn-generate');
+      const generateVoiceBtn = document.getElementById('btn-generate-voice');
+
+      // チェックボックスの状態を取得
+      const options = {
+        raindrop: document.getElementById('sync-raindrop').checked,
+        drive: document.getElementById('sync-drive').checked
+      };
+
+      statusDiv.innerHTML = '<div class="spinner"></div> [ステップ1/2] 外部データを同期中（最大3.5分）...';
+      containerDiv.innerHTML = '';
+      generateBtn.disabled = true;
+      generateVoiceBtn.disabled = true;
+
+      google.script.run
+        .withSuccessHandler((syncResult) => {
+          // 同期が終わったら次のステップへ
+          statusDiv.innerHTML = '<div class="spinner"></div> [ステップ2/2] スプレッドシートを読み込んでいます...';
+
+          google.script.run
+            .withSuccessHandler((responseString) => {
+              try {
+                const articles = JSON.parse(responseString);
+                window.currentArticles = articles;
+                
+                let statusText = articles.length > 0 ? `${articles.length}件の未処理記事があります。` : '未処理記事はありません。';
+                
+                // ▼ タイムアウト検知時に、原因となった可能性のあるURLを名指しで警告する
+                // ▼ タイムアウトまたは取得エラー検知時
+                if (syncResult && syncResult.isTimeOut) {
+                  statusText += '<br><span style="color:#d93025; font-weight:bold; display:block; margin-top:8px; padding:12px; background:#fce8e6; border-left:4px solid #d93025; border-radius:4px;">';
+                  statusText += '⚠️ 進行を妨げる記事があったため、安全に処理を一時中断しました。<br>';
+                  if (syncResult.problematicItem) {
+                    statusText += `<br>👉 <b>次の記事が原因でストップしました：</b><br><a href="${syncResult.problematicItem.url}" target="_blank" rel="noopener noreferrer" style="color:#1a73e8;">${syncResult.problematicItem.title}</a><br>`;
+                    // 追加：原因の表示
+                    if (syncResult.problematicItem.reason) {
+                       statusText += `<span style="font-size:13px; color:#5f6368;">理由: ${syncResult.problematicItem.reason}</span><br>`;
+                    }
+                    statusText += '<br><span style="font-size:12px; color:#5f6368;">※この記事は「取得失敗」として記録され、次回から自動スキップされます。そのまま「もう一度ボタン」を押して続きを取得してください。</span>';
+                  }
+                  statusText += '</span>';
+                }
+                statusDiv.innerHTML = statusText;
+
+                if (articles.length > 0) {
+                  generateBtn.disabled = false;
+                  generateVoiceBtn.disabled = false;
+                  window.originalArticles = [...articles];
+                  window.currentArticlesSortOrder = 'default';
+                  window.currentFilterDate = '';
+                  refreshArticlesList();
+                }
+              } catch (parseError) {
+                // スプレッドシートのデータ構造がおかしい場合のエラー
+                statusDiv.innerHTML = `<span class="error-text">❌ データ解析エラー: ${parseError.message}</span>`;
+              }
+            })
+            // ▼ スプレッドシート読み込み時のエラーを捕獲
+            .withFailureHandler((error) => {
+              statusDiv.innerHTML = `<span class="error-text">❌ スプレッドシート読込失敗: ${error.message}</span>`;
+            })
+            .getUnprocessedArticles();
+        })
+        // ▼ 変更：undefinedを回避し、エラー内容を確実に出力する
+        .withFailureHandler((error) => {
+          const errMsg = error.message || error || "詳細不明のシステムエラー";
+          statusDiv.innerHTML = `<span class="error-text" style="display:block; padding:12px; background:#fce8e6; border-left:4px solid #d93025; border-radius:4px;"><b>❌ 同期システムが強制終了しました:</b><br>${errMsg}</span>`;
+        })
+        .syncAllExternalSources(options); 
+    }
+
+    function refreshArticlesList() {
+      if (!window.originalArticles) return;
+      
+      let filtered = [...window.originalArticles];
+      
+      // 日付フィルター
+      if (window.currentFilterDate) {
+        filtered = filtered.filter(a => {
+          const rawDate = a.pub_date || a.saved_at;
+          if (!rawDate) return false;
+          
+          // "2026/05/11" や "2026-05-11" のような形式を正規表現で安全に比較
+          const match = String(rawDate).match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+          if (match) {
+            const year = match[1];
+            const month = match[2].padStart(2, '0');
+            const day = match[3].padStart(2, '0');
+            return `${year}-${month}-${day}` === window.currentFilterDate;
+          }
+          
+          // フォールバック処理
+          const d = new Date(rawDate);
+          if (isNaN(d.getTime())) return false;
+          
+          const year = d.getFullYear();
+          const month = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          const dateStr = `${year}-${month}-${day}`;
+          
+          return dateStr === window.currentFilterDate;
+        });
+      }
+      
+      // ソート
+      const sortVal = window.currentArticlesSortOrder || 'default';
+      if (sortVal === 'date-desc') {
+        filtered.sort((a, b) => new Date(b.pub_date || b.saved_at).getTime() - new Date(a.pub_date || a.saved_at).getTime());
+      } else if (sortVal === 'date-asc') {
+        filtered.sort((a, b) => new Date(a.pub_date || a.saved_at).getTime() - new Date(b.pub_date || b.saved_at).getTime());
+      }
+      
+      window.currentArticles = filtered;
+      const containerDiv = document.getElementById('articles-container');
+      renderArticles(window.currentArticles, containerDiv);
+    }
+
+    function renderArticles(articles, container) {
+      container.innerHTML = ''; // 初期化
+
+      const controlArea = document.createElement('div');
+      // ボタンを横並びにするため flexbox を適用
+      controlArea.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding: 12px; background-color: var(--bg-color); border-radius: 4px;';
+      
+      let currentSort = window.currentArticlesSortOrder || 'default';
+
+      controlArea.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <label style="cursor:pointer; font-weight:500; font-size:14px;">
+            <input type="checkbox" id="select-all-articles" checked style="margin-right:8px;"> 全選択 / 解除
+          </label>
+          <select id="sort-articles-select" style="padding: 4px; font-size: 13px; border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer;">
+            <option value="default" ${currentSort === 'default' ? 'selected' : ''}>標準順</option>
+            <option value="date-desc" ${currentSort === 'date-desc' ? 'selected' : ''}>日付: 新しい順</option>
+            <option value="date-asc" ${currentSort === 'date-asc' ? 'selected' : ''}>日付: 古い順</option>
+          </select>
+          <input type="date" id="filter-date-input" style="padding: 3px; font-size: 13px; border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer;" value="${window.currentFilterDate || ''}">
+          ${window.currentFilterDate ? `<button id="btn-clear-filter" style="padding: 4px 8px; font-size: 12px; margin: 0; cursor: pointer;">絞り込み解除</button>` : ''}
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px; white-space: nowrap; user-select: none; margin-right: 4px; color: var(--text-sub);">
+            <input type="checkbox" id="read-critical-analysis" style="width: 16px; height: 16px; margin-right: 4px;"> 重要課題分析も読む
+          </label>
+          <button id="btn-read-aloud" style="width: auto; padding: 6px 12px; font-size: 13px; margin: 0; background-color: #f8f9fa; color: #1a73e8; border-color: #1a73e8;">🔊 記事を読み上げ</button>
+          <button id="btn-toggle-expand-all" style="width: auto; padding: 6px 12px; font-size: 13px; margin: 0;">全て展開</button>
+        </div>
+      `;
+      container.appendChild(controlArea);
+
+      // 全選択 / 解除のイベント
+      controlArea.querySelector('#select-all-articles').addEventListener('change', (e) => {
+        container.querySelectorAll('.article-checkbox').forEach(cb => cb.checked = e.target.checked);
+      });
+
+      // ソート機能のイベント
+      controlArea.querySelector('#sort-articles-select').addEventListener('change', (e) => {
+        window.currentArticlesSortOrder = e.target.value;
+        refreshArticlesList();
+      });
+
+      // フィルター機能のイベント
+      const filterInput = controlArea.querySelector('#filter-date-input');
+      if (filterInput) {
+        filterInput.addEventListener('change', (e) => {
+          window.currentFilterDate = e.target.value;
+          refreshArticlesList();
+        });
+      }
+
+      const clearFilterBtn = controlArea.querySelector('#btn-clear-filter');
+      if (clearFilterBtn) {
+        clearFilterBtn.addEventListener('click', () => {
+          window.currentFilterDate = '';
+          refreshArticlesList();
+        });
+      }
+
+      // 全て展開 / 折りたたみの制御ロジック
+      let isAllExpanded = false;
+      controlArea.querySelector('#btn-toggle-expand-all').addEventListener('click', (e) => {
+        isAllExpanded = !isAllExpanded;
+        const toggleBtns = container.querySelectorAll('.btn-toggle-summary');
+        
+        toggleBtns.forEach(btn => {
+          const metaDiv = btn.previousElementSibling; // .article-meta 要素を取得
+          if (isAllExpanded) {
+            metaDiv.classList.remove('is-truncated'); // 展開
+            btn.innerHTML = '▲ 閉じる';
+          } else {
+            metaDiv.classList.add('is-truncated');    // 折りたたみ
+            btn.innerHTML = '▼ 続きを読む';
+          }
+        });
+        // ボタンのテキストを切り替え
+        e.target.textContent = isAllExpanded ? '全て折りたたむ' : '全て展開';
+      });
+
+      // 記事読み上げボタンのイベント
+      controlArea.querySelector('#btn-read-aloud').addEventListener('click', readAloudCheckedArticles);
+
+      articles.forEach((article, index) => {
+        const savedDateStr = article.saved_at ? String(article.saved_at) : '不明';
+        const displayDate = article.pub_date ? String(article.pub_date) : savedDateStr;
+        const highlights = article.highlights || 'なし';
+        
+        // J列（メタ情報）が存在する場合、表示用のHTMLを生成
+        const metaInfoHtml = article.metaInfo 
+          ? `<div style="font-size: 13.5px; color: #5f6368; margin-bottom: 8px; font-weight: 500;">📊 ${escapeHtml(article.metaInfo)}</div>` 
+          : '';
+
+        const card = document.createElement('div');
+        card.className = 'article-card';
+        card.innerHTML = `
+          <div style="display: flex; align-items: flex-start; gap: 8px; width: 100%; margin-bottom: 4px;">
+            <input type="checkbox" class="article-checkbox" value="${index}" checked style="cursor: pointer; width: 20px; height: 20px; flex-shrink: 0; margin-top: 2px;">
+            <div style="flex: 1; min-width: 0;">
+              <div class="article-title" style="margin-bottom: 0;">${escapeHtml(article.title)}</div>
+              ${metaInfoHtml} <div class="article-url"><a href="${escapeHtml(article.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(article.url)}</a></div>
+              
+              <div class="article-meta is-truncated">日付: ${escapeHtml(displayDate)}<br>内容: ${escapeHtml(highlights)}</div>
+              <button class="btn-toggle-summary" onclick="toggleTruncation(this)">▼ 続きを読む</button>
+              
+              <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
+                <button class="btn-read-more" onclick="openReader(${index}, '${escapeHtml(displayDate)}')">📖 ニュース記事のように全文を読む</button>
+                <button class="btn-processed" onclick="markProcessed('${article.id}', this)">✔️ 処理済みにする（一覧から消去）</button>
+              </div>
+            </div>
+          </div>`;
+        container.appendChild(card);
+      });
+    }
+
+    // --- 新規追加：リーダーモード制御 ---
+    let currentReaderArticleId = null;
+
+    function openReader(index, dateStr) {
+      const article = window.currentArticles[index];
+      if (!article) return;
+      
+      currentReaderArticleId = article.id;
+      document.getElementById('reader-title').textContent = article.title;
+      document.getElementById('reader-meta').innerHTML = `保存日: ${dateStr} <br><a href="${escapeHtml(article.url)}" target="_blank" rel="noopener noreferrer" style="color:#1a73e8; text-decoration:none;">URLを開く</a>`;
+      
+      // 最初は既存の要約を表示
+      const readerBody = document.getElementById('reader-body');
+      readerBody.textContent = article.highlights || '内容なし';
+      
+      // フォントサイズを初期化
+      const fs = localStorage.getItem('reader_font_size') || "20";
+      updateReaderFontSize(fs);
+      document.getElementById('reader-fs-slider').value = fs;
+      
+      document.getElementById('btn-save-reader').disabled = true;
+      
+      const modal = document.getElementById('reader-modal');
+      modal.style.display = 'block';
+      window.scrollTo(0, 0);
+      modal.scrollTo(0, 0);
+      document.body.style.overflow = 'hidden';
+
+      // 全文を非同期で取得
+      const loadingStatus = document.getElementById('reader-loading-status');
+      loadingStatus.style.display = 'flex';
+      
+      google.script.run
+        .withSuccessHandler((fullText) => {
+          loadingStatus.style.display = 'none';
+          if (fullText && fullText.length > (article.highlights || "").length) {
+            readerBody.textContent = fullText;
+          }
+        })
+        .withFailureHandler(() => {
+          loadingStatus.style.display = 'none';
+        })
+        .fetchFullContent(article.id);
+    }
+
+    function closeReader() {
+      if (!document.getElementById('btn-save-reader').disabled) {
+        if (!confirm('変更が保存されていません。閉じてもよろしいですか？')) return;
+      }
+      document.getElementById('reader-modal').style.display = 'none';
+      document.body.style.overflow = '';
+      stopVoice();
+    }
+
+    function updateReaderFontSize(val) {
+      document.getElementById('reader-body').style.fontSize = val + 'px';
+      document.getElementById('reader-fs-val').textContent = val;
+      localStorage.setItem('reader_font_size', val);
+    }
+
+    function onReaderInput() {
+      document.getElementById('btn-save-reader').disabled = false;
+    }
+
+    function toggleTruncation(btn) {
+      const meta = btn.previousElementSibling;
+      const isTruncated = meta.classList.toggle('is-truncated');
+      btn.innerHTML = isTruncated ? '▼ 続きを読む' : '▲ 閉じる';
+    }
+
+    function saveReaderContent() {
+      const btn = document.getElementById('btn-save-reader');
+      const content = document.getElementById('reader-body').textContent;
+      
+      btn.disabled = true;
+      btn.textContent = '⌛ 保存中...';
+      
+      google.script.run
+        .withSuccessHandler(() => {
+          btn.textContent = '💾 変更を保存';
+          btn.disabled = true;
+          // ローカルのデータも更新
+          const art = window.currentArticles.find(a => a.id === currentReaderArticleId);
+          if (art) art.highlights = content;
+          alert('保存しました。');
+        })
+        .withFailureHandler((error) => {
+          btn.disabled = false;
+          btn.textContent = '💾 変更を保存';
+          alert('保存エラー: ' + error.message);
+        })
+        .updateArticleContent(currentReaderArticleId, content);
+    }
+
+    // --- 新規追加：処理済みフラグの個別更新 ---
+    function markProcessed(id, btn) {
+      if (!confirm('この記事を処理済みにしますか？（スプレッドシートのフラグがTrueになり、次回から読み込まれません）')) return;
+      
+      const card = btn.closest('.article-card');
+      btn.disabled = true;
+      btn.textContent = '⌛ 更新中...';
+      
+      google.script.run
+        .withSuccessHandler(() => {
+          card.style.transition = 'opacity 0.5s';
+          card.style.opacity = '0';
+          setTimeout(() => {
+            card.remove();
+            // 残り件数の表示を更新
+            const container = document.getElementById('articles-container');
+            const statusDiv = document.getElementById('articles-status');
+            const remaining = container.querySelectorAll('.article-card').length;
+            if (remaining === 0) {
+              statusDiv.textContent = '未処理記事はありません。';
+              document.getElementById('btn-generate').disabled = true;
+              document.getElementById('btn-generate-voice').disabled = true;
+            } else {
+              statusDiv.textContent = `${remaining}件の未処理記事があります。`;
+            }
+          }, 500);
+        })
+        .withFailureHandler((error) => {
+          btn.disabled = false;
+          btn.textContent = '✔️ 処理済みにする';
+          alert('エラー: ' + error.message);
+        })
+        .markAsProcessed(id);
+    }
+
+    // --- 2. ドキュメント生成 ---
+    function generateReport() {
+      const selectedIndexes = Array.from(document.querySelectorAll('.article-checkbox:checked')).map(cb => parseInt(cb.value, 10));
+      if (selectedIndexes.length === 0) return alert('記事が選択されていません。');
+      const targetArticles = selectedIndexes.map(i => window.currentArticles[i]);
+
+      const btn = document.getElementById('btn-generate');
+      const loadingArea = document.getElementById('doc-loading-area');
+      const resultArea = document.getElementById('doc-result-area');
+      
+      btn.disabled = true;
+      loadingArea.style.display = 'block';
+      resultArea.innerHTML = '';
+
+      const paramsJson = JSON.stringify({
+        articles: targetArticles, 
+        maxTokens: parseInt(document.getElementById('max-tokens').value, 10),
+        temperature: parseFloat(document.getElementById('temperature').value),
+        checkedItems: Array.from(document.querySelectorAll('#checkbox-group input[type="checkbox"]:checked')).map(cb => cb.value),
+        customPrompt: document.getElementById('custom-prompt').value
+      });
+
+      google.script.run
+        .withSuccessHandler((docUrl) => {
+          loadingArea.style.display = 'none';
+          btn.disabled = false;
+          resultArea.innerHTML = `<div class="success-text">✅ レポート生成完了（${targetArticles.length}件）</div><a href="${docUrl}" target="_top" rel="noopener noreferrer" class="btn-link primary" style="margin-top:12px;">Googleドキュメントを開く</a>`;
+        })
+        .withFailureHandler((error) => {
+          loadingArea.style.display = 'none';
+          btn.disabled = false;
+          resultArea.innerHTML = `<div class="error-text">❌ エラー：${error.message}</div>`;
+        })
+        .generateReport(paramsJson);
+    }
+
+    // --- 3. 音声用要約生成 ---
+    function generateVoiceSummary() {
+      const selectedIndexes = Array.from(document.querySelectorAll('.article-checkbox:checked')).map(cb => parseInt(cb.value, 10));
+      if (selectedIndexes.length === 0) return alert('記事が選択されていません。');
+      const targetArticles = selectedIndexes.map(i => window.currentArticles[i]);
+
+      const btn = document.getElementById('btn-generate-voice');
+      const loadingArea = document.getElementById('voice-loading-area');
+      const resultText = document.getElementById('summary-result-text');
+      const voicePanel = document.getElementById('voice-panel');
+      
+      btn.disabled = true;
+      loadingArea.style.display = 'block';
+      resultText.style.display = 'none';
+      voicePanel.style.display = 'none';
+      stopVoice(); // 再生中の音声を停止
+
+      const paramsJson = JSON.stringify({
+        articles: targetArticles,
+        maxTokens: parseInt(document.getElementById('max-tokens').value, 10),
+        temperature: parseFloat(document.getElementById('temperature').value),
+        checkedItems: Array.from(document.querySelectorAll('#voice-checkbox-group input[type="checkbox"]:checked')).map(cb => cb.value),
+        customPrompt: document.getElementById('custom-prompt').value,
+        englishMode: document.getElementById('voice-english-mode').checked
+      });
+
+      google.script.run
+        .withSuccessHandler((summaryText) => {
+          loadingArea.style.display = 'none';
+          btn.disabled = false;
+          resultText.textContent = summaryText;
+          resultText.style.display = 'block';
+          voicePanel.style.display = 'flex';
+        })
+        .withFailureHandler((error) => {
+          loadingArea.style.display = 'none';
+          btn.disabled = false;
+          resultText.innerHTML = `<span class="error-text">❌ エラー：${error.message}</span>`;
+          resultText.style.display = 'block';
+        })
+        .generateVoiceSummaryText(paramsJson);
+    }
+
+    function generateEnglishLearningText() {
+      const selectedIndexes = Array.from(document.querySelectorAll('.article-checkbox:checked')).map(cb => parseInt(cb.value, 10));
+      if (selectedIndexes.length === 0) return alert('記事が選択されていません。');
+      const targetArticles = selectedIndexes.map(i => window.currentArticles[i]);
+
+      const btn = document.getElementById('btn-generate-english');
+      const loadingArea = document.getElementById('english-loading-area');
+      const resultText = document.getElementById('summary-result-text');
+      const voicePanel = document.getElementById('voice-panel');
+      
+      btn.disabled = true;
+      loadingArea.style.display = 'block';
+      resultText.style.display = 'none';
+      voicePanel.style.display = 'none';
+      stopVoice();
+
+      const paramsJson = JSON.stringify({
+        articles: targetArticles,
+        cefrLevel: document.getElementById('english-level').value,
+        maxTokens: 1500,
+        temperature: 0.3
+      });
+
+      google.script.run
+        .withSuccessHandler((text) => {
+          loadingArea.style.display = 'none';
+          btn.disabled = false;
+          resultText.textContent = text;
+          resultText.style.display = 'block';
+          voicePanel.style.display = 'flex';
+          
+          // 自動でUS Englishを選択
+          const voiceSelect = document.getElementById('voice-select');
+          for(let i=0; i<voiceSelect.options.length; i++) {
+            if(voiceSelect.options[i].text.includes('English')) {
+              voiceSelect.selectedIndex = i;
+              break;
+            }
+          }
+        })
+        .withFailureHandler((error) => {
+          loadingArea.style.display = 'none';
+          btn.disabled = false;
+          alert("エラー: " + error.message);
+        })
+        .generateEnglishLearningText(paramsJson);
+    }
+
+    // --- 4. 音声読み上げコントロール ---
+    function populateVoiceList() {
+      availableVoices = window.speechSynthesis.getVoices();
+      const voiceSelect = document.getElementById('voice-select');
+      if (availableVoices.length === 0) return;
+      
+      const currentSelection = voiceSelect.value;
+      voiceSelect.innerHTML = ''; 
+      
+      // 日本語と英語の音声を優先的に抽出
+      const jaVoices = availableVoices.filter(v => v.lang.includes('ja'));
+      const enVoices = availableVoices.filter(v => v.lang.includes('en'));
+      
+      // 表示用のリスト作成
+      availableVoices.forEach((voice, index) => {
+        const option = document.createElement('option');
+        option.textContent = `${voice.name} (${voice.lang})`;
+        option.value = index;
+        
+        // 以前の選択を維持、またはデフォルトを選択
+        if (voice.name === 'Google 日本語' || (jaVoices.length > 0 && voice === jaVoices[0] && !enVoices.includes(voice))) {
+          option.selected = true;
+        }
+        
+        voiceSelect.appendChild(option);
+      });
+
+      // 英語学習モードなどの場合に自動切り替えしやすくするため、全音声を出すが
+      // ユーザーの利便性のために主要なものだけを表示するか検討
+    }
+
+    function startVoice() {
+      const text = document.getElementById('summary-result-text').textContent;
+      if (!text) return;
+      const synth = window.speechSynthesis;
+
+      if (synth.paused) { synth.resume(); return; }
+      
+      // 既に再生中の場合は一旦停止して最初から（または続きから）
+      if (synth.speaking) {
+        synth.cancel();
+        // 少し待ってから再開（ブラウザの挙動安定のため）
+        setTimeout(() => startVoice(), 50);
+        return;
+      }
+
+      currentUtterance = new SpeechSynthesisUtterance(text);
+      const selectedVoiceIndex = document.getElementById('voice-select').value;
+      if (selectedVoiceIndex !== "") {
+        currentUtterance.voice = availableVoices[selectedVoiceIndex];
+      }
+      
+      currentUtterance.rate = parseFloat(document.getElementById('voice-speed').value);
+      
+      // エラーハンドリング追加
+      currentUtterance.onerror = (event) => {
+        console.error('SpeechSynthesisUtterance Error:', event);
+        if (event.error === 'interrupted') return; // キャンセルによる中断は無視
+        alert('音声再生中にエラーが発生しました: ' + event.error);
+      };
+
+      synth.speak(currentUtterance);
+    }
+
+    function pauseVoice() { window.speechSynthesis.speaking && !window.speechSynthesis.paused && window.speechSynthesis.pause(); }
+    function stopVoice() {
+      window.speechSynthesis.cancel();
+      if (currentUtterance) currentUtterance = null;
+    }
+
+    // --- 履歴読み込みと呼び出し ---
+    function loadSummaryHistory() {
+      const container = document.getElementById('history-list');
+      container.innerHTML = '<div style="text-align: center; padding: 15px; font-size:12px; color:#666;">⌛ 履歴を取得中...</div>';
+      
+      google.script.run
+        .withSuccessHandler((json) => {
+          const history = JSON.parse(json);
+          if (history.length === 0) {
+            container.innerHTML = '<div style="text-align: center; padding: 15px; font-size:12px; color:#666;">履歴はありません</div>';
+            return;
+          }
+          container.innerHTML = '';
+          history.forEach((item) => {
+            const div = document.createElement('div');
+            div.className = 'history-item';
+            div.onclick = () => recallSummary(item.content);
+            
+            // タイムスタンプの整形
+            let dateDisplay = item.timestamp;
+            try {
+              const d = new Date(item.timestamp);
+              if (!isNaN(d.getTime())) {
+                dateDisplay = d.toLocaleString('ja-JP');
+              }
+            } catch(e) {}
+
+            div.innerHTML = `
+              <div class="history-date">${dateDisplay}</div>
+              <div class="history-title">${escapeHtml(item.articles)}</div>
+            `;
+            container.appendChild(div);
+          });
+        })
+        .withFailureHandler((err) => {
+          container.innerHTML = `<div class="error-text" style="padding:10px; font-size:12px;">エラー: ${err.message}</div>`;
+        })
+        .getSavedVoiceSummaries();
+    }
+
+    function recallSummary(content) {
+      const resultText = document.getElementById('summary-result-text');
+      resultText.textContent = content;
+      resultText.style.display = 'block';
+      document.getElementById('voice-panel').style.display = 'flex';
+      
+      // スムーズスクロール
+      resultText.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      
+      // フィードバック
+      const msg = document.createElement('div');
+      msg.style.cssText = 'position:fixed; bottom:80px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.7); color:white; padding:8px 16px; border-radius:20px; font-size:13px; z-index:10000;';
+      msg.textContent = '履歴を読み込みました';
+      document.body.appendChild(msg);
+      setTimeout(() => msg.remove(), 2000);
+    }
+    
+    function updateSpeed(val) { document.getElementById('speed-val').textContent = parseFloat(val).toFixed(1) + 'x'; }
+
+    // --- 5. 記事一覧の読み上げ ---
+    function readAloudCheckedArticles() {
+      const selectedIndexes = Array.from(document.querySelectorAll('.article-checkbox:checked')).map(cb => parseInt(cb.value, 10));
+      if (selectedIndexes.length === 0) return alert('記事が選択されていません。');
+      
+      const includeCritical = document.getElementById('read-critical-analysis').checked;
+      const targetArticles = selectedIndexes.map(i => window.currentArticles[i]);
+      
+      let readingText = "";
+      
+      targetArticles.forEach((art, idx) => {
+        const title = art.title;
+        let body = art.highlights || "";
+        
+        // 1. タイトル（0.3秒程度のポーズ）
+        readingText += `【記事${idx + 1}】 ${title}。、`;
+        
+        // 2. 本文のフィルタリングと整形
+        
+        // 【分野】セクションの除外
+        body = body.replace(/【分野】[\s\S]*?(?=【|$)/g, "");
+        
+        // 【重要課題分析】セクションの除外（チェックなし時）
+        if (!includeCritical) {
+          body = body.replace(/【重要課題分析】[\s\S]*?(?=【|$)/g, "");
+        }
+
+        // ウィキリンク [[用語: 意味]] の置換（用語と意味の間に0.3秒ポーズ）
+        body = body.replace(/\[\[([^:|\]]+)(?:[:|])([^\]]+)\]\]/g, "$1。、 $2。、");
+
+        // 他のヘッダーも自然に読み上げる（項目の前にポーズ）
+        body = body.replace(/【([^】]+)】/g, "。、$1。、");
+        
+        readingText += body + "\n\n";
+      });
+
+      // 要約表示エリアを更新して表示する
+      const resultText = document.getElementById('summary-result-text');
+      resultText.textContent = readingText.trim();
+      resultText.style.display = 'block';
+
+      // 音声パネルを表示
+      const voicePanel = document.getElementById('voice-panel');
+      voicePanel.style.display = 'flex';
+      
+      // 既存の再生を停止してから、共通の再生関数を呼ぶ
+      stopVoice();
+      
+      // Spreadsheetの履歴に保存（後から読み込み可能にする）
+      google.script.run.saveVoiceSummaryToSheet("記事読み上げ", targetArticles, readingText);
+
+      setTimeout(() => {
+        startVoice();
+      }, 100);
+      
+      // テキストボックスへスクロール
+      resultText.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  </script>
+</body>
+</html>

@@ -380,12 +380,9 @@ export default function App() {
       : url;
 
     try {
-      const res = await fetch(targetUrl, {
+      const res = await fetch(`/api/proxy?url=${encodeURIComponent(targetUrl)}`, {
         method: "POST",
-        referrerPolicy: "no-referrer",
-        mode: "cors",
-        redirect: "follow",
-        headers: { "Content-Type": "text/plain" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`HTTP Error ${res.status}: ${res.status === 404 ? 'API Endpoint not found. Please check your URL or Model settings.' : ''}`);
@@ -393,10 +390,6 @@ export default function App() {
     } catch (e: any) {
       if (e.message.includes("404")) throw new Error("APIエンドポイントが見つかりません(404)。GASのURL、またはAIモデルの設定を確認してください。");
       if (e.message === "Failed to fetch" || e.name === "TypeError") {
-        const isIframe = window !== window.top;
-        if (isIframe) {
-          throw new Error("⚠️ プレビュー画面ではGoogleのセキュリティ仕様によりGAS接続がブロックされます。\n画面右上の「別タブで開く」アイコン(↗️)から新しいタブで開いて実行してください。");
-        }
         throw new Error("GAS Webアプリへの接続に失敗しました。\n\n原因:\n1. GAS側の『新しいデプロイ ＞ アクセスできるユーザー』が『全員』（Anyone）になっていない\n2. URLが最新の /exec の本番用URLではない");
       }
       throw e;
@@ -412,20 +405,12 @@ export default function App() {
       fullUrl += `&sheetName=${encodeURIComponent(sheetName.trim())}`;
     }
     try {
-      const res = await fetch(fullUrl, {
-        referrerPolicy: "no-referrer",
-        mode: "cors",
-        redirect: "follow"
-      });
+      const res = await fetch(`/api/proxy?url=${encodeURIComponent(fullUrl)}`);
       if (!res.ok) throw new Error(`HTTP Error ${res.status}: ${res.status === 404 ? 'API Endpoint not found. Please check your URL or Model settings.' : ''}`);
       return await res.json();
     } catch (e: any) {
       if (e.message.includes("404")) throw new Error("APIエンドポイントが見つかりません(404)。GASのURL、またはAIモデルの設定を確認してください。");
       if (e.message === "Failed to fetch" || e.name === "TypeError") {
-        const isIframe = window !== window.top;
-        if (isIframe) {
-          throw new Error("⚠️ プレビュー画面ではGoogleのセキュリティ仕様によりGAS接続がブロックされます。\n画面右上の「別タブで開く」アイコン(↗️)から新しいタブで開いて実行してください。");
-        }
         throw new Error("GAS Webアプリへの接続に失敗しました。\n\n原因:\n1. GAS側の『新しいデプロイ ＞ アクセスできるユーザー』が『全員』（Anyone）になっていない\n2. URLが最新の /exec の本番用URLではない");
       }
       throw e;
@@ -560,6 +545,34 @@ export default function App() {
     } catch (e: any) {
       updateSyncStatus("error", "エラー");
       toast("ダウンロード失敗: " + e.message);
+      throw e;
+    }
+  };
+
+  const handleSyncExternalSources = async (options: { 
+    raindrop: boolean; 
+    drive: boolean; 
+    persona?: string; 
+    syncPrompt?: string; 
+    weeklyReportPrompt?: string; 
+  }) => {
+    const url = getApiUrl();
+    if (!url || url.includes("YOUR_") || url.includes("YOUR_GAS_URL")) {
+      throw new Error("GASのウェブアプリURLが未設定です。「設定⚙」からWebアプリURLを設定してください。");
+    }
+    updateSyncStatus("syncing", "外部データ取り込み中...");
+    try {
+      const res = await apiPost({ action: "syncExternalSources", options });
+      if (!res || !res.success) {
+        throw new Error(res?.error || "外部データの取得に失敗しました");
+      }
+
+      // Re-sync notes from spreadsheet to app
+      await syncFromServer();
+      return res;
+    } catch (e: any) {
+      updateSyncStatus("error", "エラー");
+      toast("外部取り込みエラー: " + e.message);
       throw e;
     }
   };
@@ -4406,6 +4419,7 @@ const renderMarkdownToElements = (contentStr: string) => {
         onSaveToast={toast}
         apiPost={apiPost}
         onNotesUpdateBatch={handleBatchUpgradeNotes}
+        onSyncExternalSources={handleSyncExternalSources}
       />
 
       <ConfirmModal
@@ -4427,6 +4441,7 @@ const renderMarkdownToElements = (contentStr: string) => {
         onForceUpload={forceUploadToServer}
         syncStatus={syncStatus}
         syncLabel={syncLabel}
+        onSyncExternalSources={handleSyncExternalSources}
       />
 
       {/* Batch Folder Link progress modal */}

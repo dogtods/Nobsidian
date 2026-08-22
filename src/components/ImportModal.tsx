@@ -6,8 +6,25 @@
 import React, { useState, useEffect } from "react";
 import { Note } from "../types";
 import { formatDateStr } from "../utils/graphDataParser";
-import { getStoredPrompt } from "./PromptSettingsModal";
-import { HelpCircle } from "lucide-react";
+import { getStoredPrompt, DEFAULT_PROMPTS, PROMPT_KEYS } from "./PromptSettingsModal";
+import { 
+  HelpCircle, 
+  RefreshCw, 
+  CheckCircle2, 
+  AlertCircle, 
+  FileText, 
+  Globe, 
+  CheckSquare, 
+  Sparkles, 
+  Sliders, 
+  RotateCcw, 
+  Save, 
+  ChevronDown, 
+  ChevronUp, 
+  BookOpen, 
+  Bot, 
+  FileSpreadsheet
+} from "lucide-react";
 
 interface ImportModalProps {
   isOpen: boolean;
@@ -16,15 +33,52 @@ interface ImportModalProps {
   onSaveToast: (msg: string) => void;
   apiPost: (body: any) => Promise<any>;
   onNotesUpdateBatch: (newNotes: Note[], overwrite?: boolean) => void;
+  onSyncExternalSources?: (options: { 
+    raindrop: boolean; 
+    drive: boolean; 
+    persona?: string; 
+    syncPrompt?: string; 
+    weeklyReportPrompt?: string; 
+  }) => Promise<any>;
 }
 
-export default function ImportModal({ isOpen, onClose, onCreateNoteExt, onSaveToast, apiPost, onNotesUpdateBatch }: ImportModalProps) {
+export default function ImportModal({ 
+  isOpen, 
+  onClose, 
+  onCreateNoteExt, 
+  onSaveToast, 
+  apiPost, 
+  onNotesUpdateBatch,
+  onSyncExternalSources
+}: ImportModalProps) {
+  const [activeTab, setActiveTab] = useState<"external_sync" | "file_direct">("external_sync");
+
+  // External Sync options
+  const [syncRaindrop, setSyncRaindrop] = useState(true);
+  const [syncDrive, setSyncDrive] = useState(true);
+  const [isSyncingExternal, setIsSyncingExternal] = useState(false);
+  const [externalSyncStatus, setExternalSyncStatus] = useState<string | null>(null);
+  const [externalSyncResult, setExternalSyncResult] = useState<{
+    addedCount?: number;
+    isTimeOut?: boolean;
+    problematicItem?: any;
+    message?: string;
+  } | null>(null);
+
+  // Sync Prompts configuration state (SYSTEM_PERSONA, SYNC_PROMPT, WEEKLY_REPORT_PROMPT)
+  const [showPromptSettings, setShowPromptSettings] = useState(false);
+  const [activePromptSubTab, setActivePromptSubTab] = useState<"persona" | "sync" | "weekly">("persona");
+  const [syncPersonaInput, setSyncPersonaInput] = useState(() => getStoredPrompt("SYSTEM_PERSONA"));
+  const [syncPromptInput, setSyncPromptInput] = useState(() => getStoredPrompt("SYNC_PROMPT"));
+  const [weeklyReportPromptInput, setWeeklyReportPromptInput] = useState(() => getStoredPrompt("WEEKLY_REPORT_PROMPT"));
+
+  // File / URL direct import state
   const [importUrl, setImportUrl] = useState("");
   const [importMode, setImportMode] = useState("raw");
   const [optimizeTitle, setOptimizeTitle] = useState(false);
   const [sheetUrl, setSheetUrl] = useState("https://docs.google.com/spreadsheets/d/1adkx60akE6nOZI2DUq_ne1MO2kERBzRiLc1fFxz0pnM/edit?usp=sharing");
   const [sheetName, setSheetName] = useState("シート1");
-  const [overwriteBatch, setOverwriteBatch] = useState(false); // Default to false (Integration / Merge)
+  const [overwriteBatch, setOverwriteBatch] = useState(false);
   
   // Sheet state
   const [pendingSheetItems, setPendingSheetItems] = useState<any[]>([]);
@@ -46,8 +100,84 @@ export default function ImportModal({ isOpen, onClose, onCreateNoteExt, onSaveTo
       setSelectedFile(null);
       setIsProcessing(false);
       setProcessingText("実行");
+      setExternalSyncStatus(null);
+      setExternalSyncResult(null);
+
+      // Load latest prompts from localStorage
+      setSyncPersonaInput(getStoredPrompt("SYSTEM_PERSONA"));
+      setSyncPromptInput(getStoredPrompt("SYNC_PROMPT"));
+      setWeeklyReportPromptInput(getStoredPrompt("WEEKLY_REPORT_PROMPT"));
     }
   }, [isOpen]);
+
+  // Prompt Actions (Save / Reset)
+  const handleSavePrompts = () => {
+    localStorage.setItem(PROMPT_KEYS.SYSTEM_PERSONA, syncPersonaInput);
+    localStorage.setItem(PROMPT_KEYS.SYNC_PROMPT, syncPromptInput);
+    localStorage.setItem(PROMPT_KEYS.WEEKLY_REPORT_PROMPT, weeklyReportPromptInput);
+    onSaveToast("同期プロンプト設定を保存しました ✦");
+  };
+
+  const handleResetPrompts = () => {
+    if (!window.confirm("SYNC_PROMPT、SYSTEM_PERSONA、WEEKLY_REPORT_PROMPT をデフォルト（初期設定）に戻しますか？")) return;
+
+    localStorage.removeItem(PROMPT_KEYS.SYSTEM_PERSONA);
+    localStorage.removeItem(PROMPT_KEYS.SYNC_PROMPT);
+    localStorage.removeItem(PROMPT_KEYS.WEEKLY_REPORT_PROMPT);
+
+    setSyncPersonaInput(DEFAULT_PROMPTS.SYSTEM_PERSONA);
+    setSyncPromptInput(DEFAULT_PROMPTS.SYNC_PROMPT);
+    setWeeklyReportPromptInput(DEFAULT_PROMPTS.WEEKLY_REPORT_PROMPT);
+
+    onSaveToast("プロンプトをデフォルト（初期値）に戻しました");
+  };
+
+  // Handle External Sync Execution
+  const handleExecuteExternalSync = async () => {
+    if (!syncRaindrop && !syncDrive) {
+      onSaveToast("取り込み対象（Raindrop または Googleドライブ）を少なくとも1つ選択してください");
+      return;
+    }
+
+    setIsSyncingExternal(true);
+    setExternalSyncStatus("スプレッドシートへ外部データを収集中・AI解析中...（最大3.5分）");
+    setExternalSyncResult(null);
+
+    const syncOptions = {
+      raindrop: syncRaindrop,
+      drive: syncDrive,
+      persona: syncPersonaInput || getStoredPrompt("SYSTEM_PERSONA"),
+      syncPrompt: syncPromptInput || getStoredPrompt("SYNC_PROMPT"),
+      weeklyReportPrompt: weeklyReportPromptInput || getStoredPrompt("WEEKLY_REPORT_PROMPT")
+    };
+
+    try {
+      let res;
+      if (onSyncExternalSources) {
+        res = await onSyncExternalSources(syncOptions);
+      } else {
+        res = await apiPost({ action: "syncExternalSources", options: syncOptions });
+      }
+
+      const added = res?.addedCount || 0;
+      setExternalSyncResult({
+        addedCount: added,
+        isTimeOut: res?.isTimeOut,
+        problematicItem: res?.problematicItem,
+        message: `${added} 件の新規データを取り込み、アプリへ同期しました ✦`
+      });
+
+      onSaveToast(`外部データの自動取り込み完了: ${added} 件追加`);
+    } catch (e: any) {
+      setExternalSyncResult({
+        message: `エラー: ${e.message || String(e)}`
+      });
+      onSaveToast("外部取り込みエラー: " + e.message);
+    } finally {
+      setIsSyncingExternal(false);
+      setExternalSyncStatus(null);
+    }
+  };
 
   const extractSheetId = (input: string) => {
     const match = input.match(/\/d\/([a-zA-Z0-9-_]+)/);
@@ -66,7 +196,6 @@ export default function ImportModal({ isOpen, onClose, onCreateNoteExt, onSaveTo
 
       const items = res.items || [];
       setPendingSheetItems(items);
-      // Auto-select all indices
       setSelectedIndices(items.map((_, idx) => idx));
       if (items.length > 0) {
         onSaveToast(`${items.length}件の未処理データを自動選択して取得しました`);
@@ -92,7 +221,6 @@ export default function ImportModal({ isOpen, onClose, onCreateNoteExt, onSaveTo
     const sourceSsId = extractSheetId(sheetUrl);
     const apiKey = localStorage.getItem("cn_gemini_key");
     let importModel = localStorage.getItem("cn_gemini_model") || "gemini-flash-latest";
-
 
     setIsProcessing(true);
     setProcessingText("インポート中...");
@@ -148,140 +276,148 @@ ${JSON.stringify(itemsToProcess)}
             if (rawText.startsWith("```")) {
               rawText = rawText.replace(/^```json\s*/, "").replace(/^```\s*/, "").replace(/```$/, "").trim();
             }
-            const parsed = JSON.parse(rawText);
-            Object.keys(parsed).forEach(k => {
-              const numKey = parseInt(k, 10);
-              if (!isNaN(numKey) && parsed[k]) {
-                batchTitlesMap[numKey] = String(parsed[numKey]).replace(/^#\s*/, "").replace(/[\"\'「」]/g, "");
-              }
-            });
-            onSaveToast("タイトルのバッチ一括最適化が完了しました！");
-          } else {
-            console.warn("Batch title optimization API returned error status, falling back to individual mode");
+            try {
+              const parsed = JSON.parse(rawText);
+              Object.keys(parsed).forEach((k: any) => {
+                const idxNum = parseInt(k, 10);
+                if (!isNaN(idxNum) && parsed[k]) {
+                  batchTitlesMap[idxNum] = String(parsed[k]).trim();
+                }
+              });
+            } catch (pErr) {
+              console.warn("Batch title JSON parse failed", pErr);
+            }
           }
-        } catch (batchErr) {
-          console.error("Batch Title Optimization failed, fallback activated", batchErr);
+        } catch (bErr) {
+          console.warn("Batch title AI optimization error", bErr);
         }
       }
 
       for (let i = 0; i < selectedItems.length; i++) {
         const item = selectedItems[i];
+        let title = batchTitlesMap[i] || item.title || "無題";
         
-        let dateStr = "";
-        let dateObj: Date | null = null;
+        let cAt = Date.now();
         if (item.saved_at) {
-          const d = new Date(item.saved_at);
-          if (!isNaN(d.getTime())) {
-            dateStr = d.toLocaleString("ja-JP");
-            dateObj = d;
-          } else {
-            dateStr = item.saved_at;
-          }
+          const parsed = Date.parse(item.saved_at);
+          if (!isNaN(parsed)) cAt = parsed;
         }
 
-        let content = `# ${item.title}\n\n${item.highlights}`;
-        if (dateStr) content += `\n\n---\n**保存日時:** ${dateStr}`;
-        if (item.url) content += `\n**リンク先:** [${item.url}](${item.url})`;
+        const dateFolderName = formatDateStr(cAt).replace(/-/g, "");
 
-        let title = item.title;
-
-        if (optimizeTitle && apiKey) {
-          if (selectedItems.length > 1) {
-            if (batchTitlesMap[i]) {
-              title = batchTitlesMap[i];
-            }
-          } else {
-            // Single item, individual fallback API call
-            onSaveToast(`AI処理中... (${i + 1}/${selectedItems.length})`);
-            try {
-              const template = getStoredPrompt("TITLE");
-              const prompt = template.replace("{content}", content.substring(0, 2000));
-              const r = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: { temperature: 0.5, maxOutputTokens: 60 }
-                  })
-                }
-              );
-              if (r.ok) {
-                const rd = await r.json();
-                const at = rd.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-                if (at) title = at.replace(/^#\s*/, "").replace(/[\"\'「」]/g, "");
-              }
-            } catch (e) {
-              console.error("Title AI error", e);
-            }
-          }
+        let formatted = `# ${title}\n\n`;
+        if (item.highlights) {
+          formatted += `${item.highlights}\n\n`;
+        }
+        if (item.columnI) {
+          formatted += `---\n<details><summary>メモを展開する</summary>\n\n${item.columnI}\n</details>\n\n`;
+        }
+        if (item.url) {
+          formatted += `**URL:** [${item.url}](${item.url})\n`;
         }
 
-        // Reassemble with updated title
-        content = `# ${title}\n\n${item.highlights}`;
-        
-        if (dateStr) content += `\n\n---\n**保存日時:** ${dateStr}`;
-        if (item.url) content += `\n**リンク先:** [${item.url}](${item.url})`;
-
-        const folderName = item.category || formatDateStr(Date.now()).replace(/-/g, "");
-        const folderTag = `[folder:${folderName}]`;
-
-        const timestampToken = dateObj ? dateObj.getTime() : Date.now();
-
-        const note: Note = {
-          id: Math.random().toString(36).substring(2, 10) + Date.now().toString(36),
+        const newNote: Note = {
+          id: "note_" + (Date.now() + i),
           title: title,
-          content: content,
-          summary: "",
-          keywords: item.tags ? `${item.tags}, ${folderTag}` : folderTag,
+          content: formatted,
+          summary: item.highlights || "",
+          keywords: item.tags || "",
+          createdAt: cAt,
+          updatedAt: cAt,
           sourceUrl: item.url || "",
-          createdAt: timestampToken,
-          updatedAt: Date.now(),
           timeline: item.timeline || "",
           columnJ: item.columnI || ""
         };
 
-        newNotes.push(note);
+        newNotes.push(newNote);
       }
 
-      onSaveToast("クラウドへ保存中...");
-      onNotesUpdateBatch(newNotes);
+      if (newNotes.length > 0) {
+        onNotesUpdateBatch(newNotes, overwriteBatch);
+      }
+
+      onSaveToast("スプレッドシートを更新中...");
       await apiPost({ action: "markHighlightsProcessed", sourceSsId, sheetName, rowIndices });
 
-      onSaveToast(`${newNotes.length}件のノートを取り込みました ✦`);
+      onSaveToast(`${newNotes.length}件のノートを${overwriteBatch ? "【上書き】" : "【追加】"}インポートしました ✦`);
       onClose();
-    } catch (err: any) {
-      onSaveToast("エラー: " + err.message);
+
+    } catch (e: any) {
+      onSaveToast("エラー: " + e.message);
     } finally {
       setIsProcessing(false);
       setProcessingText("実行");
     }
   };
 
-  const runImport = async () => {
-    if (!importUrl && !selectedFile) {
-      return onSaveToast("URLまたはファイルを選択してください");
-    }
-
-    setIsProcessing(true);
-    setProcessingText("処理中...");
-    onSaveToast("抽出中...");
-
-    let text = "";
-    let title = "取り込んだノート";
+  const fetchAiTitle = async (contentSnippet: string, fallbackTitle: string): Promise<string> => {
+    const apiKey = localStorage.getItem("cn_gemini_key");
+    if (!apiKey) return fallbackTitle;
+    let importModel = localStorage.getItem("cn_gemini_model") || "gemini-flash-latest";
 
     try {
-      const apiKey = localStorage.getItem("cn_gemini_key");
-      let importModel = localStorage.getItem("cn_gemini_model") || "gemini-flash-latest";
+      const prompt = `以下のテキスト内容を読み、最も相応しい簡潔で魅力的な日本語のタイトル（20文字以内）を1つだけ作成してください。タイトル文字列のみを出力し、挨拶や装飾記号、カッコは不要です。\n\n内容:\n${contentSnippet.substring(0, 2000)}`;
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.2, maxOutputTokens: 50 }
+          })
+        }
+      );
+      if (!res.ok) return fallbackTitle;
+      const data = await res.json();
+      const aiTitle = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+      return aiTitle || fallbackTitle;
+    } catch {
+      return fallbackTitle;
+    }
+  };
 
-      const importTemp = parseFloat(localStorage.getItem("cn_gemini_temp") || "0.1");
+  const runImport = async () => {
+    if (!importUrl.trim() && !selectedFile) {
+      return onSaveToast("URLを入力するか、ファイルを選択してください");
+    }
 
-      const fetchAiTitle = async (content: string, currentTitle: string) => {
-        if (!apiKey || !optimizeTitle) return currentTitle;
-        try {
-          const template = getStoredPrompt("TITLE");
-          const prompt = template.replace("{content}", content.substring(0, 2000));
+    const apiKey = localStorage.getItem("cn_gemini_key");
+    let importModel = localStorage.getItem("cn_gemini_model") || "gemini-flash-latest";
+    const importTemp = parseFloat(localStorage.getItem("cn_gemini_temp") || "0.1");
+
+    setIsProcessing(true);
+    setProcessingText("抽出中...");
+
+    try {
+      let text = "";
+      let title = "取り込んだノート";
+
+      if (importUrl.trim()) {
+        const res = await apiPost({ action: "fetchDriveFile", url: importUrl.trim() });
+        if (!res.success) throw new Error(res.error);
+        text = res.text;
+        title = res.title || title;
+
+        if (importMode === "raw") {
+          if (optimizeTitle) {
+            onSaveToast("タイトルを最適化中...");
+            title = await fetchAiTitle(text, title);
+          }
+          const formatted = `# ${title}\n\n${text}\n\n**ソース:** [${importUrl.trim()}](${importUrl.trim()})`;
+          onCreateNoteExt(title, formatted, formatDateStr(Date.now()).replace(/-/g, ""), importUrl.trim());
+          onSaveToast("取り込みました");
+        } else {
+          onSaveToast("AI処理中...");
+          if (!apiKey) throw new Error("AI処理にはAPIキーの設定が必要です。");
+          const aiMaxTok = parseInt(localStorage.getItem("cn_gemini_tokens") || "1024", 10);
+          
+          const promptTemplate = importMode === "summarize"
+            ? getStoredPrompt("IMPORT_SUMMARIZE")
+            : getStoredPrompt("IMPORT_KEYPOINTS");
+          
+          const prompt = promptTemplate.replace("{content}", text.substring(0, 30000));
+
           const r = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
             {
@@ -289,257 +425,89 @@ ${JSON.stringify(itemsToProcess)}
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { temperature: 0.5, maxOutputTokens: 60 }
+                generationConfig: { temperature: importTemp, maxOutputTokens: aiMaxTok }
               })
             }
           );
-          if (!r.ok) return currentTitle;
+          if (!r.ok) {
+            const ae = await r.json();
+            throw new Error(ae.error?.message || "AIレスポンスに失敗しました");
+          }
           const rd = await r.json();
-          const at = rd.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || currentTitle;
-          return at.replace(/^#\s*/, "").replace(/[\"\'「」]/g, "");
-        } catch (e) {
-          return currentTitle;
-        }
-      };
+          const processedText = rd.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
-      // --- Google Document Import ---
-      if (importUrl) {
-        const urlRes = await apiPost({ action: "fetchDriveFile", url: importUrl });
-        if (urlRes.error) throw new Error(urlRes.error);
-        
-        text = urlRes.text;
-        if (urlRes.title) title = urlRes.title;
-        
-        if (optimizeTitle && apiKey) {
-          onSaveToast("タイトルをAIが考えています...");
-          title = await fetchAiTitle(text, title);
-        }
+          if (optimizeTitle) {
+            onSaveToast("タイトルを最適化中...");
+            title = await fetchAiTitle(processedText, title);
+          }
 
-        let formattedContent = `# ${title}\n\n${text}`;
-        if (importUrl) {
-          formattedContent += `\n\n---\n**リンク先:** [${importUrl}](${importUrl})`;
+          const suffix = importMode === "summarize" ? " (要約)" : " (抽出)";
+          const finalTitle = title + suffix;
+          const formatted = `# ${finalTitle}\n\n${processedText}\n\n**ソース:** [${importUrl.trim()}](${importUrl.trim()})\n\n---\n<details><summary>元のテキストを展開する</summary>\n\n${text}\n</details>`;
+
+          onCreateNoteExt(finalTitle, formatted, formatDateStr(Date.now()).replace(/-/g, ""), importUrl.trim());
+          onSaveToast("取り込みとAI処理が完了しました ✦");
         }
-        onCreateNoteExt(title, formattedContent, formatDateStr(Date.now()).replace(/-/g, ""), importUrl);
-        
-        onSaveToast("取り込みが完了しました ✦");
         onClose();
-        return;
-      }
-
-      // --- Local File parser ---
-      if (selectedFile) {
-        const fileNameLower = selectedFile.name.toLowerCase();
+      } else if (selectedFile) {
         title = selectedFile.name.replace(/\.[^/.]+$/, "");
-
-        if (fileNameLower.endsWith(".json")) {
-          onSaveToast("JSONデータを解析中...");
+        
+        // JSON file parsing
+        if (selectedFile.name.toLowerCase().endsWith(".json")) {
+          onSaveToast("JSONファイルを解析中...");
           const jsonText = await selectedFile.text();
           let parsedData: any;
           try {
             parsedData = JSON.parse(jsonText);
-          } catch (e: any) {
-            throw new Error(`JSON解析エラー: ${e.message}。ファイル構造を確認してください。`);
+          } catch (jsonErr: any) {
+            throw new Error("JSON形式が不正です: " + jsonErr.message);
           }
 
-          let importedNotes: Note[] = [];
-
-          // 形式の柔軟な正規化
-          if (parsedData) {
-            if (Array.isArray(parsedData.notes)) {
-              importedNotes = parsedData.notes;
-            } else if (Array.isArray(parsedData)) {
-              importedNotes = parsedData;
-            } else if (typeof parsedData === "object") {
-              // 単一のノート、または他のラップキー
-              const keys = Object.keys(parsedData);
-              const arrayKey = keys.find(k => Array.isArray(parsedData[k]));
-              if (arrayKey) {
-                importedNotes = parsedData[arrayKey];
-              } else {
-                importedNotes = [parsedData];
-              }
-            }
+          let items: any[] = [];
+          if (Array.isArray(parsedData)) {
+            items = parsedData;
+          } else if (parsedData && Array.isArray(parsedData.notes)) {
+            items = parsedData.notes;
+          } else if (parsedData && typeof parsedData === "object") {
+            items = [parsedData];
           }
 
-          if (importedNotes.length === 0) {
-            throw new Error("有効なJSONデータ（ノートの配列またはオブジェクト）が見つかりませんでした。");
-          }
+          if (items.length === 0) throw new Error("JSON内に有効なノートデータが見つかりませんでした");
 
-          // Note 形式として不備があるものは補完・正規化
-          const validNotes: Note[] = importedNotes.map((n: any) => {
-            const id = n.id || n.ID || Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
-            const title = n.title || n.Title || n.name || "インポートされたノート";
-            const content = n.content || n.Content || n.body || n.text || n.highlights || "";
-            const summary = n.summary || n.Summary || "";
-            let keywords = n.keywords || n.Keywords || "";
-            const sourceUrl = n.sourceUrl || n.SourceUrl || n.url || n.URL || "";
-            const createdAt = n.createdAt || n.CreatedAt || n.created_at || Date.now();
-            const updatedAt = n.updatedAt || n.UpdatedAt || n.updated_at || Date.now();
+          const newNotes: Note[] = [];
+          for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            const itemTitle = item.title || item.name || `ノート_${i + 1}`;
+            const itemContent = item.content || item.body || item.text || item.highlights || JSON.stringify(item, null, 2);
+            const itemKeywords = item.keywords || item.tags || "";
+            const itemSummary = item.summary || "";
+            const itemSourceUrl = item.sourceUrl || item.url || "";
+            const itemCreatedAt = typeof item.createdAt === "number" ? item.createdAt : Date.now();
+            const itemUpdatedAt = typeof item.updatedAt === "number" ? item.updatedAt : itemCreatedAt;
+            const itemTimeline = item.timeline || "";
 
-            // フォルダ・分類情報の維持:
-            // インポートされたJSON内にある folder / Folder / category / Category / folderName などのキーを検知し、
-            // keywords に [folder:FolderName] 形式で含まれていない場合は追加します。
-            const folderVal = n.folder || n.Folder || n.category || n.Category || n.folderName || "";
-            if (folderVal && typeof folderVal === "string" && !keywords.includes("[folder:")) {
-              const cleanFolder = folderVal.trim();
-              if (cleanFolder) {
-                keywords = keywords ? `${keywords}, [folder:${cleanFolder}]` : `[folder:${cleanFolder}]`;
-              }
-            }
-
-            return {
-              id: String(id),
-              title: String(title),
-              content: String(content),
-              summary: String(summary),
-              keywords: String(keywords),
-              sourceUrl: String(sourceUrl),
-              createdAt: typeof createdAt === "number" ? createdAt : new Date(createdAt).getTime() || Date.now(),
-              updatedAt: typeof updatedAt === "number" ? updatedAt : new Date(updatedAt).getTime() || Date.now(),
-            };
-          }).filter(n => n.content.trim().length > 0 || n.title.trim().length > 0);
-
-          if (validNotes.length === 0) {
-            throw new Error("有効なテキスト内容、またはタイトルを含むノートが見つかりませんでした。");
-          }
-
-          onSaveToast(`${validNotes.length}件のデータをインポート中...`);
-          onNotesUpdateBatch(validNotes, overwriteBatch);
-          onSaveToast(`${validNotes.length}件のノートを処理しました ✦`);
-          onClose();
-          return;
-        }
-
-        if (fileNameLower.endsWith(".txt")) {
-          text = await selectedFile.text();
-        } else if (fileNameLower.endsWith(".mhtml")) {
-          const raw = await selectedFile.text();
-          text = raw
-            .replace(/<style[\s\S]*?<\/style>/gi, "")
-            .replace(/<script[\s\S]*?<\/script>/gi, "")
-            .replace(/<[^>]+>/g, " ")
-            .replace(/&nbsp;/g, " ")
-            .replace(/\s+/g, " ")
-            .trim();
-        } else if (fileNameLower.endsWith(".docx") && apiKey) {
-          onSaveToast("AIがWordファイルを解析中...");
-          const docxB64 = await new Promise<string>((res, rej) => {
-            const fr = new FileReader();
-            fr.onload = () => res((fr.result as string).split(",")[1]);
-            fr.onerror = rej;
-            fr.readAsDataURL(selectedFile);
-          });
-          const docxMime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-          const docxPr = importMode === "raw" ? "このWordファイルに含まれるすべてのテキストをそのまま抽出してください。"
-            : importMode === "summarize" ? "このWordファイルの内容を分かりやすく要約してください。"
-              : "このWordファイルから重要なキーポイントを箇条書きで抽出してください。";
-
-          const maxTok = Math.max(parseInt(localStorage.getItem("cn_gemini_tokens") || "2000", 10), 2000);
-          const r = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: docxPr }, { inlineData: { mimeType: docxMime, data: docxB64 } }] }],
-                generationConfig: { temperature: importTemp, maxOutputTokens: maxTok }
-              })
-            }
-          );
-          if (!r.ok) { throw new Error(`HTTP Error ${r.status}: ${r.status === 404 ? 'API Endpoint not found. Please check your model settings.' : ''}`);
-            const de = await r.json();
-            throw new Error(de.error?.message || "Wordファイルの解析に失敗しました");
-          }
-          const rd = await r.json();
-          const docxText = rd.candidates?.[0]?.content?.parts?.[0]?.text || "";
-          if (!docxText.trim()) throw new Error("Wordファイルからテキストを抽出できませんでした");
-
-          if (optimizeTitle) {
-            onSaveToast("タイトルを最適化中...");
-            title = await fetchAiTitle(docxText, title);
-          }
-
-          const suffix = importMode === "summarize" ? " (要約)" : importMode === "keypoints" ? " (抽出)" : "";
-          const finalTitle = title + suffix;
-          const formatted = `# ${finalTitle}\n\n${docxText}`;
-
-          onCreateNoteExt(finalTitle, formatted, formatDateStr(Date.now()).replace(/-/g, ""), "");
-          onSaveToast("取り込みが完了しました ✦");
-          onClose();
-          return;
-
-        } else if (fileNameLower.endsWith(".pdf")) {
-          if (apiKey) {
-            onSaveToast("AIがPDFを解析中...");
-            const pdfB64 = await new Promise<string>((res, rej) => {
-              const fr = new FileReader();
-              fr.onload = () => res((fr.result as string).split(",")[1]);
-              fr.onerror = rej;
-              fr.readAsDataURL(selectedFile);
+            newNotes.push({
+              id: item.id || ("note_" + (Date.now() + i)),
+              title: itemTitle,
+              content: itemContent,
+              summary: itemSummary,
+              keywords: itemKeywords,
+              sourceUrl: itemSourceUrl,
+              createdAt: itemCreatedAt,
+              updatedAt: itemUpdatedAt,
+              timeline: itemTimeline
             });
-            const pdfPr = importMode === "raw" ? "このPDFに含まれるすべてのテキストをそのまま抽出してください。要約や追加のコメントは一切不要です。"
-              : importMode === "summarize" ? "このPDFの内容を分かりやすく要約してください。"
-                : "このPDFから重要なキーポイントを箇条書きで抽出してください。";
-
-            const maxTok = Math.max(parseInt(localStorage.getItem("cn_gemini_tokens") || "2000", 10), 2000);
-            const r = await fetch(
-              `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  contents: [{ parts: [{ text: pdfPr }, { inlineData: { mimeType: "application/pdf", data: pdfB64 } }] }],
-                  generationConfig: { temperature: importTemp, maxOutputTokens: maxTok }
-                })
-              }
-            );
-            if (!r.ok) { throw new Error(`HTTP Error ${r.status}: ${r.status === 404 ? 'API Endpoint not found. Please check your model settings.' : ''}`);
-              const pe = await r.json();
-              throw new Error(pe.error?.message || "PDF解析に失敗しました");
-            }
-            const rd = await r.json();
-            const pdfAiText = rd.candidates?.[0]?.content?.parts?.[0]?.text || "";
-            if (!pdfAiText.trim()) throw new Error("AIでテキストを抽出できませんでした");
-
-            if (optimizeTitle) {
-              onSaveToast("タイトルを最適化中...");
-              title = await fetchAiTitle(pdfAiText, title);
-            }
-
-            const suffix = importMode === "summarize" ? " (要約)" : importMode === "keypoints" ? " (抽出)" : "";
-            const finalTitle = title + suffix;
-            const formatted = `# ${finalTitle}\n\n${pdfAiText}`;
-
-            onCreateNoteExt(finalTitle, formatted, formatDateStr(Date.now()).replace(/-/g, ""), "");
-            onSaveToast("取り込みが完了しました ✦");
-            onClose();
-            return;
-          } else {
-            // Fallback pdf.js local renderer parsing
-            onSaveToast("PDFページをローカル解析中...");
-            const arrBuf = await selectedFile.arrayBuffer();
-            const pdfjs = (window as any).pdfjsLib;
-            if (!pdfjs) throw new Error("PDFレンダラーが見つかりません。");
-            const pdfDoc = await pdfjs.getDocument({ data: arrBuf }).promise;
-            for (let i = 1; i <= pdfDoc.numPages; i++) {
-              const pg = await pdfDoc.getPage(i);
-              const pgContent = await pg.getTextContent();
-              text += pgContent.items.map((item: any) => item.str).join(" ") + "\n";
-            }
-            if (!text.trim()) {
-              throw new Error("スキャンされたPDF等からテキストが抽出できませんでした。Gemini APIキーを設定すると、AIによる画像文字認識(OCR)が使用可能です。");
-            }
           }
+
+          onNotesUpdateBatch(newNotes, overwriteBatch);
+          onSaveToast(`JSONから ${newNotes.length} 件のノートを${overwriteBatch ? "【上書き】" : "【追加】"}インポートしました ✦`);
+          onClose();
+          return;
         }
 
-        // Post-file extract pipeline for raw txt, pdf (without AI core)
-        if (!text.trim()) throw new Error("テキストが見つかりません");
-
+        // General text file handling
+        text = await selectedFile.text();
         if (importMode === "raw") {
-          if (optimizeTitle) {
-            onSaveToast("タイトルを最適化中...");
-            title = await fetchAiTitle(text, title);
-          }
           const formatted = `# ${title}\n\n${text}`;
           onCreateNoteExt(title, formatted, formatDateStr(Date.now()).replace(/-/g, ""), "");
           onSaveToast("取り込みました");
@@ -565,28 +533,17 @@ ${JSON.stringify(itemsToProcess)}
               })
             }
           );
-          if (!r.ok) { throw new Error(`HTTP Error ${r.status}: ${r.status === 404 ? 'API Endpoint not found. Please check your model settings.' : ''}`);
-            const ae = await r.json();
-            throw new Error(ae.error?.message || "AIレスポンスに失敗しました");
-          }
+          if (!r.ok) throw new Error("AI処理に失敗しました");
           const rd = await r.json();
           const processedText = rd.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
-          if (optimizeTitle) {
-            onSaveToast("タイトルを最適化中...");
-            title = await fetchAiTitle(processedText, title);
-          }
-
           const suffix = importMode === "summarize" ? " (要約)" : " (抽出)";
           const finalTitle = title + suffix;
-          const formatted = `# ${finalTitle}\n\n${processedText}\n\n---\n<details><summary>元のテキストを展開する</summary>\n\n${text}\n</details>`;
-
+          const formatted = `# ${finalTitle}\n\n${processedText}\n\n---\n<details><summary>元のテキスト</summary>\n\n${text}\n</details>`;
           onCreateNoteExt(finalTitle, formatted, formatDateStr(Date.now()).replace(/-/g, ""), "");
           onSaveToast("取り込みとAI処理が完了しました ✦");
         }
         onClose();
       }
-
     } catch (e: any) {
       onSaveToast("エラー: " + e.message);
       console.error(e);
@@ -603,258 +560,548 @@ ${JSON.stringify(itemsToProcess)}
       className="fixed inset-0 bg-[#00000080] z-[200] flex items-center justify-center p-4 overflow-y-auto"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="bg-[var(--surface)] border border-[var(--border2)] rounded-xl p-6 w-[380px] max-w-full my-auto shadow-2xl flex flex-col gap-4 animate-[fadeIn_0.15s_ease-out]">
+      {/* Modal Container */}
+      <div className="bg-[var(--surface)] border border-[var(--border2)] rounded-xl p-6 w-[600px] max-w-full my-auto shadow-2xl flex flex-col gap-4 animate-[fadeIn_0.15s_ease-out] max-h-[92vh] overflow-y-auto">
+        
+        {/* Header */}
         <div>
           <div className="text-base font-bold text-[var(--bright)] flex items-center gap-2">
-            <span>📥</span> ノートの取り込み
+            <span>📥</span> ノート・ナレッジの取り込み
           </div>
           <p className="text-xs text-[var(--subtle)] mt-1 leading-relaxed">
-            各種ファイルやGoogleドキュメントからテキストを抽出してノートを作成します。
+            RaindropやGoogleドライブ（MHT/PDF）からの自動収集、またはファイル・URLからテキストを取り込みます。
           </p>
         </div>
 
-        <div>
-          <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1">1. 入力元 (URL or ファイル選択)</label>
-          <div className="flex flex-col gap-1.5">
-            <input
-              type="text"
-              className="w-full text-xs p-2.5 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all font-mono"
-              placeholder="GoogleドキュメントのURL"
-              value={importUrl}
-              onChange={(e) => {
-                setImportUrl(e.target.value);
-                if (e.target.value) setSelectedFile(null); // Clear file
-              }}
-            />
-            <p className="text-[10px] text-[var(--muted)] px-1 leading-relaxed">
-              ⚠️ Googleドキュメントのテキストをそのまま読み込む場合は、共有リンクのURLを貼り付けてください。
-            </p>
-            <div className="text-center text-[var(--muted)] text-[10px] my-1">— または ローカルファイルを選択 —</div>
-            
-            {selectedFile ? (
-              <div className="p-3 bg-[var(--bg)] border border-[var(--purple)] rounded-md flex items-center justify-between gap-2 animate-[fadeIn_0.1s_ease-out]">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-lg">📄</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-semibold text-[var(--bright)] truncate">{selectedFile.name}</div>
-                    <div className="text-[10px] text-[var(--muted)]">{(selectedFile.size / 1024).toFixed(1)} KB</div>
-                  </div>
+        {/* Tab Switcher */}
+        <div className="flex border-b border-[var(--border)] gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab("external_sync")}
+            className={`pb-2 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 border-b-2 ${
+              activeTab === "external_sync"
+                ? "border-[var(--purple)] text-[var(--bright)]"
+                : "border-transparent text-[var(--muted)] hover:text-[var(--text)]"
+            }`}
+          >
+            <Globe className="w-3.5 h-3.5" />
+            ⚡ 外部ソース自動同期 (Raindrop / MHT)
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("file_direct")}
+            className={`pb-2 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 border-b-2 ${
+              activeTab === "file_direct"
+                ? "border-[var(--purple)] text-[var(--bright)]"
+                : "border-transparent text-[var(--muted)] hover:text-[var(--text)]"
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            📄 ファイル / URL / 個別シート
+          </button>
+        </div>
+
+        {/* TAB 1: External Source Automatic Synchronization */}
+        {activeTab === "external_sync" && (
+          <div className="flex flex-col gap-3">
+            <div className="bg-[var(--bg)] border border-[var(--border2)] rounded-lg p-3.5 flex flex-col gap-2.5">
+              <div className="text-xs font-bold text-[var(--bright)] flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-purple-400" />
+                  <span>取り込み対象の選択</span>
                 </div>
-                <button 
+
+                {/* Prompt Settings Toggle Button */}
+                <button
                   type="button"
-                  className="text-xs text-[var(--muted)] hover:text-[var(--red)] p-1 px-2 border border-[var(--border2)] rounded hover:bg-[#ff000010] cursor-pointer transition-colors"
-                  onClick={() => setSelectedFile(null)}
+                  onClick={() => setShowPromptSettings(!showPromptSettings)}
+                  className={`text-[11px] px-2.5 py-1 rounded-md border font-semibold flex items-center gap-1.5 cursor-pointer transition-all ${
+                    showPromptSettings
+                      ? "bg-purple-600/20 text-purple-300 border-purple-500/50 shadow-sm"
+                      : "bg-[#21262d] text-gray-300 border-[#30363d] hover:border-purple-400/50 hover:text-purple-300"
+                  }`}
+                  title="SYNC_PROMPT / SYSTEM_PERSONA / WEEKLY_REPORT_PROMPT の設定"
                 >
-                  解除
+                  <Sliders className="w-3 h-3 text-purple-400" />
+                  <span>プロンプト設定</span>
+                  {showPromptSettings ? (
+                    <ChevronUp className="w-3 h-3" />
+                  ) : (
+                    <ChevronDown className="w-3 h-3" />
+                  )}
                 </button>
               </div>
-            ) : (
-              <input
-                type="file"
-                className="w-full text-xs p-2 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] cursor-pointer"
-                accept=".pdf,.txt,.mhtml,.docx,.json"
-                onChange={(e) => {
-                  if (e.target.files && e.target.files[0]) {
-                    setSelectedFile(e.target.files[0]);
-                    setImportUrl(""); // Clear URL
-                  }
-                }}
-              />
-            )}
-            <p className="text-[10px] text-[var(--muted)] px-1">
-              対応形式: JSON (.json) / PDF / テキスト (.txt) / MHTML (.mhtml) / Word (.docx)
-            </p>
-            {selectedFile && selectedFile.name.toLowerCase().endsWith(".json") && (
-              <div className="mt-1.5 p-2 bg-[#1f242c] border border-[var(--border2)] rounded text-[10px] text-[var(--subtle)] leading-relaxed">
-                💡 <strong>JSONデータの推奨フォーマット:</strong><br />
-                <code>[ &#123; "title": "ノート名", "content": "本文..." &#125; ]</code> の配列、または <code>&#123; "notes": [ ... ] &#125;</code> の形式を自動解析します。<br />
-                本文キーは <code>content</code> / <code>body</code> / <code>text</code> / <code>highlights</code>、タイトルは <code>title</code> / <code>name</code> を検知します。
-              </div>
-            )}
-          </div>
-        </div>
 
-        <div>
-          <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1">2. 取り込みモード</label>
-          <select
-            className="w-full text-xs p-2.5 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)]"
-            value={importMode}
-            onChange={(e) => setImportMode(e.target.value)}
-          >
-            <option value="raw">そのまま取り込む</option>
-            <option value="summarize">要約して取り込む</option>
-            <option value="keypoints">キーポイントを抽出</option>
-          </select>
-        </div>
-
-        <div className="flex items-start gap-2 text-xs text-[var(--text)] cursor-pointer">
-          <input
-            id="modal-opt-title"
-            type="checkbox"
-            className="w-4 h-5 cursor-pointer accent-[var(--purple)]"
-            checked={optimizeTitle}
-            onChange={(e) => setOptimizeTitle(e.target.checked)}
-          />
-          <label htmlFor="modal-opt-title" className="cursor-pointer flex flex-col select-none">
-            <span className="font-bold">AIでタイトルを最適化する</span>
-            <span className="text-[10px] text-[var(--green)] mt-0.5 leading-normal">
-              ✦ 2件以上の取り込み時は自動バッチ一括処理に切替わり、API呼び出し回数を1回に集約して消費量を極限まで削減します。
-            </span>
-          </label>
-        </div>
-
-        {/* インポート時の統合・上書き挙動の設定 */}
-        <div className="border-t border-[var(--border)] pt-3.5">
-          <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1.5">3. インポートデータの反映方法</label>
-          <div className="flex flex-col gap-1.5 bg-[var(--bg)] border border-[var(--border2)] rounded-md p-2.5">
-            <label className="flex items-start gap-2 text-[11px] text-[var(--text)] cursor-pointer">
-              <input
-                type="radio"
-                name="import-overwrite-mode"
-                className="mt-0.5 cursor-pointer accent-[var(--purple)]"
-                checked={!overwriteBatch}
-                onChange={() => setOverwriteBatch(false)}
-              />
-              <div className="flex-1 min-w-0">
-                <div className="font-semibold text-[var(--blue)] font-bold">既存のノートに統合・追加（推奨・デフォルト）</div>
-                <div className="text-[9px] text-[var(--muted)] leading-normal">現在の全メモはそのまま安全に残し、新しくインポートしたデータを統合します（確認ダイアログを経由せず即座に反映します）。</div>
-              </div>
-            </label>
-            <label className="flex items-start gap-2 text-[11px] text-[var(--text)] cursor-pointer mt-0.5 opacity-80 hover:opacity-100 transition-opacity">
-              <input
-                type="radio"
-                name="import-overwrite-mode"
-                className="mt-0.5 cursor-pointer accent-[var(--purple)]"
-                checked={overwriteBatch}
-                onChange={() => setOverwriteBatch(true)}
-              />
-              <div className="flex-1 min-w-0">
-                <div className="font-semibold text-[var(--red)]">⚠️ 既存データを全て削除して【丸ごと上書き】</div>
-                <div className="text-[9px] text-[var(--muted)] leading-normal">現在のすべてのノートを削除し、インポートデータのみに全差し替えします（実行前に確認画面が表示されます）。</div>
-              </div>
-            </label>
-          </div>
-        </div>
-
-        {/* Spreadsheet Integration Portal */}
-        <div className="border-t border-[var(--border)] pt-4">
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-[11px] text-[var(--subtle)] font-bold block">3. スプレッドシートから連携して取り込み</label>
-            <button
-              type="button"
-              onClick={() => setShowSheetUrlHelp(!showSheetUrlHelp)}
-              className="text-[10px] text-[var(--purple)] font-bold hover:underline flex items-center gap-1 cursor-pointer"
-            >
-              <HelpCircle className="w-3 h-3" />
-              何のリンクを貼るの？
-            </button>
-          </div>
-          
-          {showSheetUrlHelp && (
-            <div className="mb-3 p-3 bg-[var(--purple)]/10 border border-[var(--purple)]/30 rounded-md text-[11px] text-[var(--text)] leading-relaxed">
-              <p className="font-bold mb-1 text-[var(--purple)]">📝 📥 読み込み元（データを取られる側）</p>
-              <p className="mb-2"><strong>すでにデータが入っているスプレッドシート</strong>、または<strong>新しく作成した空のスプレッドシート</strong>のURLを入力します。<br/>ここに入力したシートから、このアプリ内へデータを取り込みます。</p>
-              <p className="mb-2">対象のスプレッドシートをブラウザで開き、<strong>上部のアドレスバーに表示されているURL</strong>をそのままコピーして貼り付けてください。</p>
-              <p className="font-mono bg-[var(--bg)] p-1.5 rounded text-[10px] text-[var(--subtle)] break-all mb-2">
-                例: https://docs.google.com/spreadsheets/d/1adkx60a.../edit
+              <p className="text-[11px] text-[var(--subtle)] leading-relaxed">
+                チェックを入れた外部ソースから最新データを取得し、Gemini AIで自動解析・要約してスプレッドシート（A〜M列）へ保存し、アプリへ自動同期します。
               </p>
-              <p className="text-[10px] text-[var(--muted)]">※ 末尾に ?usp=drivesdk や ?usp=sharing 等が付いていてもそのまま貼って大丈夫です。</p>
-              <p className="text-[10px] text-[var(--muted)] mt-1">※ GASのWebアプリURL（/execで終わるもの）ではなく、スプレッドシート本体のURLです。</p>
-            </div>
-          )}
 
-          <div className="flex flex-col gap-2">
-            <input
-              type="text"
-              className="w-full text-xs p-2.5 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] font-mono"
-              placeholder="スプレッドシートのURLを貼り付け"
-              value={sheetUrl}
-              onChange={(e) => setSheetUrl(e.target.value)}
-            />
-            <input
-              type="text"
-              className="w-full text-xs p-2.5 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] font-mono"
-              placeholder="シート名 (highlights)"
-              value={sheetName}
-              onChange={(e) => setSheetName(e.target.value)}
-            />
-            <button
-              className="w-full py-2 bg-transparent text-xs hover:bg-[var(--border)] border border-[var(--border2)] rounded-md text-[var(--text)] font-semibold cursor-pointer transition-colors"
-              onClick={fetchSheetData}
-              disabled={isProcessing}
-            >
-              未処理のデータ一覧を取得
-            </button>
+              {/* Raindrop Checkbox */}
+              <label className="flex items-start gap-2.5 p-2 rounded-md hover:bg-[#ffffff06] cursor-pointer transition-colors border border-transparent hover:border-[var(--border2)]">
+                <input
+                  type="checkbox"
+                  id="sync-raindrop"
+                  checked={syncRaindrop}
+                  onChange={(e) => setSyncRaindrop(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 cursor-pointer accent-[var(--purple)]"
+                />
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs font-bold text-[var(--text)]">
+                    Raindrop (Web記事・ブックマーク) を同期
+                  </span>
+                  <p className="text-[10px] text-[var(--muted)] mt-0.5">
+                    Raindrop API経由で未保存のWeb記事を取得し、本文抽出とAI要約を実行します。
+                  </p>
+                </div>
+              </label>
 
-            {pendingSheetItems.length > 0 && (
-              <>
-                <div className="flex items-center justify-between px-1 mt-1">
-                  <span className="text-[10px] text-[var(--subtle)] font-bold">取得済みの未処理項目: {pendingSheetItems.length}件</span>
-                  <div className="flex gap-2.5">
+              {/* Drive MHT / PDF Checkbox */}
+              <label className="flex items-start gap-2.5 p-2 rounded-md hover:bg-[#ffffff06] cursor-pointer transition-colors border border-transparent hover:border-[var(--border2)]">
+                <input
+                  type="checkbox"
+                  id="sync-drive"
+                  checked={syncDrive}
+                  onChange={(e) => setSyncDrive(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 cursor-pointer accent-[var(--purple)]"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-[var(--text)]">
+                      Googleドライブ (MHTファイル / PDF解析) を実行
+                    </span>
+                    <span className="text-[9px] text-amber-400 font-bold bg-amber-500/10 px-1.5 py-0.2 rounded">
+                      ※解析に数分
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-[var(--muted)] mt-0.5">
+                    Googleドライブ内のMHTファイルを記事ごとに自動分割、PDFを紐付け、年表（timeline）データを抽出します。
+                  </p>
+                </div>
+              </label>
+
+              {/* Collapsible Prompt Settings Panel */}
+              {showPromptSettings && (
+                <div className="mt-2 pt-3 border-t border-[var(--border2)] flex flex-col gap-2.5 animate-[fadeIn_0.15s_ease-out]">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Sliders className="w-3.5 h-3.5 text-[var(--purple)]" />
+                      <span className="text-xs font-bold text-[var(--bright)]">
+                        外部同期・ナレッジプロンプト設定
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-[var(--muted)]">いつでも修正・デフォルト復元が可能</span>
+                  </div>
+
+                  {/* Sub Tabs for the 3 prompts */}
+                  <div className="flex border-b border-[#30363d] gap-1 bg-[#161b22] p-1 rounded-lg">
                     <button
                       type="button"
-                      onClick={() => setSelectedIndices(pendingSheetItems.map((_, i) => i))}
-                      className="text-[10px] text-[var(--purple)] hover:opacity-80 transition-opacity font-bold cursor-pointer bg-none border-none p-0"
+                      onClick={() => setActivePromptSubTab("persona")}
+                      className={`flex-1 py-1.5 px-2 text-[11px] font-bold rounded-md transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                        activePromptSubTab === "persona"
+                          ? "bg-purple-600/30 text-purple-200 border border-purple-500/40 shadow-xs"
+                          : "text-gray-400 hover:text-gray-200 hover:bg-[#21262d]"
+                      }`}
                     >
-                      全て選択
+                      <Bot className="w-3 h-3" />
+                      <span>SYSTEM_PERSONA</span>
                     </button>
-                    <span className="text-[10px] text-gray-600">|</span>
                     <button
                       type="button"
-                      onClick={() => setSelectedIndices([])}
-                      className="text-[10px] text-gray-400 hover:text-gray-300 transition-colors cursor-pointer bg-none border-none p-0"
+                      onClick={() => setActivePromptSubTab("sync")}
+                      className={`flex-1 py-1.5 px-2 text-[11px] font-bold rounded-md transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                        activePromptSubTab === "sync"
+                          ? "bg-purple-600/30 text-purple-200 border border-purple-500/40 shadow-xs"
+                          : "text-gray-400 hover:text-gray-200 hover:bg-[#21262d]"
+                      }`}
                     >
-                      全て解除
+                      <Sparkles className="w-3 h-3" />
+                      <span>SYNC_PROMPT</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActivePromptSubTab("weekly")}
+                      className={`flex-1 py-1.5 px-2 text-[11px] font-bold rounded-md transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                        activePromptSubTab === "weekly"
+                          ? "bg-purple-600/30 text-purple-200 border border-purple-500/40 shadow-xs"
+                          : "text-gray-400 hover:text-gray-200 hover:bg-[#21262d]"
+                      }`}
+                    >
+                      <FileSpreadsheet className="w-3 h-3" />
+                      <span>WEEKLY_REPORT</span>
+                    </button>
+                  </div>
+
+                  {/* Sub Tab 1: SYSTEM_PERSONA */}
+                  {activePromptSubTab === "persona" && (
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <label className="font-bold text-[var(--text)] flex items-center gap-1">
+                          <span>SYSTEM_PERSONA (AIの役割・ペルソナ定義)</span>
+                        </label>
+                        <span className="text-[10px] text-[var(--muted)]">Gemini AIの専門性を指定</span>
+                      </div>
+                      <textarea
+                        className="w-full font-mono text-xs p-2.5 bg-[#0d1117] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all resize-y"
+                        rows={3}
+                        value={syncPersonaInput}
+                        onChange={(e) => setSyncPersonaInput(e.target.value)}
+                        placeholder={DEFAULT_PROMPTS.SYSTEM_PERSONA}
+                      />
+                      <p className="text-[10px] text-[var(--muted)]">
+                        ※ RaindropやGoogleドライブ解析時の前提となる専門家の役割・視点を設定します。
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Sub Tab 2: SYNC_PROMPT */}
+                  {activePromptSubTab === "sync" && (
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <label className="font-bold text-[var(--text)] flex items-center gap-1">
+                          <span>SYNC_PROMPT (外部データ自動同期・要約プロンプト)</span>
+                        </label>
+                        <span className="text-[10px] text-[var(--muted)]">記事・PDF・画像解析用</span>
+                      </div>
+                      <textarea
+                        className="w-full font-mono text-xs p-2.5 bg-[#0d1117] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all resize-y"
+                        rows={5}
+                        value={syncPromptInput}
+                        onChange={(e) => setSyncPromptInput(e.target.value)}
+                        placeholder={DEFAULT_PROMPTS.SYNC_PROMPT}
+                      />
+                      <p className="text-[10px] text-[var(--muted)]">
+                        ※ 外部記事から要約（highlights）や分野キーワード（tags）を抽出する際の指示文です。
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Sub Tab 3: WEEKLY_REPORT_PROMPT */}
+                  {activePromptSubTab === "weekly" && (
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <label className="font-bold text-[var(--text)] flex items-center gap-1">
+                          <span>WEEKLY_REPORT_PROMPT (週次レポート・ナレッジ総括)</span>
+                        </label>
+                        <span className="text-[10px] text-[var(--muted)]">包括レポート生成用</span>
+                      </div>
+                      <textarea
+                        className="w-full font-mono text-xs p-2.5 bg-[#0d1117] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all resize-y"
+                        rows={7}
+                        value={weeklyReportPromptInput}
+                        onChange={(e) => setWeeklyReportPromptInput(e.target.value)}
+                        placeholder={DEFAULT_PROMPTS.WEEKLY_REPORT_PROMPT}
+                      />
+                      <p className="text-[10px] text-[var(--muted)]">
+                        ※ <code className="text-purple-300 font-mono">{"{notes_content}"}</code> に期間内のノート本文や要約が自動挿入されます。
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Prompt Action Buttons: Reset & Save */}
+                  <div className="flex items-center justify-between pt-2 border-t border-[var(--border2)]">
+                    <button
+                      type="button"
+                      onClick={handleResetPrompts}
+                      className="px-3 py-1.5 rounded-md border border-[var(--border2)] hover:border-red-400/40 hover:bg-red-500/10 text-orange-400 hover:text-orange-300 text-[11px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                      title="ハードコードされた初期プロンプトに戻します"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>デフォルトに戻す</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleSavePrompts}
+                      className="px-4 py-1.5 rounded-md bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/50 text-purple-200 text-[11px] font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                    >
+                      <Save className="w-3 h-3" />
+                      <span>プロンプトを保存</span>
                     </button>
                   </div>
                 </div>
-                <div className="max-h-[140px] overflow-y-auto border border-[var(--border)] rounded-md p-2 bg-[var(--bg)] flex flex-col gap-1">
-                  {pendingSheetItems.map((item, idx) => (
-                    <label
-                      key={idx}
-                      className="flex items-start gap-2 p-1.5 border-b border-[var(--border2)] last:border-0 cursor-pointer text-left"
-                    >
-                      <input
-                        type="checkbox"
-                        className="mt-1 accent-[var(--green)] cursor-pointer"
-                        checked={selectedIndices.includes(idx)}
-                        onChange={() => handleCheckboxChange(idx)}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[11px] font-semibold text-[var(--text)] truncate">{item.title}</div>
-                        <div className="text-[9px] text-[var(--muted)] line-clamp-2 leading-relaxed">{item.highlights}</div>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              </>
+              )}
+            </div>
+
+            {/* Status and feedback area */}
+            {isSyncingExternal && (
+              <div className="p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg text-xs text-purple-300 flex items-center gap-2.5 animate-pulse">
+                <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
+                <span>{externalSyncStatus || "同期中..."}</span>
+              </div>
             )}
 
-            {selectedIndices.length > 0 && (
+            {externalSyncResult && (
+              <div className={`p-3 rounded-lg text-xs border flex items-start gap-2.5 ${
+                externalSyncResult.isTimeOut 
+                  ? "bg-amber-500/10 border-amber-500/30 text-amber-300"
+                  : "bg-green-500/10 border-green-500/30 text-green-300"
+              }`}>
+                {externalSyncResult.isTimeOut ? (
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-green-400" />
+                )}
+                <div className="flex-1">
+                  <p className="font-bold">{externalSyncResult.message}</p>
+                  {externalSyncResult.isTimeOut && (
+                    <p className="text-[10px] text-amber-300/80 mt-1 leading-normal">
+                      ※ 処理時間上限（3.5分）に達したため一時中断しました。次回実行時に残りのアイテムから安全に再開できます。
+                    </p>
+                  )}
+                  {externalSyncResult.problematicItem && (
+                    <p className="text-[10px] text-amber-300/80 mt-0.5">
+                      対象: {externalSyncResult.problematicItem.title}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Primary Action Button */}
+            <button
+              type="button"
+              disabled={isSyncingExternal}
+              onClick={handleExecuteExternalSync}
+              className="w-full py-3 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold text-xs rounded-lg shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer"
+            >
+              <RefreshCw className={`w-4 h-4 ${isSyncingExternal ? "animate-spin" : ""}`} />
+              <span>{isSyncingExternal ? "外部データを同期中..." : "⚡ スプレッドシートへ自動取り込みを実行"}</span>
+            </button>
+          </div>
+        )}
+
+        {/* TAB 2: File / URL / Spreadsheet Direct Import */}
+        {activeTab === "file_direct" && (
+          <div className="flex flex-col gap-4 max-h-[60vh] overflow-y-auto pr-1">
+            <div>
+              <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1">1. 入力元 (URL or ファイル選択)</label>
+              <div className="flex flex-col gap-1.5">
+                <input
+                  type="text"
+                  className="w-full text-xs p-2.5 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all font-mono"
+                  placeholder="GoogleドキュメントのURL"
+                  value={importUrl}
+                  onChange={(e) => {
+                    setImportUrl(e.target.value);
+                    if (e.target.value) setSelectedFile(null);
+                  }}
+                />
+                
+                <div className="text-center text-[var(--muted)] text-[10px] my-1">— または ローカルファイルを選択 —</div>
+                
+                {selectedFile ? (
+                  <div className="p-3 bg-[var(--bg)] border border-[var(--purple)] rounded-md flex items-center justify-between gap-2 animate-[fadeIn_0.1s_ease-out]">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-lg">📄</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-semibold text-[var(--bright)] truncate">{selectedFile.name}</div>
+                        <div className="text-[10px] text-[var(--muted)]">{(selectedFile.size / 1024).toFixed(1)} KB</div>
+                      </div>
+                    </div>
+                    <button 
+                      type="button"
+                      className="text-xs text-[var(--muted)] hover:text-[var(--red)] p-1 px-2 border border-[var(--border2)] rounded hover:bg-[#ff000010] cursor-pointer transition-colors"
+                      onClick={() => setSelectedFile(null)}
+                    >
+                      解除
+                    </button>
+                  </div>
+                ) : (
+                  <input
+                    type="file"
+                    className="w-full text-xs p-2 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] cursor-pointer"
+                    accept=".pdf,.txt,.mhtml,.docx,.json"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        setSelectedFile(e.target.files[0]);
+                        setImportUrl("");
+                      }
+                    }}
+                  />
+                )}
+                <p className="text-[10px] text-[var(--muted)] px-1">
+                  対応形式: JSON (.json) / PDF / テキスト (.txt) / MHTML (.mhtml) / Word (.docx)
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1">2. 取り込みモード</label>
+              <select
+                className="w-full text-xs p-2.5 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)]"
+                value={importMode}
+                onChange={(e) => setImportMode(e.target.value)}
+              >
+                <option value="raw">そのまま取り込む</option>
+                <option value="summarize">要約して取り込む</option>
+                <option value="keypoints">キーポイントを抽出</option>
+              </select>
+            </div>
+
+            <div className="flex items-start gap-2 text-xs text-[var(--text)] cursor-pointer">
+              <input
+                id="modal-opt-title"
+                type="checkbox"
+                className="w-4 h-5 cursor-pointer accent-[var(--purple)]"
+                checked={optimizeTitle}
+                onChange={(e) => setOptimizeTitle(e.target.checked)}
+              />
+              <label htmlFor="modal-opt-title" className="cursor-pointer flex flex-col select-none">
+                <span className="font-bold">AIでタイトルを最適化する</span>
+                <span className="text-[10px] text-[var(--green)] mt-0.5 leading-normal">
+                  ✦ 2件以上の取り込み時は自動バッチ一括処理に切替わり、API呼び出し回数を1回に集約して消費量を削減します。
+                </span>
+              </label>
+            </div>
+
+            {/* 反映方法 */}
+            <div className="border-t border-[var(--border)] pt-3">
+              <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1.5">3. 反映方法</label>
+              <div className="flex flex-col gap-1.5 bg-[var(--bg)] border border-[var(--border2)] rounded-md p-2.5">
+                <label className="flex items-start gap-2 text-[11px] text-[var(--text)] cursor-pointer">
+                  <input
+                    type="radio"
+                    name="import-overwrite-mode"
+                    className="mt-0.5 cursor-pointer accent-[var(--purple)]"
+                    checked={!overwriteBatch}
+                    onChange={() => setOverwriteBatch(false)}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-[var(--blue)] font-bold">既存のノートに統合・追加（推奨）</div>
+                  </div>
+                </label>
+                <label className="flex items-start gap-2 text-[11px] text-[var(--text)] cursor-pointer mt-0.5">
+                  <input
+                    type="radio"
+                    name="import-overwrite-mode"
+                    className="mt-0.5 cursor-pointer accent-[var(--purple)]"
+                    checked={overwriteBatch}
+                    onChange={() => setOverwriteBatch(true)}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-[var(--red)]">⚠️ 既存データを全て削除して【丸ごと上書き】</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {/* Spreadsheet Integration Portal */}
+            <div className="border-t border-[var(--border)] pt-3">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-[11px] text-[var(--subtle)] font-bold block">4. 個別スプレッドシートから未処理分を取得</label>
+                <button
+                  type="button"
+                  onClick={() => setShowSheetUrlHelp(!showSheetUrlHelp)}
+                  className="text-[10px] text-[var(--purple)] font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <HelpCircle className="w-3 h-3" />
+                  URLについて
+                </button>
+              </div>
+
+              {showSheetUrlHelp && (
+                <div className="mb-3 p-2.5 bg-[var(--purple)]/10 border border-[var(--purple)]/30 rounded-md text-[10px] text-[var(--text)] leading-relaxed">
+                  <p>対象のスプレッドシートをブラウザで開き、アドレスバーのURLを貼り付けてください。</p>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-2">
+                <input
+                  type="text"
+                  className="w-full text-xs p-2 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] font-mono"
+                  placeholder="スプレッドシートのURL"
+                  value={sheetUrl}
+                  onChange={(e) => setSheetUrl(e.target.value)}
+                />
+                <input
+                  type="text"
+                  className="w-full text-xs p-2 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] font-mono"
+                  placeholder="シート名 (例: シート1)"
+                  value={sheetName}
+                  onChange={(e) => setSheetName(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="w-full py-1.5 bg-transparent text-xs hover:bg-[var(--border)] border border-[var(--border2)] rounded-md text-[var(--text)] font-semibold cursor-pointer"
+                  onClick={fetchSheetData}
+                  disabled={isProcessing}
+                >
+                  未処理データ一覧を取得
+                </button>
+
+                {pendingSheetItems.length > 0 && (
+                  <>
+                    <div className="flex items-center justify-between px-1 mt-1">
+                      <span className="text-[10px] text-[var(--subtle)] font-bold">未処理項目: {pendingSheetItems.length}件</span>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedIndices(pendingSheetItems.map((_, i) => i))}
+                          className="text-[10px] text-[var(--purple)] font-bold cursor-pointer"
+                        >
+                          全て選択
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedIndices([])}
+                          className="text-[10px] text-gray-400 cursor-pointer"
+                        >
+                          解除
+                        </button>
+                      </div>
+                    </div>
+                    <div className="max-h-[120px] overflow-y-auto border border-[var(--border)] rounded-md p-1.5 bg-[var(--bg)] flex flex-col gap-1">
+                      {pendingSheetItems.map((item, idx) => (
+                        <label key={idx} className="flex items-start gap-2 p-1 border-b border-[var(--border2)] last:border-0 cursor-pointer text-left">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5 accent-[var(--green)] cursor-pointer"
+                            checked={selectedIndices.includes(idx)}
+                            onChange={() => handleCheckboxChange(idx)}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[11px] font-semibold text-[var(--text)] truncate">{item.title}</div>
+                            <div className="text-[9px] text-[var(--muted)] line-clamp-1">{item.highlights}</div>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      className="w-full py-2 bg-[#238636] hover:bg-[#2ea043] text-white font-bold text-xs rounded-md cursor-pointer transition-colors"
+                      onClick={importSelectedItems}
+                      disabled={isProcessing}
+                    >
+                      選択した {selectedIndices.length} 件を取り込む
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Direct File/URL Submit */}
+            <div className="flex justify-end gap-2 pt-2 border-t border-[var(--border2)]">
               <button
-                className="w-full py-2.5 bg-[#2386361a] hover:bg-[#23863633] border border-[#23863644] text-[#7ee787] font-bold text-xs rounded-md cursor-pointer transition-all"
-                onClick={importSelectedItems}
+                type="button"
+                className="text-xs text-[var(--purple)] bg-[#a371f715] border border-[#a371f744] hover:bg-[#a371f725] p-2 px-5 rounded-md cursor-pointer font-bold"
+                onClick={runImport}
                 disabled={isProcessing}
               >
-                選択した {selectedIndices.length} 件を取り込む
+                {processingText}
               </button>
-            )}
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className="flex gap-2 justify-end border-t border-[var(--border2)] pt-4 mt-1">
+        {/* Footer Close */}
+        <div className="flex justify-end border-t border-[var(--border2)] pt-3">
           <button
-            className="text-xs text-[var(--subtle)] border border-[var(--border2)] hover:bg-[var(--border)] p-2 px-4 rounded-md cursor-pointer font-medium transition-colors"
+            type="button"
+            className="text-xs text-[var(--subtle)] border border-[var(--border2)] hover:bg-[var(--border)] p-2 px-4 rounded-md cursor-pointer font-medium"
             onClick={onClose}
           >
             閉じる
-          </button>
-          <button
-            className="text-xs text-[var(--purple)] bg-[#a371f715] border border-[#a371f744] hover:bg-[#a371f725] p-2 px-5 rounded-md cursor-pointer font-bold transition-all"
-            onClick={runImport}
-            disabled={isProcessing}
-          >
-            {processingText}
           </button>
         </div>
       </div>

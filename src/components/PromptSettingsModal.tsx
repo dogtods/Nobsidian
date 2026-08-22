@@ -16,10 +16,28 @@ export const PROMPT_KEYS = {
   ORGANIZE_FOLDER: "cn_prompt_organize_folder",
   FIND_RELATED: "cn_prompt_find_related",
   STREAM_ANALYSIS: "cn_prompt_stream_analysis",
+  SYSTEM_PERSONA: "cn_prompt_system_persona",
+  SYNC_PROMPT: "cn_prompt_sync_prompt",
+  WEEKLY_REPORT_PROMPT: "cn_prompt_weekly_report_prompt",
 };
 
 export const DEFAULT_PROMPTS = {
   TITLE: `以下のテキストの内容を最もよく表す、短くて魅力的な日本語のタイトル（20文字以内）を1つだけ提案してください。出力はタイトルのみとし、装飾や説明は不要です。\n\n内容:\n{content}`,
+  SYSTEM_PERSONA: `あなたは環境ビジネス・技術情報の専門アナリストです。`,
+  SYNC_PROMPT: `具体的な数字、事実、市場への影響、主要なナレッジを重点的に抽出し、1000文字程度で要約してください。抽象的な一般論は不要です。\nまた、この内容が属する分野を示すキーワードを1つだけ作成してください。`,
+  WEEKLY_REPORT_PROMPT: `あなたは優秀なビジネス・技術リサーチアナリストです。
+収集された以下の記事・ノート群（週次・期間ナレッジ）を包括的に分析し、エグゼクティブ向けの実践的な「週次ナレッジ分析レポート」を作成してください。
+
+【レポートの構成】
+1. 🎯 今週のエグゼクティブサマリー（主要動向の要約、市場・技術の転換点、2〜3パラグラフ）
+2. 📊 分野・トピック別詳細分析（重要トピックごとの動向、具体的な数値、企業・組織の動向、事実関係）
+3. ⚡ 主要な示唆と市場への影響（ビジネスや研究開発へのインパクト、機会とリスク）
+4. 🔮 今後の注目点・アクション提案（次に注視すべきマイルストーン、推奨アクション）
+
+【分析対象ノートデータ】
+{notes_content}
+
+※具体的な固有名詞、数字、日付を明記し、論理的かつ説得力のある日本語で作成してください。`,
   ANALYZE: `あなたはナレッジベース管理AIです。以下の【対象のメモ】を読み込み、指定された【指示】に従ってJSON形式で分析結果を出力してください。
 
 【対象のメモ】
@@ -163,6 +181,9 @@ interface PromptSettingsModalProps {
 
 export default function PromptSettingsModal({ isOpen, onClose, onSettingsClick, onSaveToast }: PromptSettingsModalProps) {
   const [titlePrompt, setTitlePrompt] = useState("");
+  const [systemPersonaPrompt, setSystemPersonaPrompt] = useState("");
+  const [syncPrompt, setSyncPrompt] = useState("");
+  const [weeklyReportPrompt, setWeeklyReportPrompt] = useState("");
   const [analyzePrompt, setAnalyzePrompt] = useState("");
   const [analyzeBulkPrompt, setAnalyzeBulkPrompt] = useState("");
   const [importSummarizePrompt, setImportSummarizePrompt] = useState("");
@@ -179,6 +200,9 @@ export default function PromptSettingsModal({ isOpen, onClose, onSettingsClick, 
   useEffect(() => {
     if (isOpen) {
       setTitlePrompt(getStoredPrompt("TITLE"));
+      setSystemPersonaPrompt(getStoredPrompt("SYSTEM_PERSONA"));
+      setSyncPrompt(getStoredPrompt("SYNC_PROMPT"));
+      setWeeklyReportPrompt(getStoredPrompt("WEEKLY_REPORT_PROMPT"));
       setAnalyzePrompt(getStoredPrompt("ANALYZE"));
       setAnalyzeBulkPrompt(getStoredPrompt("ANALYZE_BULK"));
       setImportSummarizePrompt(getStoredPrompt("IMPORT_SUMMARIZE"));
@@ -197,6 +221,9 @@ export default function PromptSettingsModal({ isOpen, onClose, onSettingsClick, 
 
   const handleSave = () => {
     localStorage.setItem(PROMPT_KEYS.TITLE, titlePrompt);
+    localStorage.setItem(PROMPT_KEYS.SYSTEM_PERSONA, systemPersonaPrompt);
+    localStorage.setItem(PROMPT_KEYS.SYNC_PROMPT, syncPrompt);
+    localStorage.setItem(PROMPT_KEYS.WEEKLY_REPORT_PROMPT, weeklyReportPrompt);
     localStorage.setItem(PROMPT_KEYS.ANALYZE, analyzePrompt);
     localStorage.setItem(PROMPT_KEYS.ANALYZE_BULK, analyzeBulkPrompt);
     localStorage.setItem(PROMPT_KEYS.IMPORT_SUMMARIZE, importSummarizePrompt);
@@ -224,6 +251,9 @@ export default function PromptSettingsModal({ isOpen, onClose, onSettingsClick, 
     localStorage.removeItem("cn_ai_opt_skip_keywords");
 
     setTitlePrompt(DEFAULT_PROMPTS.TITLE);
+    setSystemPersonaPrompt(DEFAULT_PROMPTS.SYSTEM_PERSONA);
+    setSyncPrompt(DEFAULT_PROMPTS.SYNC_PROMPT);
+    setWeeklyReportPrompt(DEFAULT_PROMPTS.WEEKLY_REPORT_PROMPT);
     setAnalyzePrompt(DEFAULT_PROMPTS.ANALYZE);
     setAnalyzeBulkPrompt(DEFAULT_PROMPTS.ANALYZE_BULK);
     setImportSummarizePrompt(DEFAULT_PROMPTS.IMPORT_SUMMARIZE);
@@ -258,6 +288,42 @@ export default function PromptSettingsModal({ isOpen, onClose, onSettingsClick, 
         </div>
 
         <div className="flex flex-col gap-3 max-h-[60vh] overflow-y-auto pr-1">
+          {/* External Sync / System Persona */}
+          <div className="border-b border-[var(--border2)] pb-3">
+            <span className="text-[11px] font-bold text-[var(--purple)] uppercase tracking-wider block mb-2">⚡ 外部同期・ナレッジ解析プロンプト</span>
+            <div className="flex flex-col gap-3">
+              <div>
+                <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1">SYSTEM_PERSONA (AIの役割・ペルソナ)</label>
+                <textarea
+                  className="w-full font-mono text-xs p-2 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all resize-y"
+                  rows={2}
+                  value={systemPersonaPrompt}
+                  onChange={(e) => setSystemPersonaPrompt(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1">SYNC_PROMPT (外部データ自動同期・要約プロンプト)</label>
+                <textarea
+                  className="w-full font-mono text-xs p-2 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all resize-y"
+                  rows={4}
+                  value={syncPrompt}
+                  onChange={(e) => setSyncPrompt(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1">WEEKLY_REPORT_PROMPT (週次レポート・ナレッジ総括プロンプト)</label>
+                <textarea
+                  className="w-full font-mono text-xs p-2 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all resize-y"
+                  rows={5}
+                  value={weeklyReportPrompt}
+                  onChange={(e) => setWeeklyReportPrompt(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+
           <div>
             <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1">タイトル最適化プロンプト</label>
             <textarea

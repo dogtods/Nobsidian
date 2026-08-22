@@ -4,7 +4,8 @@
  */
 
 import React, { useState } from "react";
-import { RefreshCw, Download, Upload, AlertTriangle, Cloud, HelpCircle, CheckCircle } from "lucide-react";
+import { RefreshCw, Download, Upload, AlertTriangle, Cloud, HelpCircle, Globe, Sparkles } from "lucide-react";
+import { getStoredPrompt } from "./PromptSettingsModal";
 
 interface SyncManagerModalProps {
   isOpen: boolean;
@@ -14,6 +15,13 @@ interface SyncManagerModalProps {
   onForceUpload: () => Promise<void>;
   syncStatus: "synced" | "syncing" | "offline" | "error";
   syncLabel: string;
+  onSyncExternalSources?: (options: { 
+    raindrop: boolean; 
+    drive: boolean; 
+    persona?: string; 
+    syncPrompt?: string; 
+    weeklyReportPrompt?: string; 
+  }) => Promise<any>;
 }
 
 export default function SyncManagerModal({
@@ -23,22 +31,60 @@ export default function SyncManagerModal({
   onForceDownload,
   onForceUpload,
   syncStatus,
-  syncLabel
+  syncLabel,
+  onSyncExternalSources
 }: SyncManagerModalProps) {
-  const [loadingType, setLoadingType] = useState<"merge" | "download" | "upload" | "workspace" | null>(null);
+  const [loadingType, setLoadingType] = useState<"merge" | "download" | "upload" | "workspace" | "external" | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [workspaceSheet, setWorkspaceSheet] = useState(localStorage.getItem("cn_gas_sheet_name") || "Notes");
+
+  // External sync checkboxes
+  const [syncRaindrop, setSyncRaindrop] = useState(true);
+  const [syncDrive, setSyncDrive] = useState(true);
 
   if (!isOpen) return null;
 
-  const handleAction = async (type: "merge" | "download" | "upload" | "workspace", action: () => Promise<void>) => {
+  const handleAction = async (type: "merge" | "download" | "upload" | "workspace" | "external", action: () => Promise<void>) => {
     setLoadingType(type);
     setErrorMessage(null);
+    setSuccessMessage(null);
     try {
       await action();
-      onClose(); // 成功したらモーダルを閉じる
+      if (type !== "external") {
+        onClose();
+      }
     } catch (e: any) {
       setErrorMessage(e.message || "同期処理中にエラーが発生しました。");
+    } finally {
+      setLoadingType(null);
+    }
+  };
+
+  const handleExternalSync = async () => {
+    if (!syncRaindrop && !syncDrive) {
+      setErrorMessage("Raindrop または Googleドライブのいずれかを選択してください。");
+      return;
+    }
+    if (!onSyncExternalSources) {
+      setErrorMessage("外部取り込み関数が設定されていません。");
+      return;
+    }
+    setLoadingType("external");
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    try {
+      const res = await onSyncExternalSources({ 
+        raindrop: syncRaindrop, 
+        drive: syncDrive,
+        persona: getStoredPrompt("SYSTEM_PERSONA"),
+        syncPrompt: getStoredPrompt("SYNC_PROMPT"),
+        weeklyReportPrompt: getStoredPrompt("WEEKLY_REPORT_PROMPT")
+      });
+      const added = res?.addedCount || 0;
+      setSuccessMessage(`${added} 件の外部データを新規取得し、アプリへ反映しました ✦`);
+    } catch (e: any) {
+      setErrorMessage(e.message || "外部取り込み中にエラーが発生しました。");
     } finally {
       setLoadingType(null);
     }
@@ -55,9 +101,9 @@ export default function SyncManagerModal({
       />
 
       {/* Modal Container */}
-      <div className="bg-[#161b22] border border-[#30363d] rounded-2xl p-6 w-[520px] max-w-full shadow-2xl relative z-[301] flex flex-col gap-5 text-gray-200">
+      <div className="bg-[#161b22] border border-[#30363d] rounded-2xl p-6 w-[540px] max-w-full shadow-2xl relative z-[301] flex flex-col gap-4 text-gray-200 max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-start justify-between border-b border-[#30363d] pb-4">
+        <div className="flex items-start justify-between border-b border-[#30363d] pb-3">
           <div className="flex items-center gap-2.5">
             <span className="p-2 rounded-lg bg-blue-500/10 text-[var(--blue)]">
               <Cloud className="w-5 h-5" />
@@ -67,7 +113,7 @@ export default function SyncManagerModal({
                 クラウド同期マネージャー
               </h3>
               <p className="text-[11px] text-[var(--subtle)] mt-0.5">
-                Googleスプレッドシート(GAS)とノートデータの同期方向を手動で選択・制御できます。
+                Googleスプレッドシート(GAS)との同期、およびRaindrop / ドライブからの自動取り込みを管理します。
               </p>
             </div>
           </div>
@@ -81,7 +127,7 @@ export default function SyncManagerModal({
         </div>
 
         {/* Current Info */}
-        <div className="bg-[#0d1117] border border-[#30363d] rounded-xl p-3.5 flex items-center justify-between text-xs">
+        <div className="bg-[#0d1117] border border-[#30363d] rounded-xl p-3 flex items-center justify-between text-xs">
           <div className="flex flex-col gap-1">
             <span className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider">
               現在の同期ステータス
@@ -105,10 +151,7 @@ export default function SyncManagerModal({
             </div>
           </div>
           <div className="text-right text-[11px] text-gray-500">
-            <div>スマートフォン・PC間の不整合を解決します。</div>
-            <div className="mt-0.5 text-[var(--subtle)]">
-              ※ シートの変更は「設定⚙」からいつでも行えます。
-            </div>
+            <div>端末間の不整合を解決します。</div>
           </div>
         </div>
 
@@ -122,9 +165,79 @@ export default function SyncManagerModal({
           </div>
         )}
 
+        {successMessage && (
+          <div className="bg-green-500/10 border border-green-500/20 text-green-300 text-xs p-3 rounded-lg flex items-start gap-2">
+            <Sparkles className="w-4 h-4 shrink-0 mt-0.5 text-green-400" />
+            <div>
+              <p className="font-bold">{successMessage}</p>
+            </div>
+          </div>
+        )}
+
         {/* Actions List */}
-        <div className="flex flex-col gap-3">
-          {/* 1. Merge Sync */}
+        <div className="flex flex-col gap-2.5">
+          
+          {/* Action 1: External Source Automatic Sync (Raindrop & Drive MHT/PDF) */}
+          <div className="w-full text-left bg-purple-950/20 hover:bg-purple-950/30 border border-purple-500/30 rounded-xl p-3.5 flex flex-col gap-2.5 transition-all">
+            <div className="flex gap-3">
+              <div className="p-2 rounded-lg bg-purple-500/10 text-purple-400 self-start mt-0.5">
+                <Globe className={`w-4.5 h-4.5 ${loadingType === "external" ? "animate-spin" : ""}`} />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                    ⚡ 外部ソース自動取り込み (Raindrop / Googleドライブ MHT・PDF)
+                  </span>
+                  <span className="text-[9px] bg-purple-500/20 text-purple-300 font-bold px-1.5 py-0.5 rounded-full">
+                    AI自動抽出
+                  </span>
+                </div>
+                <p className="text-[11px] text-[var(--subtle)] mt-1 leading-relaxed">
+                  RaindropのWeb記事やドライブ内のMHTファイルをGemini AIで自動解析し、スプレッドシート（A〜M列）へ保存後、アプリに一括反映します。
+                </p>
+              </div>
+            </div>
+
+            {/* Checkboxes */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-[42px] pt-1">
+              <label className="flex items-center gap-2 text-xs text-gray-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={syncRaindrop}
+                  onChange={(e) => setSyncRaindrop(e.target.checked)}
+                  className="w-4 h-4 accent-purple-500 cursor-pointer"
+                  disabled={isAnyLoading}
+                />
+                <span>Raindrop (Web記事)</span>
+              </label>
+
+              <label className="flex items-center gap-2 text-xs text-gray-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={syncDrive}
+                  onChange={(e) => setSyncDrive(e.target.checked)}
+                  className="w-4 h-4 accent-purple-500 cursor-pointer"
+                  disabled={isAnyLoading}
+                />
+                <span>Googleドライブ (MHT/PDF)</span>
+              </label>
+            </div>
+
+            {/* Execute Button */}
+            <div className="pl-[42px] pt-1">
+              <button
+                type="button"
+                disabled={isAnyLoading}
+                onClick={handleExternalSync}
+                className="w-full py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer shadow"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingType === "external" ? "animate-spin" : ""}`} />
+                <span>{loadingType === "external" ? "外部ソース同期中（最大3.5分）..." : "外部データをスプレッドシートへ取り込む"}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Action 2: Merge Sync */}
           <button
             type="button"
             disabled={isAnyLoading}
@@ -145,12 +258,12 @@ export default function SyncManagerModal({
               </div>
               <p className="text-[11px] text-[var(--subtle)] mt-1 leading-relaxed">
                 ローカルとスプレッドシートの両方のすべてのノートを比較し、
-                <strong>更新日時が最新のデータ</strong>を優先してマージします。双方の新規追加や編集が適応されます。
+                <strong>更新日時が最新のデータ</strong>を優先してマージします。
               </p>
             </div>
           </button>
 
-          {/* 2. Force Download */}
+          {/* Action 3: Force Download */}
           <button
             type="button"
             disabled={isAnyLoading}
@@ -170,12 +283,12 @@ export default function SyncManagerModal({
                 </span>
               </div>
               <p className="text-[11px] text-[var(--subtle)] mt-1 leading-relaxed">
-                <strong>スプレッドシート側にあるデータ</strong>を正とします。現在この画面に一時保存されている編集やノートをすべて破棄し、スプレッドシート上のデータで完全に置き換えます。
+                <strong>スプレッドシート側にあるデータ</strong>でアプリ内のノートを上書きします。
               </p>
             </div>
           </button>
 
-          {/* 3. Force Upload */}
+          {/* Action 4: Force Upload */}
           <button
             type="button"
             disabled={isAnyLoading}
@@ -195,13 +308,13 @@ export default function SyncManagerModal({
                 </span>
               </div>
               <p className="text-[11px] text-[var(--subtle)] mt-1 leading-relaxed">
-                <strong>現在この画面にあるノートデータ</strong>を正とし、スプレッドシートの全データをこれで強制的に上書き保存します。ローカルで整理した最新の状態を強制的にクラウドへ適用したい場合に非常に有効です。
+                <strong>現在この画面にあるノートデータ</strong>をスプレッドシートへ上書き保存します。
               </p>
             </div>
           </button>
 
-          {/* 4. Workspace Switch */}
-          <div className="group w-full text-left bg-[#21262d]/50 border border-[#30363d] rounded-xl p-3.5 flex flex-col gap-3">
+          {/* Action 5: Workspace Switch */}
+          <div className="group w-full text-left bg-[#21262d]/50 border border-[#30363d] rounded-xl p-3.5 flex flex-col gap-2">
             <div className="flex gap-3">
               <div className="p-2 rounded-lg bg-purple-500/5 text-[var(--purple)] self-start mt-0.5">
                 <Cloud className={`w-4.5 h-4.5 ${loadingType === "workspace" ? "animate-pulse" : ""}`} />
@@ -212,15 +325,15 @@ export default function SyncManagerModal({
                     ④ ワークスペースの切り替え（別シート読込）
                   </span>
                   <span className="text-[9px] bg-purple-500/10 text-[var(--purple)] font-bold px-1.5 py-0.5 rounded-full">
-                    完全入れ替え
+                    完全入替
                   </span>
                 </div>
                 <p className="text-[11px] text-[var(--subtle)] mt-1 leading-relaxed">
-                  指定したシートからデータを読み込み、現在のアプリ内のデータを<strong>完全に上書き（入れ替え）</strong>します。プロジェクトごとにシートを分けて管理・グラフ化したい場合に最適です。
+                  指定したシートからデータを読み込み、現在のノートを入れ替えます。
                 </p>
               </div>
             </div>
-            <div className="flex gap-2 items-center pl-[52px]">
+            <div className="flex gap-2 items-center pl-[42px]">
               <input
                 type="text"
                 value={workspaceSheet}
@@ -249,10 +362,10 @@ export default function SyncManagerModal({
         </div>
 
         {/* Warning Footer info */}
-        <div className="border-t border-[#30363d] pt-4 flex gap-2 text-[11px] text-gray-500 items-start">
-          <HelpCircle className="w-4 h-4 shrink-0 text-gray-500 mt-0.5" />
+        <div className="border-t border-[#30363d] pt-3 flex gap-2 text-[10px] text-gray-500 items-start">
+          <HelpCircle className="w-3.5 h-3.5 shrink-0 text-gray-500 mt-0.5" />
           <p className="leading-relaxed">
-            【ご注意】「上書き」を選択した場合、もう一方のデータは復元できません。スプレッドシートのバージョン履歴設定などで元に戻せる場合はありますが、十分にデータ状態を確認してから実行してください。
+            【ご注意】「強制ダウンロード/アップロード」を選択した場合、もう一方のデータは復元できません。十分にデータ状態を確認してから実行してください。
           </p>
         </div>
       </div>

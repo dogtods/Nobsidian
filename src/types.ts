@@ -14,6 +14,12 @@ export interface Note {
   updatedAt: number;
   timeline?: string; // Timeline pattern strings from Column L
   columnJ?: string;  // I列から取り込んだ生メモ情報（J列に保存して非表示）
+  rawContent?: string; // I列 (all: 原文テキスト)
+  metaInfo?: string;   // J列 (apendix: メタ情報)
+  dateStr?: string;    // K列 (date: 発行日・取り込み日)
+  source?: string;     // M列 (source: raindrop / drive / mht / app)
+  processed?: boolean | string; // G列 (processed)
+  nobsidian?: string;  // H列 (nobsidian)
 }
 
 export interface FolderRelation {
