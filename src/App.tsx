@@ -573,6 +573,8 @@ export default function App() {
     persona?: string; 
     syncPrompt?: string; 
     weeklyReportPrompt?: string; 
+    targetSheetName?: string;
+    autoReloadApp?: boolean;
   }) => {
     const url = getApiUrl();
     if (!url || url.includes("YOUR_") || url.includes("YOUR_GAS_URL")) {
@@ -580,13 +582,23 @@ export default function App() {
     }
     updateSyncStatus("syncing", "外部データ取り込み中...");
     try {
-      const res = await apiPost({ action: "syncExternalSources", options });
+      const targetSheet = (options.targetSheetName && options.targetSheetName.trim()) 
+        ? options.targetSheetName.trim() 
+        : (localStorage.getItem("cn_external_sync_sheet_name") || localStorage.getItem("cn_gas_sheet_name") || "Notes");
+
+      const res = await apiPost({ 
+        action: "syncExternalSources", 
+        options, 
+        sheetName: targetSheet 
+      });
       if (!res || !res.success) {
         throw new Error(res?.error || "外部データの取得に失敗しました");
       }
 
-      // Re-sync notes from spreadsheet to app
-      await syncFromServer();
+      // Re-sync notes from spreadsheet to app if enabled
+      if (options.autoReloadApp !== false) {
+        await syncFromServer();
+      }
       return res;
     } catch (e: any) {
       updateSyncStatus("error", "エラー");
@@ -4438,6 +4450,10 @@ const renderMarkdownToElements = (contentStr: string) => {
         apiPost={apiPost}
         onNotesUpdateBatch={handleBatchUpgradeNotes}
         onSyncExternalSources={handleSyncExternalSources}
+        onSyncFromServer={syncFromServer}
+        syncStatus={syncStatus}
+        syncLabel={syncLabel}
+        notesCount={notes.length}
       />
 
       <ConfirmModal

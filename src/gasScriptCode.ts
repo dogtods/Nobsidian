@@ -170,7 +170,7 @@ function processApiRequest(e) {
   }
 
   const action = postData.action || (e.parameter ? e.parameter.action : "");
-  const targetSheet = postData.sheetName || (e.parameter ? e.parameter.sheetName : "");
+  const targetSheet = postData.sheetName || (postData.options && postData.options.targetSheetName) || (e.parameter ? e.parameter.sheetName : "");
 
   if (!action) {
     return createJsonResponse({ 
@@ -436,7 +436,8 @@ function syncExternalSources(options, targetSheetName) {
   const startTime = Date.now();
   console.log("データの同期を開始します...");
 
-  const sheet = getSheet(targetSheetName);
+  const effectiveSheetName = (options && options.targetSheetName) ? options.targetSheetName : targetSheetName;
+  const sheet = getSheet(effectiveSheetName);
   const lastRow = sheet.getLastRow();
   const existingIds = lastRow > 1 
     ? new Set(sheet.getRange(2, 1, lastRow - 1, 1).getValues().flat().map(String)) 

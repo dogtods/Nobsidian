@@ -404,17 +404,33 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
               </div>
             </div>
           )}
-          <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1">📄 同期先シート名 (空の場合はデフォルト "Notes" を使用)</label>
-          <input
-            className="w-full text-xs p-2.5 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all"
-            type="text"
-            placeholder="Notes (例: 調査用メモ, アーカイブ, シート2 など)"
-            value={gasSheetName}
-            onChange={(e) => setGasSheetName(e.target.value)}
-          />
-          <p className="text-[9px] text-[var(--muted)] mt-1">
-            Googleスプレッドシート内のどのタブ（シート）とデータを読み書きするかを指定できます。
-          </p>
+          <div className="space-y-3">
+            <div>
+              <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1">
+                📄 アプリ同期・編集ノート用シート名 (空欄時: "Notes")
+              </label>
+              <input
+                className="w-full text-xs p-2.5 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all font-mono"
+                type="text"
+                placeholder="Notes (例: Notes, 調査用メモ, アーカイブ)"
+                value={gasSheetName}
+                onChange={(e) => setGasSheetName(e.target.value)}
+              />
+              <p className="text-[9px] text-[var(--muted)] mt-1">
+                アプリ内で作成・編集したノート（15列データ）を双方向同期・保存するメインシートです。
+              </p>
+            </div>
+
+            <div className="p-2.5 bg-[#161b22] border border-[#30363d] rounded-md text-[11px] text-gray-300 flex items-start gap-2">
+              <span className="text-purple-400 font-bold shrink-0">💡</span>
+              <div className="space-y-0.5">
+                <span className="font-semibold text-gray-200">MHT・Raindropの外部収集＆取り込み設定について</span>
+                <p className="text-[10px] text-gray-400 leading-relaxed">
+                  外部データの収集先シートや、アプリ画面への取り込みフローは、上部ヘッダーの「<strong>📥 取り込み</strong>」ポップアップから順を追って一元設定・実行できます。
+                </p>
+              </div>
+            </div>
+          </div>
           <div className="mt-2.5 p-2.5 bg-[#161b22] border border-[#30363d] rounded-md space-y-2">
             <h4 className="text-[10px] text-[var(--purple)] font-bold uppercase tracking-wider flex items-center gap-1">
               <FileSpreadsheet className="w-3.5 h-3.5" />
