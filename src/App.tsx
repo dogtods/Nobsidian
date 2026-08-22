@@ -4441,7 +4441,6 @@ const renderMarkdownToElements = (contentStr: string) => {
         onForceUpload={forceUploadToServer}
         syncStatus={syncStatus}
         syncLabel={syncLabel}
-        onSyncExternalSources={handleSyncExternalSources}
       />
 
       {/* Batch Folder Link progress modal */}

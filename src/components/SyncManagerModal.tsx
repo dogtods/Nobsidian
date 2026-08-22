@@ -4,8 +4,7 @@
  */
 
 import React, { useState } from "react";
-import { RefreshCw, Download, Upload, AlertTriangle, Cloud, HelpCircle, Globe, Sparkles } from "lucide-react";
-import { getStoredPrompt } from "./PromptSettingsModal";
+import { RefreshCw, Download, Upload, AlertTriangle, Cloud, HelpCircle, Sparkles } from "lucide-react";
 
 interface SyncManagerModalProps {
   isOpen: boolean;
@@ -15,13 +14,6 @@ interface SyncManagerModalProps {
   onForceUpload: () => Promise<void>;
   syncStatus: "synced" | "syncing" | "offline" | "error";
   syncLabel: string;
-  onSyncExternalSources?: (options: { 
-    raindrop: boolean; 
-    drive: boolean; 
-    persona?: string; 
-    syncPrompt?: string; 
-    weeklyReportPrompt?: string; 
-  }) => Promise<any>;
 }
 
 export default function SyncManagerModal({
@@ -32,59 +24,23 @@ export default function SyncManagerModal({
   onForceUpload,
   syncStatus,
   syncLabel,
-  onSyncExternalSources
 }: SyncManagerModalProps) {
-  const [loadingType, setLoadingType] = useState<"merge" | "download" | "upload" | "workspace" | "external" | null>(null);
+  const [loadingType, setLoadingType] = useState<"merge" | "download" | "upload" | "workspace" | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [workspaceSheet, setWorkspaceSheet] = useState(localStorage.getItem("cn_gas_sheet_name") || "Notes");
 
-  // External sync checkboxes
-  const [syncRaindrop, setSyncRaindrop] = useState(true);
-  const [syncDrive, setSyncDrive] = useState(true);
-
   if (!isOpen) return null;
 
-  const handleAction = async (type: "merge" | "download" | "upload" | "workspace" | "external", action: () => Promise<void>) => {
+  const handleAction = async (type: "merge" | "download" | "upload" | "workspace", action: () => Promise<void>) => {
     setLoadingType(type);
     setErrorMessage(null);
     setSuccessMessage(null);
     try {
       await action();
-      if (type !== "external") {
-        onClose();
-      }
+      onClose();
     } catch (e: any) {
       setErrorMessage(e.message || "同期処理中にエラーが発生しました。");
-    } finally {
-      setLoadingType(null);
-    }
-  };
-
-  const handleExternalSync = async () => {
-    if (!syncRaindrop && !syncDrive) {
-      setErrorMessage("Raindrop または Googleドライブのいずれかを選択してください。");
-      return;
-    }
-    if (!onSyncExternalSources) {
-      setErrorMessage("外部取り込み関数が設定されていません。");
-      return;
-    }
-    setLoadingType("external");
-    setErrorMessage(null);
-    setSuccessMessage(null);
-    try {
-      const res = await onSyncExternalSources({ 
-        raindrop: syncRaindrop, 
-        drive: syncDrive,
-        persona: getStoredPrompt("SYSTEM_PERSONA"),
-        syncPrompt: getStoredPrompt("SYNC_PROMPT"),
-        weeklyReportPrompt: getStoredPrompt("WEEKLY_REPORT_PROMPT")
-      });
-      const added = res?.addedCount || 0;
-      setSuccessMessage(`${added} 件の外部データを新規取得し、アプリへ反映しました ✦`);
-    } catch (e: any) {
-      setErrorMessage(e.message || "外部取り込み中にエラーが発生しました。");
     } finally {
       setLoadingType(null);
     }
@@ -113,7 +69,7 @@ export default function SyncManagerModal({
                 クラウド同期マネージャー
               </h3>
               <p className="text-[11px] text-[var(--subtle)] mt-0.5">
-                Googleスプレッドシート(GAS)との同期、およびRaindrop / ドライブからの自動取り込みを管理します。
+                Googleスプレッドシート(GAS)との双方向同期やデータバックアップを管理します。
               </p>
             </div>
           </div>
@@ -176,68 +132,7 @@ export default function SyncManagerModal({
 
         {/* Actions List */}
         <div className="flex flex-col gap-2.5">
-          
-          {/* Action 1: External Source Automatic Sync (Raindrop & Drive MHT/PDF) */}
-          <div className="w-full text-left bg-purple-950/20 hover:bg-purple-950/30 border border-purple-500/30 rounded-xl p-3.5 flex flex-col gap-2.5 transition-all">
-            <div className="flex gap-3">
-              <div className="p-2 rounded-lg bg-purple-500/10 text-purple-400 self-start mt-0.5">
-                <Globe className={`w-4.5 h-4.5 ${loadingType === "external" ? "animate-spin" : ""}`} />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                    ⚡ 外部ソース自動取り込み (Raindrop / Googleドライブ MHT・PDF)
-                  </span>
-                  <span className="text-[9px] bg-purple-500/20 text-purple-300 font-bold px-1.5 py-0.5 rounded-full">
-                    AI自動抽出
-                  </span>
-                </div>
-                <p className="text-[11px] text-[var(--subtle)] mt-1 leading-relaxed">
-                  RaindropのWeb記事やドライブ内のMHTファイルをGemini AIで自動解析し、スプレッドシート（A〜M列）へ保存後、アプリに一括反映します。
-                </p>
-              </div>
-            </div>
-
-            {/* Checkboxes */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-[42px] pt-1">
-              <label className="flex items-center gap-2 text-xs text-gray-200 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={syncRaindrop}
-                  onChange={(e) => setSyncRaindrop(e.target.checked)}
-                  className="w-4 h-4 accent-purple-500 cursor-pointer"
-                  disabled={isAnyLoading}
-                />
-                <span>Raindrop (Web記事)</span>
-              </label>
-
-              <label className="flex items-center gap-2 text-xs text-gray-200 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={syncDrive}
-                  onChange={(e) => setSyncDrive(e.target.checked)}
-                  className="w-4 h-4 accent-purple-500 cursor-pointer"
-                  disabled={isAnyLoading}
-                />
-                <span>Googleドライブ (MHT/PDF)</span>
-              </label>
-            </div>
-
-            {/* Execute Button */}
-            <div className="pl-[42px] pt-1">
-              <button
-                type="button"
-                disabled={isAnyLoading}
-                onClick={handleExternalSync}
-                className="w-full py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer shadow"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${loadingType === "external" ? "animate-spin" : ""}`} />
-                <span>{loadingType === "external" ? "外部ソース同期中（最大3.5分）..." : "外部データをスプレッドシートへ取り込む"}</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Action 2: Merge Sync */}
+          {/* Action 1: Merge Sync */}
           <button
             type="button"
             disabled={isAnyLoading}
@@ -263,7 +158,7 @@ export default function SyncManagerModal({
             </div>
           </button>
 
-          {/* Action 3: Force Download */}
+          {/* Action 2: Force Download */}
           <button
             type="button"
             disabled={isAnyLoading}
@@ -288,7 +183,7 @@ export default function SyncManagerModal({
             </div>
           </button>
 
-          {/* Action 4: Force Upload */}
+          {/* Action 3: Force Upload */}
           <button
             type="button"
             disabled={isAnyLoading}
@@ -313,7 +208,7 @@ export default function SyncManagerModal({
             </div>
           </button>
 
-          {/* Action 5: Workspace Switch */}
+          {/* Action 4: Workspace Switch */}
           <div className="group w-full text-left bg-[#21262d]/50 border border-[#30363d] rounded-xl p-3.5 flex flex-col gap-2">
             <div className="flex gap-3">
               <div className="p-2 rounded-lg bg-purple-500/5 text-[var(--purple)] self-start mt-0.5">
