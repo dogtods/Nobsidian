@@ -548,9 +548,11 @@ export default function App() {
         throw new Error(res?.error || "外部データの取得に失敗しました");
       }
 
-      // Re-sync notes from spreadsheet to app if enabled
-      if (options.autoReloadApp !== false) {
+      // Re-sync notes from spreadsheet to app only if autoReloadApp is explicitly enabled
+      if (options.autoReloadApp === true) {
         await syncFromServer();
+      } else {
+        updateSyncStatus("synced", "同期済");
       }
       return res;
     } catch (e: any) {

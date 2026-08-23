@@ -79,7 +79,7 @@ export default function ImportModal({
   // ==========================================
   const [gasUrl, setGasUrl] = useState("");
   const [externalSyncSheetName, setExternalSyncSheetName] = useState("");
-  const [syncRaindrop, setSyncRaindrop] = useState(true);
+  const [syncRaindrop, setSyncRaindrop] = useState(false);
   const [syncDrive, setSyncDrive] = useState(true);
   const [showGasUrlHelp, setShowGasUrlHelp] = useState(false);
   const [isCopiedGas, setIsCopiedGas] = useState(false);
@@ -104,7 +104,7 @@ export default function ImportModal({
   const [useSameUrlForApp, setUseSameUrlForApp] = useState(true);
   const [appCustomGasUrl, setAppCustomGasUrl] = useState("");
   const [gasSheetName, setGasSheetName] = useState("Notes");
-  const [autoReloadApp, setAutoReloadApp] = useState(true);
+  const [autoReloadApp, setAutoReloadApp] = useState(false);
   const [isSyncingApp, setIsSyncingApp] = useState(false);
 
   // ==========================================
@@ -145,6 +145,15 @@ export default function ImportModal({
       setGasSheetName(storedAppSheet);
       setAppCustomGasUrl(storedGasUrl);
       setUseSameUrlForApp(true);
+
+      const storedRaindrop = localStorage.getItem("cn_sync_raindrop");
+      setSyncRaindrop(storedRaindrop !== null ? storedRaindrop === "true" : false);
+
+      const storedDrive = localStorage.getItem("cn_sync_drive");
+      setSyncDrive(storedDrive !== null ? storedDrive === "true" : true);
+
+      const storedAutoReload = localStorage.getItem("cn_sync_autoreload");
+      setAutoReloadApp(storedAutoReload !== null ? storedAutoReload === "true" : false);
 
       setExtractSheetUrl(localStorage.getItem("cn_extract_sheet_url") || "");
       setExtractSheetName(localStorage.getItem("cn_extract_sheet_name") || (storedExtSheet !== storedAppSheet ? storedExtSheet : "未処理データ"));
@@ -307,10 +316,12 @@ export default function ImportModal({
         addedCount: added,
         isTimeOut: res?.isTimeOut,
         problematicItem: res?.problematicItem,
-        message: `${added} 件の新規データをスプレッドシート（シート: ${targetExtSheet}）へ取り込みました ✦`
+        message: added > 0 
+          ? `${added} 件の新規MHTデータをスプレッドシート（シート: ${targetExtSheet}）へ追加しました ✦`
+          : `Googleドライブに対象の未処理MHTデータはありませんでした（新規追加 0件）。`
       });
 
-      onSaveToast(`外部データの自動取り込み完了: ${added} 件追加 (シート: ${targetExtSheet})`);
+      onSaveToast(added > 0 ? `MHTデータの自動取り込み完了: ${added} 件追加 (シート: ${targetExtSheet})` : `未処理のMHTファイルはありませんでした`);
 
       // If auto reload is enabled, sync to app
       if (autoReloadApp && onSyncFromServer) {
@@ -948,13 +959,19 @@ ${JSON.stringify(itemsToProcess)}
 
               {/* 1-3. Source checkboxes */}
               <div className="bg-[#0d1117] border border-[#30363d] rounded-lg p-2.5 flex flex-col gap-2">
-                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">収集対象ソース</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">収集対象ソース</span>
+                  <span className="text-[10px] text-purple-300">※未処理のMHTファイルのみを抽出</span>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input
                       type="checkbox"
                       checked={syncRaindrop}
-                      onChange={(e) => setSyncRaindrop(e.target.checked)}
+                      onChange={(e) => {
+                        setSyncRaindrop(e.target.checked);
+                        localStorage.setItem("cn_sync_raindrop", String(e.target.checked));
+                      }}
                       className="w-3.5 h-3.5 accent-purple-500 cursor-pointer"
                     />
                     <span className="text-xs text-gray-200">Raindrop (Web記事・ブックマーク)</span>
@@ -963,12 +980,18 @@ ${JSON.stringify(itemsToProcess)}
                     <input
                       type="checkbox"
                       checked={syncDrive}
-                      onChange={(e) => setSyncDrive(e.target.checked)}
+                      onChange={(e) => {
+                        setSyncDrive(e.target.checked);
+                        localStorage.setItem("cn_sync_drive", String(e.target.checked));
+                      }}
                       className="w-3.5 h-3.5 accent-purple-500 cursor-pointer"
                     />
-                    <span className="text-xs text-gray-200">Googleドライブ (MHT/PDF解析)</span>
+                    <span className="text-xs text-gray-200 font-medium text-purple-200">Googleドライブ (未処理MHTファイル解析)</span>
                   </label>
                 </div>
+                <p className="text-[10px] text-gray-400 leading-relaxed mt-0.5">
+                  💡 Googleドライブ内の未処理MHTファイルのみを検出し、スプレッドシートへ追記します（処理済みファイルは「処理済み」フォルダに退避されるため二重取り込みされません）。
+                </p>
               </div>
 
               {/* 1-4. Execution Button */}
@@ -1100,7 +1123,10 @@ ${JSON.stringify(itemsToProcess)}
                   <input
                     type="checkbox"
                     checked={autoReloadApp}
-                    onChange={(e) => setAutoReloadApp(e.target.checked)}
+                    onChange={(e) => {
+                      setAutoReloadApp(e.target.checked);
+                      localStorage.setItem("cn_sync_autoreload", String(e.target.checked));
+                    }}
                     className="w-3.5 h-3.5 accent-purple-500 cursor-pointer"
                   />
                   <span>外部データ収集（ステップ1）完了時にアプリ画面へ自動反映（リロード）する</span>

@@ -431,7 +431,7 @@ function saveAll(notes, targetSheetName) {
  * 実行トリガー：定期実行（例：数時間に1回）またはWebアプリ経由
  */
 function syncAllExternalSources() {
-  return syncExternalSources({ raindrop: true, drive: true });
+  return syncExternalSources({ raindrop: false, drive: true });
 }
 
 function syncExternalSources(options, targetSheetName) {
@@ -455,8 +455,8 @@ function syncExternalSources(options, targetSheetName) {
   const persona = (options && options.persona) ? options.persona : getConfig('SYSTEM_PERSONA');
   const syncPrompt = (options && options.syncPrompt) ? options.syncPrompt : getConfig('SYNC_PROMPT');
 
-  // --- ソースA: Raindropからの取得 ---
-  if (options && options.raindrop !== false && raindropToken) {
+  // --- ソースA: Raindropからの取得 (チェックがONかつトークンがある場合のみ実行) ---
+  if (options && options.raindrop === true && raindropToken) {
     console.log("Raindropの記事を同期中...");
     const raindropItems = fetchRaindropData(raindropToken);
     
@@ -493,65 +493,41 @@ function syncExternalSources(options, targetSheetName) {
     }
   }
 
-  // --- ソースB: Googleドライブからの取得 ---
+  // --- ソースB: Googleドライブからの取得 (未処理のMHTファイルのみを抽出) ---
   if (options && options.drive !== false && !isTimeOut && folderId) {
-    console.log("Googleドライブのファイルを同期中...");
+    console.log("Googleドライブの未処理MHTファイルを同期中...");
     const folder = DriveApp.getFolderById(folderId);
     const subFolders = folder.getFoldersByName("処理済み");
     const processedFolder = subFolders.hasNext() ? subFolders.next() : folder.createFolder("処理済み");
     
     const files = [];
     const filesIter = folder.getFiles();
-    while (filesIter.hasNext()) files.push(filesIter.next());
+    while (filesIter.hasNext()) {
+      const file = filesIter.next();
+      const fileNameLower = file.getName().toLowerCase();
+      // MHT / MHTML ファイルのみを対象とする
+      if (fileNameLower.endsWith('.mht') || fileNameLower.endsWith('.mhtml')) {
+        files.push(file);
+      }
+    }
 
-    // MHTを先に処理
-    files.sort((a, b) => {
-      const isA = a.getName().toLowerCase().endsWith('.mht') || a.getName().toLowerCase().endsWith('.mhtml');
-      const isB = b.getName().toLowerCase().endsWith('.mht') || b.getName().toLowerCase().endsWith('.mhtml');
-      return isA === isB ? 0 : isA ? -1 : 1;
-    });
+    console.log("未処理MHTファイル検出数: " + files.length + " 件");
 
     for (const file of files) {
       if (Date.now() - startTime > TIME_LIMIT) { isTimeOut = true; break; }
 
       const fileName = file.getName();
-      const fileNameLower = fileName.toLowerCase();
-
       try {
-        if (fileNameLower.endsWith('.mht') || fileNameLower.endsWith('.mhtml')) {
-          processMhtFile(file, sheet, existingIds, folder, processedFolder, persona, syncPrompt, geminiApiKey, geminiModel);
-          file.moveTo(processedFolder);
-          addedCount++;
-        } else if (fileNameLower.endsWith('.pdf')) {
-          const articleId = fileName.replace(/\\.[^/.]+$/, "");
-          if (existingIds.has(articleId)) {
-             file.moveTo(processedFolder); continue;
-          }
-          const result = callGeminiVision(file, persona, syncPrompt, geminiApiKey, geminiModel);
-          const pubDateStr = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
-          appendArticleToSheet(sheet, articleId, articleId, file.getUrl(), result.tags, result.highlights, "PDFファイル", "", pubDateStr, result.timeline, "PDF");
-          existingIds.add(articleId);
-          file.moveTo(processedFolder);
-          addedCount++;
-        } else {
-          const imageId = 'img_' + file.getId();
-          if (!existingIds.has(imageId)) {
-            const result = callGeminiVision(file, persona, syncPrompt, geminiApiKey, geminiModel);
-            const pubDateStr = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
-            const source = getSourceLabelForOtherFile(fileName);
-            appendArticleToSheet(sheet, imageId, fileName, file.getUrl(), result.tags, result.highlights, "画像ファイル", "", pubDateStr, result.timeline, source);
-            existingIds.add(imageId);
-            file.moveTo(processedFolder);
-            addedCount++;
-          }
-        }
+        const count = processMhtFile(file, sheet, existingIds, folder, processedFolder, persona, syncPrompt, geminiApiKey, geminiModel);
+        file.moveTo(processedFolder);
+        addedCount += (typeof count === 'number' ? count : 1);
       } catch (e) {
-        console.error("ファイル解析エラー (" + fileName + "): " + e.message);
+        console.error("MHTファイル解析エラー (" + fileName + "): " + e.message);
       }
     }
   }
 
-  console.log(isTimeOut ? "時間制限のため処理を一時中断しました。" : "すべての同期が完了しました。");
+  console.log(isTimeOut ? "時間制限のため処理を一時中断しました。" : "すべての同期が完了しました。追加件数: " + addedCount);
   return { success: true, addedCount: addedCount, isTimeOut: isTimeOut };
 }
 
@@ -783,55 +759,82 @@ function processMhtFile(file, sheet, existingIds, sourceFolder, processedFolder,
   let htmlContent = rawData.match(/<html[\\s\\S]*?<\\/html>/i)?.[0] || rawData;
 
   const formBlocks = htmlContent.split(/<form /gi);
+  let addedInThisFile = 0;
   
-  for (let i = 1; i < formBlocks.length; i++) {
-    const block = "<form " + formBlocks[i];
-    if (!block.includes('hdgLv2')) continue;
+  if (formBlocks.length > 1) {
+    for (let i = 1; i < formBlocks.length; i++) {
+      const block = "<form " + formBlocks[i];
+      if (!block.includes('hdgLv2') && !block.includes('text Honbun') && !block.includes('val02')) continue;
 
-    const titleMatch = block.match(/<div[^>]*class="[^"]*hdgLv2 val02[^"]*"[^>]*>([\\s\\S]*?)<\\/div>/i);
-    let fullTitle = cleanMhtNoise(titleMatch ? titleMatch[1].replace(/<[^>]+>/g, ' ') : "タイトル不明");
+      const titleMatch = block.match(/<div[^>]*class="[^"]*hdgLv2 val02[^"]*"[^>]*>([\\s\\S]*?)<\\/div>/i) ||
+                         block.match(/<h[1-4][^>]*>([\\s\\S]*?)<\\/h[1-4]>/i) ||
+                         block.match(/<div[^>]*class="[^"]*title[^"]*"[^>]*>([\\s\\S]*?)<\\/div>/i);
+      let fullTitle = cleanMhtNoise(titleMatch ? titleMatch[1].replace(/<[^>]+>/g, ' ') : mhtFileName.replace(/\\.m?html?$/i, ''));
+      
+      let title = fullTitle;
+      let metaInfo = "";
+      const splitMatch = fullTitle.match(/(\\d{4}[\\/\\d].*)$/);
+      if (splitMatch) {
+        title = fullTitle.substring(0, splitMatch.index).trim();
+        metaInfo = splitMatch[0].replace(/PDF有|書誌情報印刷/g, "").replace(/\\s+/g, " ").trim();
+      }
+
+      const idMatch = block.match(/keyShoshi(?:=|3D)NIRKDB\\s*([a-zA-Z0-9]+)/i);
+      let articleId = "";
+      if (idMatch) {
+        articleId = idMatch[1].trim().toUpperCase();
+      } else {
+        const stableMeta = metaInfo.match(/\\d{4}[\\/\\-]\\d{2}[\\/\\-]\\d{2}/)?.[0] || metaInfo.substring(0, 10);
+        const safeId = Utilities.base64EncodeWebSafe(Utilities.newBlob(title + stableMeta).getBytes());
+        articleId = "MHT_" + safeId.replace(/[^a-zA-Z0-9]/g, "").substring(0, 15);
+      }
+
+      if (existingIds.has(articleId)) {
+        console.log("既存データのため追加スキップ: " + articleId + " (" + title + ")");
+        continue;
+      }
+
+      let pdfUrl = "";
+      if (sourceFolder) {
+        const pdfFiles = sourceFolder.getFilesByName(articleId + ".pdf");
+        if (pdfFiles.hasNext()) {
+          const pdfFile = pdfFiles.next();
+          pdfUrl = pdfFile.getUrl();
+          if (processedFolder) pdfFile.moveTo(processedFolder);
+        }
+      }
+
+      const textMatch = block.match(/<div[^>]*class="[^"]*text Honbun[^"]*"[^>]*>([\\s\\S]*?)(?:<\\/form>|<\\/section>|$)/i);
+      let rawContent = textMatch ? textMatch[1].replace(/<[^>]+>/g, '\\n') : block.replace(/<[^>]+>/g, '\\n');
+      rawContent = cleanMhtNoise(rawContent);
+      const safeContent = rawContent.length > 49000 ? rawContent.substring(0, 49000) + "\\n...省略" : rawContent;
+
+      const result = callGeminiForSingleArticle(rawContent.substring(0, 10000), optPersona, optSyncPrompt, optApiKey, optModel);
+      const pubDateStr = metaInfo.match(/\\d{4}[\\/\\-]\\d{2}[\\/\\-]\\d{2}/)?.[0] || Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
+
+      appendArticleToSheet(sheet, articleId, title, pdfUrl, result.tags, result.highlights, safeContent, metaInfo, pubDateStr, result.timeline, mhtFileName);
+      existingIds.add(articleId);
+      addedInThisFile++;
+      Utilities.sleep(1000);
+    }
+  } else {
+    // 単一記事/Webページ保存形式のMHT
+    const titleMatch = htmlContent.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i) || htmlContent.match(/<h1[^>]*>([\\s\\S]*?)<\\/h1>/i);
+    let title = cleanMhtNoise(titleMatch ? titleMatch[1].replace(/<[^>]+>/g, ' ') : mhtFileName.replace(/\\.m?html?$/i, ''));
+    let cleanText = cleanHtml(htmlContent);
+    const safeId = "MHT_" + Utilities.base64EncodeWebSafe(Utilities.newBlob(mhtFileName + file.getId()).getBytes()).replace(/[^a-zA-Z0-9]/g, "").substring(0, 15);
     
-    let title = fullTitle;
-    let metaInfo = "";
-    const splitMatch = fullTitle.match(/(\\d{4}[\\/\\d].*)$/);
-    if (splitMatch) {
-      title = fullTitle.substring(0, splitMatch.index).trim();
-      metaInfo = splitMatch[0].replace(/PDF有|書誌情報印刷/g, "").replace(/\\s+/g, " ").trim();
-    }
-
-    const idMatch = block.match(/keyShoshi(?:=|3D)NIRKDB\\s*([a-zA-Z0-9]+)/i);
-    let articleId = "";
-    if (idMatch) {
-      articleId = idMatch[1].trim().toUpperCase();
+    if (!existingIds.has(safeId)) {
+      const result = callGeminiForSingleArticle(cleanText.substring(0, 10000), optPersona, optSyncPrompt, optApiKey, optModel);
+      const pubDateStr = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
+      appendArticleToSheet(sheet, safeId, title, file.getUrl(), result.tags, result.highlights, cleanText.substring(0, 49000), "", pubDateStr, result.timeline, mhtFileName);
+      existingIds.add(safeId);
+      addedInThisFile++;
     } else {
-      if (!block.includes('text Honbun')) continue;
-      const stableMeta = metaInfo.match(/\\d{4}[\\/\\-]\\d{2}[\\/\\-]\\d{2}/)?.[0] || metaInfo.substring(0, 10);
-      const safeId = Utilities.base64EncodeWebSafe(Utilities.newBlob(title + stableMeta).getBytes());
-      articleId = "NKN_" + safeId.replace(/[^a-zA-Z0-9]/g, "").substring(0, 15);
+      console.log("既存データのため追加スキップ: " + safeId + " (" + title + ")");
     }
-
-    if (existingIds.has(articleId)) continue;
-
-    let pdfUrl = "";
-    const pdfFiles = sourceFolder.getFilesByName(articleId + ".pdf");
-    if (pdfFiles.hasNext()) {
-      const pdfFile = pdfFiles.next();
-      pdfUrl = pdfFile.getUrl();
-      pdfFile.moveTo(processedFolder);
-    }
-
-    const textMatch = block.match(/<div[^>]*class="[^"]*text Honbun[^"]*"[^>]*>([\\s\\S]*?)(?:<\\/form>|<\\/section>|$)/i);
-    let rawContent = textMatch ? textMatch[1].replace(/<[^>]+>/g, '\\n') : block.replace(/<[^>]+>/g, '\\n');
-    rawContent = cleanMhtNoise(rawContent);
-    const safeContent = rawContent.length > 49000 ? rawContent.substring(0, 49000) + "\\n...省略" : rawContent;
-
-    const result = callGeminiForSingleArticle(rawContent.substring(0, 10000), optPersona, optSyncPrompt, optApiKey, optModel);
-    const pubDateStr = metaInfo.match(/\\d{4}[\\/\\-]\\d{2}[\\/\\-]\\d{2}/)?.[0] || Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
-
-    appendArticleToSheet(sheet, articleId, title, pdfUrl, result.tags, result.highlights, safeContent, metaInfo, pubDateStr, result.timeline, mhtFileName);
-    existingIds.add(articleId);
-    Utilities.sleep(1000);
   }
+  return addedInThisFile;
 }
 
 function fetchRaindropData(token) {
