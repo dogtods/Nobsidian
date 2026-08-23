@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from "react";
 import { LATEST_GAS_SCRIPT } from "../gasScriptCode";
 import { Copy, Check, FileSpreadsheet, ExternalLink, HelpCircle, Activity, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { fetchGasGet, sanitizeGasUrl } from "../utils/gasClient";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -57,7 +58,10 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
   }, [isOpen]);
 
   const handleTestConnection = async () => {
-    const cleaned = gasUrl.replace(/^[\s\u3000"'`]+|[\s\u3000"'`]+$/g, '').replace(/[\r\n\t]/g, '').trim();
+    const cleaned = sanitizeGasUrl(gasUrl);
+    if (cleaned !== gasUrl) {
+      setGasUrl(cleaned);
+    }
     if (!cleaned) {
       setTestStatus("error");
       setTestMessage("WebアプリURLが入力されていません。");
@@ -78,51 +82,23 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
       let pingSuccess = false;
       let pingMessage = "";
       try {
-        const pingRes = await fetch(`/api/proxy?url=${encodeURIComponent(cleaned)}`);
-        const pingText = await pingRes.text();
-        const pingJson = JSON.parse(pingText);
-        if (pingRes.ok && (pingJson.status === "ok" || pingJson.message || pingJson.success !== false)) {
+        const pingJson = await fetchGasGet(cleaned);
+        if (pingJson && (pingJson.status === "ok" || pingJson.message || pingJson.success !== false)) {
           pingSuccess = true;
           pingMessage = pingJson.message || "GAS Web API は正常に応答しています。";
         }
       } catch (pingErr) {}
 
       // Step 2: Spreadsheet GetNotes
-      let testUrl = `${cleaned}?action=getNotes`;
+      const params: Record<string, string> = { action: "getNotes" };
       if (gasSheetName.trim()) {
-        testUrl += `&sheetName=${encodeURIComponent(gasSheetName.trim())}`;
+        params.sheetName = gasSheetName.trim();
       }
 
-      const res = await fetch(`/api/proxy?url=${encodeURIComponent(testUrl)}`);
-      let data: any = null;
-      let rawText = "";
-      try {
-        rawText = await res.text();
-        data = JSON.parse(rawText);
-      } catch (parseErr) {
-        if (pingSuccess) {
-          setTestStatus("success");
-          setTestMessage(`✅ Webアプリ通信は成功しています！（Ping: ${pingMessage}）`);
-          return;
-        }
+      const data = await fetchGasGet(cleaned, params);
 
-        if (rawText.toLowerCase().includes("page cannot") || rawText.toLowerCase().includes("page could not") || rawText.includes("404")) {
-          setTestStatus("error");
-          setTestMessage("⚠️ GAS Webアプリが見つかりません(404)。GASエディタ右上の「デプロイ」>「デプロイを管理」にて、【アクセスできるユーザー】が『全員（Anyone）』になっているか確認し、【新しいデプロイ】を作成して発行されたURLを再設定してください。");
-          return;
-        }
-        if (rawText.includes("accounts.google.com") || rawText.includes("ServiceLogin")) {
-          setTestStatus("error");
-          setTestMessage("⚠️ Googleログイン画面に阻まれました。GASエディタのデプロイ設定で【アクセスできるユーザー】を『全員（Anyone）』に変更してください。");
-          return;
-        }
-        setTestStatus("error");
-        setTestMessage(`GASからの応答がJSONではありませんでした (HTTP ${res.status}): ${rawText.substring(0, 150)}`);
-        return;
-      }
-
-      if (!res.ok || data.error) {
-        if (pingSuccess || data.status === "ok") {
+      if (!data || data.error) {
+        if (pingSuccess || data?.status === "ok") {
           const errDetail = data?.error || "スプレッドシートへのアクセスに失敗しました";
           setTestStatus("success");
           setTestMessage(`✅ WebアプリのAPI疎通は成功しました！ （※スプレッドシート側: ${errDetail}。シート名またはスクリプトプロパティの SHEET_ID をご確認ください）`);
@@ -130,12 +106,12 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
         }
 
         setTestStatus("error");
-        setTestMessage(data.error || `接続エラー (HTTP ${res.status})`);
+        setTestMessage(data?.error || `接続エラーが発生しました`);
         return;
       }
 
       setTestStatus("success");
-      setTestMessage(`✅ 接続成功！GAS Webアプリは正常に応答しています（シート: ${data.sheetName || "Notes"}、取得ノート数: ${data.notes?.length ?? 0}件）`);
+      setTestMessage(`✅ 接続成功！GAS Webアプリは正常に応答しています（シート: ${data.sheetName || gasSheetName.trim() || "Notes"}、取得ノート数: ${data.notes?.length ?? 0}件）`);
     } catch (e: any) {
       setTestStatus("error");
       setTestMessage(e.message || "接続に失敗しました");

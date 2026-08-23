@@ -8,6 +8,7 @@ import { Note } from "../types";
 import { formatDateStr } from "../utils/graphDataParser";
 import { getStoredPrompt, DEFAULT_PROMPTS, PROMPT_KEYS } from "./PromptSettingsModal";
 import { LATEST_GAS_SCRIPT } from "../gasScriptCode";
+import { fetchGasGet, fetchGasPost, sanitizeGasUrl } from "../utils/gasClient";
 import { 
   HelpCircle, 
   RefreshCw, 
@@ -193,7 +194,7 @@ export default function ImportModal({
   // Test GAS Connection
   const handleTestConnection = async () => {
     // Sanitize URL (strip quotes, spaces, newlines, fullwidth spaces)
-    const cleaned = gasUrl.replace(/^[\s\u3000"'`]+|[\s\u3000"'`]+$/g, '').replace(/[\r\n\t]/g, '').trim();
+    const cleaned = sanitizeGasUrl(gasUrl);
     if (cleaned !== gasUrl) {
       setGasUrl(cleaned);
     }
@@ -218,10 +219,8 @@ export default function ImportModal({
       let pingSuccess = false;
       let pingMessage = "";
       try {
-        const pingRes = await fetch(`/api/proxy?url=${encodeURIComponent(cleaned)}`);
-        const pingText = await pingRes.text();
-        const pingJson = JSON.parse(pingText);
-        if (pingRes.ok && (pingJson.status === "ok" || pingJson.message || pingJson.success !== false)) {
+        const pingJson = await fetchGasGet(cleaned);
+        if (pingJson && (pingJson.status === "ok" || pingJson.message || pingJson.success !== false)) {
           pingSuccess = true;
           pingMessage = pingJson.message || "GAS Web API は正常に応答しています。";
         }
@@ -231,38 +230,10 @@ export default function ImportModal({
 
       // Step 2: Spreadsheet / Sheet Access Test
       const targetSheet = externalSyncSheetName.trim() || gasSheetName.trim() || "Notes";
-      const testUrl = `${cleaned}?action=getNotes&sheetName=${encodeURIComponent(targetSheet)}`;
-      const res = await fetch(`/api/proxy?url=${encodeURIComponent(testUrl)}`);
-      
-      let data: any = null;
-      let rawText = "";
-      try {
-        rawText = await res.text();
-        data = JSON.parse(rawText);
-      } catch (parseErr) {
-        if (pingSuccess) {
-          setTestStatus("success");
-          setTestMessage(`✅ Webアプリへの通信は成功しています！（Ping: ${pingMessage}）。スプレッドシートの取得処理を行ってください。`);
-          return;
-        }
+      const data = await fetchGasGet(cleaned, { action: "getNotes", sheetName: targetSheet });
 
-        if (rawText.toLowerCase().includes("page cannot") || rawText.toLowerCase().includes("page could not") || rawText.includes("404")) {
-          setTestStatus("error");
-          setTestMessage("⚠️ GAS側で『The page cannot be found (404)』が返されました。Googleのアクセス制限により、外部からの接続がブロックされています。");
-          return;
-        }
-        if (rawText.includes("accounts.google.com") || rawText.includes("ServiceLogin")) {
-          setTestStatus("error");
-          setTestMessage("⚠️ Googleログイン画面にリダイレクトされました。GASのデプロイ設定で「アクセスできるユーザー」を『全員（Anyone）』にする必要があります。");
-          return;
-        }
-        setTestStatus("error");
-        setTestMessage(`GASからの応答がJSONではありませんでした (HTTP ${res.status}): ${rawText.substring(0, 150)}`);
-        return;
-      }
-
-      if (!res.ok || data.error) {
-        if (pingSuccess || data.status === "ok") {
+      if (!data || data.error) {
+        if (pingSuccess || data?.status === "ok") {
           const errDetail = data?.error || "スプレッドシートへのアクセスに失敗しました";
           setTestStatus("success");
           setTestMessage(`✅ WebアプリのAPI疎通は成功しました！ （※スプレッドシート側: ${errDetail}。シート名「${targetSheet}」またはスクリプトプロパティの SHEET_ID をご確認ください）`);
@@ -270,7 +241,7 @@ export default function ImportModal({
         }
 
         setTestStatus("error");
-        setTestMessage(data.error || `接続エラー (HTTP ${res.status})`);
+        setTestMessage(data?.error || `接続エラーが発生しました`);
         return;
       }
 
@@ -635,8 +606,27 @@ ${JSON.stringify(itemsToProcess)}
       } else if (importUrl.trim()) {
         sourceUrl = importUrl.trim();
         title = "Web記事: " + sourceUrl;
-        const res = await fetch(`/api/proxy?url=${encodeURIComponent(sourceUrl)}`);
-        const html = await res.text();
+        
+        let html = "";
+        try {
+          const res = await fetch(`/api/proxy?url=${encodeURIComponent(sourceUrl)}`);
+          if (res.ok && !res.headers.get("content-type")?.includes("text/html")) {
+            html = await res.text();
+          } else {
+            // Fallback for static hosting where /api/proxy returns index.html or 404
+            const fallbackRes = await fetch(sourceUrl);
+            html = await fallbackRes.text();
+          }
+        } catch (fetchErr) {
+          try {
+            // Direct fetch attempt as a last resort (will likely hit CORS but worth trying)
+            const directRes = await fetch(sourceUrl);
+            html = await directRes.text();
+          } catch (corsErr) {
+            throw new Error(`Webページの取得に失敗しました (CORS制約、または通信エラー)。静的ホスティング(GitHub Pages等)の場合、外部サイトへの直接アクセスはブラウザの仕様により制限されます。詳細: ${String(corsErr)}`);
+          }
+        }
+
         const doc = new DOMParser().parseFromString(html, "text/html");
         const docTitle = doc.querySelector("title")?.textContent || "";
         if (docTitle) title = docTitle.trim();

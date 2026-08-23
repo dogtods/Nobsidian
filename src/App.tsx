@@ -48,6 +48,7 @@ import {
   parseBubbleData,
   getFilteredNotes
 } from "./utils/graphDataParser";
+import { fetchGasGet, fetchGasPost, sanitizeGasUrl } from "./utils/gasClient";
 
 // Import charts and config modals
 import HeatmapModal from "./components/HeatmapModal";
@@ -354,13 +355,13 @@ export default function App() {
     }
   };
    const apiPost = async (body: any) => {
-    const url = getApiUrl();
+    const rawUrl = getApiUrl();
+    const url = sanitizeGasUrl(rawUrl);
     if (!url || url.includes("YOUR_")) throw new Error("API URL is unconfigured.");
     
     // GAS URLの形式チェック
     if (!url.startsWith("https://script.google.com/macros/s/") || !url.endsWith("/exec")) {
       console.warn("GAS URL format may be invalid:", url);
-      toast("⚠️ GAS URLの形式が正しくない可能性があります（/exec で終わる必要があります）");
     }
 
     const targetSheetName = localStorage.getItem("cn_gas_sheet_name");
@@ -370,69 +371,21 @@ export default function App() {
       }
     }
     
-    // URLにaction及びsheetNameパラメータを付与 (302リダイレクトでGET変換された場合の保険)
-    const params = new URLSearchParams();
-    if (body.action) params.set("action", body.action);
-    if (body.sheetName) params.set("sheetName", body.sheetName);
-    const paramStr = params.toString();
-    const targetUrl = paramStr 
-      ? (url.includes("?") ? `${url}&${paramStr}` : `${url}?${paramStr}`)
-      : url;
-
-    try {
-      const res = await fetch(`/api/proxy?url=${encodeURIComponent(targetUrl)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      let data: any = null;
-      try {
-        data = await res.json();
-      } catch (jsonErr) {
-        // non json
-      }
-
-      if (!res.ok) {
-        const errorDetail = data?.error || `HTTP Error ${res.status}`;
-        throw new Error(errorDetail);
-      }
-      return data;
-    } catch (e: any) {
-      if (e.message.includes("404")) throw new Error("GAS Webアプリが見つかりません(404)。GASエディタで『新しいデプロイ』を発行し、最新のURL（末尾が /exec）を設定してください。");
-      if (e.message === "Failed to fetch" || e.name === "TypeError") {
-        throw new Error("GAS Webアプリへの接続に失敗しました。\n\n原因:\n1. GAS側の『新しいデプロイ ＞ アクセスできるユーザー』が『全員』（Anyone）になっていない\n2. URLが最新の /exec の本番用URLではない");
-      }
-      throw e;
-    }
+    return await fetchGasPost(url, body);
   };
 
   const apiGet = async (action: string) => {
-    const url = getApiUrl();
+    const rawUrl = getApiUrl();
+    const url = sanitizeGasUrl(rawUrl);
     if (!url || url.includes("YOUR_")) throw new Error("API URL is unconfigured.");
-    let fullUrl = `${url}?action=${action}`;
+    
+    const params: Record<string, string> = { action };
     const sheetName = localStorage.getItem("cn_gas_sheet_name");
     if (sheetName && sheetName.trim() !== "") {
-      fullUrl += `&sheetName=${encodeURIComponent(sheetName.trim())}`;
+      params.sheetName = sheetName.trim();
     }
-    try {
-      const res = await fetch(`/api/proxy?url=${encodeURIComponent(fullUrl)}`);
-      let data: any = null;
-      try {
-        data = await res.json();
-      } catch (jsonErr) {}
-
-      if (!res.ok) {
-        const errorDetail = data?.error || `HTTP Error ${res.status}`;
-        throw new Error(errorDetail);
-      }
-      return data;
-    } catch (e: any) {
-      if (e.message.includes("404")) throw new Error("GAS Webアプリが見つかりません(404)。GASエディタで『新しいデプロイ』を発行し、最新のURL（末尾が /exec）を設定してください。");
-      if (e.message === "Failed to fetch" || e.name === "TypeError") {
-        throw new Error("GAS Webアプリへの接続に失敗しました。\n\n原因:\n1. GAS側の『新しいデプロイ ＞ アクセスできるユーザー』が『全員』（Anyone）になっていない\n2. URLが最新の /exec の本番用URLではない");
-      }
-      throw e;
-    }
+    
+    return await fetchGasGet(url, params);
   };
 
   // Set visual status
