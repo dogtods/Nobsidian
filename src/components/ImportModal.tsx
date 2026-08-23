@@ -72,7 +72,7 @@ export default function ImportModal({
   syncLabel,
   notesCount = 0
 }: ImportModalProps) {
-  const [activeTab, setActiveTab] = useState<"step_workflow" | "sheet_extract" | "prompts">("step_workflow");
+  const [activeTab, setActiveTab] = useState<"step_1" | "step_2" | "prompts">("step_1");
 
   // ==========================================
   // STEP 1: External Source Data Collection Config
@@ -99,15 +99,6 @@ export default function ImportModal({
   } | null>(null);
 
   // ==========================================
-  // STEP 2: App Display & Sync Config
-  // ==========================================
-  const [useSameUrlForApp, setUseSameUrlForApp] = useState(true);
-  const [appCustomGasUrl, setAppCustomGasUrl] = useState("");
-  const [gasSheetName, setGasSheetName] = useState("Notes");
-  const [autoReloadApp, setAutoReloadApp] = useState(false);
-  const [isSyncingApp, setIsSyncingApp] = useState(false);
-
-  // ==========================================
   // Prompts config
   // ==========================================
   const [activePromptSubTab, setActivePromptSubTab] = useState<"persona" | "sync" | "weekly">("persona");
@@ -116,10 +107,12 @@ export default function ImportModal({
   const [weeklyReportPromptInput, setWeeklyReportPromptInput] = useState(() => getStoredPrompt("WEEKLY_REPORT_PROMPT"));
 
   // ==========================================
-  // STEP 3: Direct Sheet Extraction / File Import
+  // STEP 2: Direct Sheet Extraction / File Import
   // ==========================================
   const [extractSheetUrl, setExtractSheetUrl] = useState("https://docs.google.com/spreadsheets/d/.../edit");
   const [extractSheetName, setExtractSheetName] = useState("未処理データ");
+  const [targetSsUrl, setTargetSsUrl] = useState(() => localStorage.getItem("cn_target_ss_url") || "");
+  const [gasSheetName, setGasSheetName] = useState(() => localStorage.getItem("cn_gas_sheet_name") || "Notes");
   const [showExtractHelp, setShowExtractHelp] = useState(false);
   const [pendingSheetItems, setPendingSheetItems] = useState<any[]>([]);
   const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
@@ -142,9 +135,6 @@ export default function ImportModal({
 
       setGasUrl(storedGasUrl);
       setExternalSyncSheetName(storedExtSheet);
-      setGasSheetName(storedAppSheet);
-      setAppCustomGasUrl(storedGasUrl);
-      setUseSameUrlForApp(true);
 
       const storedRaindrop = localStorage.getItem("cn_sync_raindrop");
       setSyncRaindrop(storedRaindrop !== null ? storedRaindrop === "true" : false);
@@ -152,11 +142,8 @@ export default function ImportModal({
       const storedDrive = localStorage.getItem("cn_sync_drive");
       setSyncDrive(storedDrive !== null ? storedDrive === "true" : true);
 
-      const storedAutoReload = localStorage.getItem("cn_sync_autoreload");
-      setAutoReloadApp(storedAutoReload !== null ? storedAutoReload === "true" : false);
-
       setExtractSheetUrl(localStorage.getItem("cn_extract_sheet_url") || "");
-      setExtractSheetName(localStorage.getItem("cn_extract_sheet_name") || (storedExtSheet !== storedAppSheet ? storedExtSheet : "未処理データ"));
+      setExtractSheetName(localStorage.getItem("cn_extract_sheet_name") || storedExtSheet);
 
       setSyncPersonaInput(getStoredPrompt("SYSTEM_PERSONA"));
       setSyncPromptInput(getStoredPrompt("SYNC_PROMPT"));
@@ -176,10 +163,9 @@ export default function ImportModal({
   }, [isOpen]);
 
   // Save current GAS settings to localStorage
-  const saveAllSettings = (overrideUrl?: string, overrideExtSheet?: string, overrideAppSheet?: string) => {
+  const saveAllSettings = (overrideUrl?: string, overrideExtSheet?: string) => {
     const finalUrl = (overrideUrl !== undefined ? overrideUrl : gasUrl).trim();
     const finalExtSheet = (overrideExtSheet !== undefined ? overrideExtSheet : externalSyncSheetName).trim();
-    const finalAppSheet = (overrideAppSheet !== undefined ? overrideAppSheet : gasSheetName).trim();
 
     if (finalUrl) {
       localStorage.setItem("cn_gas_api_url", finalUrl);
@@ -191,12 +177,6 @@ export default function ImportModal({
       localStorage.setItem("cn_external_sync_sheet_name", finalExtSheet);
     } else {
       localStorage.removeItem("cn_external_sync_sheet_name");
-    }
-
-    if (finalAppSheet) {
-      localStorage.setItem("cn_gas_sheet_name", finalAppSheet);
-    } else {
-      localStorage.removeItem("cn_gas_sheet_name");
     }
   };
 
@@ -238,7 +218,7 @@ export default function ImportModal({
       }
 
       // Step 2: Spreadsheet / Sheet Access Test
-      const targetSheet = externalSyncSheetName.trim() || gasSheetName.trim() || "Notes";
+      const targetSheet = externalSyncSheetName.trim() || "Notes";
       const data = await fetchGasGet(cleaned, { action: "getNotes", sheetName: targetSheet });
 
       if (!data || data.error) {
@@ -283,7 +263,7 @@ export default function ImportModal({
     }
 
     const targetExtSheet = externalSyncSheetName.trim() || "Notes";
-    saveAllSettings(trimmedUrl, targetExtSheet, gasSheetName);
+    saveAllSettings(trimmedUrl, targetExtSheet);
 
     setIsSyncingExternal(true);
     setExternalSyncStatus("スプレッドシートへ外部データを収集中・AI解析中...（最大3.5分）");
@@ -295,8 +275,7 @@ export default function ImportModal({
       persona: syncPersonaInput || getStoredPrompt("SYSTEM_PERSONA"),
       syncPrompt: syncPromptInput || getStoredPrompt("SYNC_PROMPT"),
       weeklyReportPrompt: weeklyReportPromptInput || getStoredPrompt("WEEKLY_REPORT_PROMPT"),
-      targetSheetName: targetExtSheet,
-      autoReloadApp: autoReloadApp
+      targetSheetName: targetExtSheet
     };
 
     try {
@@ -323,10 +302,6 @@ export default function ImportModal({
 
       onSaveToast(added > 0 ? `MHTデータの自動取り込み完了: ${added} 件追加 (シート: ${targetExtSheet})` : `未処理のMHTファイルはありませんでした`);
 
-      // If auto reload is enabled, sync to app
-      if (autoReloadApp && onSyncFromServer) {
-        await onSyncFromServer();
-      }
     } catch (e: any) {
       setExternalSyncResult({
         message: `エラー: ${e.message || String(e)}`
@@ -338,35 +313,13 @@ export default function ImportModal({
     }
   };
 
-  // Handle Read Into App (STEP 2)
-  const handleReadIntoApp = async () => {
-    if (!onSyncFromServer) {
-      onSaveToast("同期機能が利用できません");
-      return;
-    }
-    const finalAppUrl = (useSameUrlForApp ? gasUrl : appCustomGasUrl).trim();
-    const finalAppSheet = gasSheetName.trim() || "Notes";
-
-    saveAllSettings(finalAppUrl, externalSyncSheetName, finalAppSheet);
-
-    setIsSyncingApp(true);
-    try {
-      await onSyncFromServer();
-      onSaveToast(`スプレッドシート（シート: ${finalAppSheet}）からアプリ画面へデータを同期しました ✦`);
-    } catch (e: any) {
-      onSaveToast(`アプリ同期エラー: ${e.message || String(e)}`);
-    } finally {
-      setIsSyncingApp(false);
-    }
-  };
-
   // Extract ID from Sheet URL
   const extractSheetId = (input: string) => {
     const match = input.match(/\/d\/([a-zA-Z0-9-_]+)/);
     return match ? match[1] : input.trim();
   };
 
-  // Fetch unprocessed data from sheet (STEP 3)
+  // Fetch unprocessed data from sheet (STEP 2)
   const fetchSheetData = async () => {
     const sourceSsId = extractSheetId(extractSheetUrl);
     if (!sourceSsId) return onSaveToast("スプレッドシートのURLを入力してください");
@@ -410,131 +363,35 @@ export default function ImportModal({
     if (selectedIndices.length === 0) return onSaveToast("項目が選択されていません");
 
     const sourceSsId = extractSheetId(extractSheetUrl);
-    const apiKey = localStorage.getItem("cn_gemini_key");
-    let importModel = localStorage.getItem("cn_gemini_model") || "gemini-flash-latest";
+    if (!sourceSsId) return onSaveToast("スプレッドシートのURLが無効です");
 
     setIsProcessing(true);
     setProcessingText("インポート中...");
 
     const selectedItems = selectedIndices.map(idx => pendingSheetItems[idx]);
     const rowIndices = selectedItems.map(item => item.rowIndex);
-    const newNotes: Note[] = [];
 
     try {
-      const batchTitlesMap: { [key: number]: string } = {};
+      const targetSheetName = gasSheetName.trim() || "Notes";
+      const targetSsId = targetSsUrl ? extractSheetId(targetSsUrl) : undefined;
+      const res = await apiPost({
+        action: "importRawRowsToApp",
+        sourceSsId,
+        sheetName: extractSheetName.trim(),
+        targetSsId,
+        targetSheetName,
+        rowIndices
+      });
 
-      if (optimizeTitle && apiKey && selectedItems.length > 1) {
-        onSaveToast("全記事のタイトルをAIで一括最適化中...");
-        try {
-          const itemsToProcess = selectedItems.map((item, idx) => ({
-            idx,
-            title: item.title,
-            highlightsSnippet: String(item.highlights || "").substring(0, 300)
-          }));
+      if (!res.success) throw new Error(res.error || "インポートに失敗しました");
 
-          const prompt = `あなたは優秀なエディターです。以下の各記事データの元のタイトルと本文の断片を読み、それぞれに対して最もよく表す、短くて魅力的な日本語のタイトル（20文字以内）を1つずつ提案してください。
-必ず出力は指定のキー（インデックス番号の文字列）に対応するJSONオブジェクトのみとして、説明や余計なマークダウン装飾は一切含めないでください。
-
-入力データ：
-${JSON.stringify(itemsToProcess)}
-
-出力形式（例）：
-{
-  "0": "提案タイトルA",
-  "1": "提案タイトルB"
-}
-`;
-
-          const r = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${importModel}:generateContent?key=${apiKey}`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { 
-                  temperature: 0.2,
-                  maxOutputTokens: 1200,
-                  responseMimeType: "application/json"
-                }
-              })
-            }
-          );
-
-          if (r.ok) {
-            const rd = await r.json();
-            let rawText = rd.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "{}";
-            if (rawText.startsWith("```")) {
-              rawText = rawText.replace(/^```json\s*/, "").replace(/^```\s*/, "").replace(/```$/, "").trim();
-            }
-            try {
-              const parsed = JSON.parse(rawText);
-              Object.keys(parsed).forEach((k: any) => {
-                const idxNum = parseInt(k, 10);
-                if (!isNaN(idxNum) && parsed[k]) {
-                  batchTitlesMap[idxNum] = String(parsed[k]).trim();
-                }
-              });
-            } catch (pErr) {
-              console.warn("Batch title JSON parse failed", pErr);
-            }
-          }
-        } catch (bErr) {
-          console.warn("Batch title AI optimization error", bErr);
-        }
+      if (onSyncFromServer) {
+        onSaveToast(`${rowIndices.length}件のデータをアプリ用シートへ登録しました。再読み込み中...`);
+        await onSyncFromServer();
+      } else {
+        onSaveToast(`${rowIndices.length}件のデータの登録が完了しました ✦`);
       }
-
-      for (let i = 0; i < selectedItems.length; i++) {
-        const item = selectedItems[i];
-        let title = batchTitlesMap[i] || item.title || "無題";
-        
-        let cAt = Date.now();
-        if (item.saved_at) {
-          const parsed = Date.parse(item.saved_at);
-          if (!isNaN(parsed)) cAt = parsed;
-        }
-
-        const dateFolderName = formatDateStr(cAt).replace(/-/g, "");
-
-        let formatted = `# ${title}\n\n`;
-        if (item.highlights) {
-          formatted += `${item.highlights}\n\n`;
-        }
-        if (item.columnI) {
-          formatted += `---\n<details><summary>メモを展開する</summary>\n\n${item.columnI}\n</details>\n\n`;
-        }
-        if (item.url) {
-          formatted += `**URL:** [${item.url}](${item.url})\n`;
-        }
-
-        const newNote: Note = {
-          id: "note_" + (Date.now() + i),
-          title: title,
-          content: formatted,
-          summary: item.highlights || "",
-          keywords: item.tags || "",
-          createdAt: cAt,
-          updatedAt: cAt,
-          sourceUrl: item.url || "",
-          timeline: item.timeline || "",
-          columnJ: item.columnI || ""
-        };
-
-        newNotes.push(newNote);
-      }
-
-      onNotesUpdateBatch(newNotes, overwriteBatch);
-
-      if (sourceSsId && rowIndices.length > 0) {
-        apiPost({
-          action: "markHighlightsAsProcessed",
-          sourceSsId,
-          sheetName: extractSheetName.trim(),
-          rowIndices
-        }).catch(err => console.error("Failed to mark rows as processed in sheet", err));
-      }
-
-      onSaveToast(`${newNotes.length}件のノートを取り込みました ✦`);
+      
       onClose();
     } catch (e: any) {
       onSaveToast("インポートエラー: " + e.message);
@@ -735,28 +592,28 @@ ${JSON.stringify(itemsToProcess)}
         <div className="flex border-b border-[#30363d] gap-2">
           <button
             type="button"
-            onClick={() => setActiveTab("step_workflow")}
+            onClick={() => setActiveTab("step_1")}
             className={`pb-2.5 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border-b-2 ${
-              activeTab === "step_workflow"
+              activeTab === "step_1"
                 ? "border-purple-500 text-purple-300 shadow-sm"
                 : "border-transparent text-gray-400 hover:text-gray-200"
             }`}
           >
             <Globe className="w-3.5 h-3.5" />
-            <span>⚡ 1. 外部収集 ➔ アプリ同期 (MHT / Raindrop)</span>
+            <span>⚙ 1. 外部データ取り込み</span>
           </button>
 
           <button
             type="button"
-            onClick={() => setActiveTab("sheet_extract")}
+            onClick={() => setActiveTab("step_2")}
             className={`pb-2.5 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border-b-2 ${
-              activeTab === "sheet_extract"
-                ? "border-purple-500 text-purple-300"
+              activeTab === "step_2"
+                ? "border-emerald-500 text-emerald-300"
                 : "border-transparent text-gray-400 hover:text-gray-200"
             }`}
           >
             <FileSpreadsheet className="w-3.5 h-3.5" />
-            <span>📋 2. 個別シート抽出 / ファイル取込</span>
+            <span>⚙ 2. アプリへ登録</span>
           </button>
 
           <button
@@ -773,8 +630,8 @@ ${JSON.stringify(itemsToProcess)}
           </button>
         </div>
 
-        {/* TAB 1: Step Workflow (External Sync -> Frontend Sync) */}
-        {activeTab === "step_workflow" && (
+        {/* TAB 1: External Sync */}
+        {activeTab === "step_1" && (
           <div className="flex flex-col gap-4">
 
             {/* ========================================================================= */}
@@ -787,7 +644,7 @@ ${JSON.stringify(itemsToProcess)}
                     1
                   </span>
                   <span className="text-xs font-bold text-gray-100">
-                    外部データ（MHT / Raindrop）の自動収集・書き込み設定
+                    Googleドライブからの外部データ（MHT等）の自動収集
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -1029,136 +886,11 @@ ${JSON.stringify(itemsToProcess)}
                 </div>
               )}
             </div>
-
-            {/* ========================================================================= */}
-            {/* Visual Flow Connector Arrow */}
-            {/* ========================================================================= */}
-            <div className="flex items-center justify-center gap-2 text-gray-400 text-xs py-0.5">
-              <ArrowDown className="w-4 h-4 text-purple-400 animate-bounce" />
-              <span className="font-semibold text-purple-300">取り込んだデータをアプリ画面（フロントエンド）に表示・同期</span>
-              <ArrowDown className="w-4 h-4 text-purple-400 animate-bounce" />
-            </div>
-
-            {/* ========================================================================= */}
-            {/* STEP 2: App Display & Frontend Sync Config */}
-            {/* ========================================================================= */}
-            <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-full bg-indigo-600 text-white font-bold text-[11px] flex items-center justify-center shrink-0">
-                    2
-                  </span>
-                  <span className="text-xs font-bold text-gray-100">
-                    アプリ画面（フロントエンド）への表示・同期設定
-                  </span>
-                </div>
-                <span className="text-[10px] text-gray-400 font-mono bg-[#21262d] px-2 py-0.5 rounded">
-                  現在のノート数: <strong className="text-purple-300">{notesCount}件</strong>
-                </span>
-              </div>
-
-              {/* 2-1. URL matching */}
-              <div className="flex flex-col gap-1.5">
-                <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-gray-300">
-                  <input
-                    type="checkbox"
-                    checked={useSameUrlForApp}
-                    onChange={(e) => {
-                      setUseSameUrlForApp(e.target.checked);
-                      if (e.target.checked) {
-                        saveAllSettings(gasUrl, externalSyncSheetName, gasSheetName);
-                      }
-                    }}
-                    className="w-3.5 h-3.5 accent-purple-500 cursor-pointer"
-                  />
-                  <span>ステップ1と同じGAS WebアプリURLを使用する（推奨）</span>
-                </label>
-
-                {!useSameUrlForApp && (
-                  <div className="mt-1 flex flex-col gap-1">
-                    <label className="text-[11px] font-bold text-gray-300">アプリ同期専用 GAS WebアプリURL</label>
-                    <input
-                      type="text"
-                      className="w-full font-mono text-xs p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-purple-500 transition-all"
-                      placeholder="https://script.google.com/macros/s/.../exec"
-                      value={appCustomGasUrl}
-                      onChange={(e) => {
-                        setAppCustomGasUrl(e.target.value);
-                        saveAllSettings(e.target.value);
-                      }}
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* 2-2. App Sheet Name */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-bold text-gray-300 flex items-center justify-between">
-                  <span>📄 アプリ画面表示・双方向編集用シート名</span>
-                  <span className="text-[10px] text-gray-500 font-mono">メインノートタブ</span>
-                </label>
-                <input
-                  type="text"
-                  className="w-full font-mono text-xs p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-purple-500 transition-all"
-                  placeholder="Notes (例: Notes, 調査用メモ)"
-                  value={gasSheetName}
-                  onChange={(e) => {
-                    setGasSheetName(e.target.value);
-                    saveAllSettings(gasUrl, externalSyncSheetName, e.target.value);
-                  }}
-                />
-                <p className="text-[10px] text-gray-400 leading-normal">
-                  本アプリのノート一覧、ナレッジグラフ、エディタと双方向同期するシートです（通常は <code>Notes</code>）。
-                  {externalSyncSheetName && externalSyncSheetName !== gasSheetName && (
-                    <span className="block text-amber-300/90 mt-0.5">
-                      ※ステップ1の収集先シート（<code>{externalSyncSheetName}</code>）と異なるため、収集データをアプリに反映させるには「📋 2. 個別シート抽出」タブから選択して取り込んでください。
-                    </span>
-                  )}
-                </p>
-              </div>
-
-              {/* 2-3. Read and Sync */}
-              <div className="flex flex-col gap-2 pt-1 border-t border-[#30363d]">
-                <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-gray-300">
-                  <input
-                    type="checkbox"
-                    checked={autoReloadApp}
-                    onChange={(e) => {
-                      setAutoReloadApp(e.target.checked);
-                      localStorage.setItem("cn_sync_autoreload", String(e.target.checked));
-                    }}
-                    className="w-3.5 h-3.5 accent-purple-500 cursor-pointer"
-                  />
-                  <span>外部データ収集（ステップ1）完了時にアプリ画面へ自動反映（リロード）する</span>
-                </label>
-
-                <button
-                  type="button"
-                  onClick={handleReadIntoApp}
-                  disabled={isSyncingApp}
-                  className="w-full py-2 bg-[#21262d] hover:bg-[#30363d] text-gray-100 font-semibold text-xs rounded-lg border border-[#30363d] hover:border-purple-400/50 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                >
-                  {isSyncingApp ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-400" />
-                      <span>スプレッドシートから読み込み中...</span>
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 text-purple-400" />
-                      <span>🔄 スプレッドシートからアプリ画面へデータを読み込む（同期）</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-            </div>
-
           </div>
         )}
 
         {/* TAB 2: Direct Sheet Extraction / File Import */}
-        {activeTab === "sheet_extract" && (
+        {activeTab === "step_2" && (
           <div className="flex flex-col gap-4">
             
             {/* Section A: Extract Unprocessed Rows from Specific Sheet */}
@@ -1186,26 +918,84 @@ ${JSON.stringify(itemsToProcess)}
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div>
-                  <span className="text-[10px] text-gray-400 mb-0.5 block">スプレッドシートURL / ID:</span>
-                  <input
-                    type="text"
-                    className="w-full text-xs p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
-                    placeholder="https://docs.google.com/spreadsheets/d/.../edit"
-                    value={extractSheetUrl}
-                    onChange={(e) => setExtractSheetUrl(e.target.value)}
-                  />
+              <div className="flex flex-col gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-[10px] text-gray-400 mb-0.5 block">取り込み元 スプレッドシートURL / ID:</span>
+                    <input
+                      type="text"
+                      className="w-full text-xs p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
+                      placeholder="https://docs.google.com/spreadsheets/d/.../edit"
+                      value={extractSheetUrl}
+                      onChange={(e) => setExtractSheetUrl(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-400 mb-0.5 block">取り込み元 シート名（タブ名）:</span>
+                    <input
+                      type="text"
+                      className="w-full text-xs p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
+                      placeholder="未処理データ (例: シート1, 未処理データ)"
+                      value={extractSheetName}
+                      onChange={(e) => setExtractSheetName(e.target.value)}
+                    />
+                  </div>
                 </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                  <div>
+                    <span className="text-[10px] text-emerald-400 font-bold mb-0.5 block flex items-center gap-1">
+                      GAS Web App URL:
+                    </span>
+                    <input
+                      type="text"
+                      className="w-full text-xs p-2 bg-[#0d1117] border border-emerald-500/50 rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
+                      placeholder="https://script.google.com/macros/s/.../exec"
+                      value={gasUrl}
+                      onChange={(e) => {
+                        setGasUrl(e.target.value);
+                        if (e.target.value.trim()) {
+                          localStorage.setItem("cn_gas_api_url", e.target.value.trim());
+                        } else {
+                          localStorage.removeItem("cn_gas_api_url");
+                        }
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-emerald-400 font-bold mb-0.5 block flex items-center gap-1">
+                      取り込み先 スプレッドシートURL / ID (任意):
+                    </span>
+                    <input
+                      type="text"
+                      className="w-full text-xs p-2 bg-[#0d1117] border border-emerald-500/50 rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
+                      placeholder="未入力の場合は GAS初期設定のシートIDを使用"
+                      value={targetSsUrl}
+                      onChange={(e) => {
+                        setTargetSsUrl(e.target.value);
+                        localStorage.setItem("cn_target_ss_url", e.target.value.trim());
+                      }}
+                    />
+                  </div>
+                </div>
+
                 <div>
-                  <span className="text-[10px] text-gray-400 mb-0.5 block">対象シート名（タブ名）:</span>
+                  <span className="text-[10px] text-emerald-400 font-bold mb-0.5 block flex items-center gap-1">
+                    取り込み先 アプリ表示用シート名（タブ名）:
+                  </span>
                   <input
                     type="text"
-                    className="w-full text-xs p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
-                    placeholder="未処理データ (例: シート1, 未処理データ)"
-                    value={extractSheetName}
-                    onChange={(e) => setExtractSheetName(e.target.value)}
+                    className="w-full text-xs p-2 bg-[#0d1117] border border-emerald-500/50 rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
+                    placeholder="Notes"
+                    value={gasSheetName}
+                    onChange={(e) => {
+                      setGasSheetName(e.target.value);
+                      localStorage.setItem("cn_gas_sheet_name", e.target.value.trim());
+                    }}
                   />
+                  <p className="text-[10px] text-gray-500 mt-1 leading-relaxed">
+                    ※ここに未処理データがコピペされます。取り込み先スプレッドシートURLを省略した場合は、GAS初期設定時のスプレッドシートが使用されます。
+                  </p>
                 </div>
               </div>
 

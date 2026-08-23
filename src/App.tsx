@@ -527,7 +527,6 @@ export default function App() {
     syncPrompt?: string; 
     weeklyReportPrompt?: string; 
     targetSheetName?: string;
-    autoReloadApp?: boolean;
   }) => {
     const url = getApiUrl();
     if (!url || url.includes("YOUR_") || url.includes("YOUR_GAS_URL")) {
@@ -548,12 +547,7 @@ export default function App() {
         throw new Error(res?.error || "外部データの取得に失敗しました");
       }
 
-      // Re-sync notes from spreadsheet to app only if autoReloadApp is explicitly enabled
-      if (options.autoReloadApp === true) {
-        await syncFromServer();
-      } else {
-        updateSyncStatus("synced", "同期済");
-      }
+      updateSyncStatus("synced", "同期済");
       return res;
     } catch (e: any) {
       updateSyncStatus("error", "エラー");

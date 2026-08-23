@@ -60,8 +60,7 @@ const DEFAULT_WEEKLY_REPORT_PROMPT =
 3. 顧客の潜在的課題と分析ニーズの推論
 4. 提案時の「反論・リスク」と「死角」
 5. 実行すべき戦略的営業アクション（3つ）
-6. 深掘りすべきキーワードと次の情報取得の優先順位\`;
-
+6. 深掘りすべきキーワードと次の情報取得の優先順位\
 // デフォルト値が設定されるプロパティ
 function getConfig(key) {
   const val = props.getProperty(key);
@@ -203,6 +202,9 @@ function processApiRequest(e) {
       result = fetchDriveFile(postData.url);
     } else if (action === "fetchUnprocessedHighlights") {
       result = fetchUnprocessedHighlights(postData.sourceSsId, postData.sheetName);
+    } else if (action === "importRawRowsToApp") {
+      const rowIndices = typeof postData.rowIndices === "string" ? JSON.parse(postData.rowIndices) : postData.rowIndices;
+      result = importRawRowsToApp(postData.sourceSsId, postData.sheetName, postData.targetSsId, postData.targetSheetName, rowIndices);
     } else if (action === "markHighlightsProcessed") {
       const rowIndices = typeof postData.rowIndices === "string" ? JSON.parse(postData.rowIndices) : postData.rowIndices;
       result = markHighlightsProcessed(postData.sourceSsId, postData.sheetName, rowIndices);
@@ -1127,5 +1129,63 @@ function authorizeDrivePermissions() {
   tempFolder.setTrashed(true);
   Logger.log("✅ Google Drive permissions authorized successfully!");
   return "✅ Google Driveの新規フォルダ作成・保存権限の承認が正常に完了しました！";
+}
+
+
+function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, rowIndices) {
+  try {
+    const srcSs = SpreadsheetApp.openById(sourceSsId);
+    const srcSheet = srcSs.getSheetByName(sheetName);
+    if (!srcSheet) return { success: false, error: "取込元のシートが見つかりません" };
+
+    let targetSs;
+    if (targetSsId && targetSsId.trim() !== "") {
+      try {
+        targetSs = SpreadsheetApp.openById(targetSsId.trim());
+      } catch(e) {
+        return { success: false, error: "取込先スプレッドシートを開けません" };
+      }
+    } else {
+      targetSs = getTargetSpreadsheet();
+    }
+
+    const tSheetName = (targetSheetName && String(targetSheetName).trim()) ? String(targetSheetName).trim() : "Notes";
+    let targetSheet = targetSs.getSheetByName(tSheetName);
+    if (!targetSheet) {
+      targetSheet = targetSs.insertSheet(tSheetName);
+    }
+
+    const srcData = srcSheet.getDataRange().getValues();
+    const headers = srcData[0] ? srcData[0].map(h => String(h).trim().toLowerCase()) : [];
+    
+    let nobsidianIdx = headers.indexOf("nobsidian");
+    if (nobsidianIdx === -1 && srcData[0] && srcData[0].length >= 8) nobsidianIdx = 7;
+    if (nobsidianIdx === -1) {
+      nobsidianIdx = headers.length;
+      srcSheet.getRange(1, nobsidianIdx + 1).setValue("nobsidian");
+    }
+
+    rowIndices.forEach(function(rowIndex) {
+      if (rowIndex > 1 && rowIndex <= srcData.length) {
+        const row = srcData[rowIndex - 1]; // 0-indexed array
+        // A〜M列 (0 to 12) を取得
+        const rowToCopy = row.slice(0, 13);
+        // 13列に満たない場合は空文字で埋める
+        while (rowToCopy.length < 13) {
+          rowToCopy.push("");
+        }
+        
+        // 表示用シートへ直接行追加
+        targetSheet.appendRow(rowToCopy);
+        
+        // 取り込み元シートのnobsidian(H列等)にTRUEを書き込み
+        srcSheet.getRange(rowIndex, nobsidianIdx + 1).setValue(true);
+      }
+    });
+
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: "コピペ処理に失敗しました: " + err.message };
+  }
 }
 `;
