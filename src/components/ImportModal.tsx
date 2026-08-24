@@ -7,7 +7,7 @@ import React, { useState, useEffect } from "react";
 import { Note } from "../types";
 import { formatDateStr } from "../utils/graphDataParser";
 import { getStoredPrompt, DEFAULT_PROMPTS, PROMPT_KEYS } from "./PromptSettingsModal";
-import { LATEST_GAS_SCRIPT } from "../gasScriptCode";
+import { RAW_IMPORT_GAS_SCRIPT, SYNC_AND_SAVE_GAS_SCRIPT } from "../gasScriptCode";
 import { fetchGasGet, fetchGasPost, sanitizeGasUrl } from "../utils/gasClient";
 import { 
   HelpCircle, 
@@ -82,7 +82,8 @@ export default function ImportModal({
   const [syncRaindrop, setSyncRaindrop] = useState(false);
   const [syncDrive, setSyncDrive] = useState(true);
   const [showGasUrlHelp, setShowGasUrlHelp] = useState(false);
-  const [isCopiedGas, setIsCopiedGas] = useState(false);
+  const [isCopiedRawImport, setIsCopiedRawImport] = useState(false);
+  const [isCopiedSyncSave, setIsCopiedSyncSave] = useState(false);
   
   // Connection Test state
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
@@ -243,11 +244,18 @@ export default function ImportModal({
   };
 
   // Copy GAS Code
-  const handleCopyGasCode = () => {
-    navigator.clipboard.writeText(LATEST_GAS_SCRIPT);
-    setIsCopiedGas(true);
-    onSaveToast("最新GASコードをクリップボードにコピーしました！");
-    setTimeout(() => setIsCopiedGas(false), 3000);
+  const handleCopyRawImportCode = () => {
+    navigator.clipboard.writeText(RAW_IMPORT_GAS_SCRIPT);
+    setIsCopiedRawImport(true);
+    onSaveToast("データ取り込み用GASコードをコピーしました！");
+    setTimeout(() => setIsCopiedRawImport(false), 3000);
+  };
+
+  const handleCopyAiSyncCode = () => {
+    navigator.clipboard.writeText(SYNC_AND_SAVE_GAS_SCRIPT);
+    setIsCopiedSyncSave(true);
+    onSaveToast("同期・保存用GASコードをコピーしました！");
+    setTimeout(() => setIsCopiedSyncSave(false), 3000);
   };
 
   // Handle External Sync Execution (STEP 1)
@@ -650,12 +658,12 @@ export default function ImportModal({
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={handleCopyGasCode}
-                    className="flex items-center gap-1 px-2 py-0.5 text-[10px] rounded font-medium bg-purple-500/20 text-purple-300 border border-purple-500/40 hover:bg-purple-500/30 transition cursor-pointer"
+                    onClick={handleCopyAiSyncCode}
+                    className="flex items-center gap-1 px-2 py-0.5 text-[10px] rounded font-medium bg-sky-500/20 text-sky-300 border border-sky-500/40 hover:bg-sky-500/30 transition cursor-pointer"
                     title="GASエディタに貼り付ける最新スクリプトコードをコピー"
                   >
-                    {isCopiedGas ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
-                    <span>{isCopiedGas ? "コピー完了" : "📋 最新GASコード"}</span>
+                    {isCopiedSyncSave ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                    <span>{isCopiedSyncSave ? "コピー完了" : "📋 GASコピー"}</span>
                   </button>
                   <button
                     type="button"
@@ -996,6 +1004,25 @@ export default function ImportModal({
                   <p className="text-[10px] text-gray-500 mt-1 leading-relaxed">
                     ※ここに未処理データがコピペされます。取り込み先スプレッドシートURLを省略した場合は、GAS初期設定時のスプレッドシートが使用されます。
                   </p>
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-4">
+                  <button
+                    type="button"
+                    onClick={handleCopyRawImportCode}
+                    className="flex items-center gap-2 px-3 py-1.5 text-xs rounded font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition cursor-pointer w-full justify-center"
+                  >
+                    {isCopiedRawImport ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{isCopiedRawImport ? "コピー完了" : "📋 GASコピー (データ取り込み)"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCopyAiSyncCode}
+                    className="flex items-center gap-2 px-3 py-1.5 text-xs rounded font-medium bg-sky-500/20 text-sky-300 border border-sky-500/40 hover:bg-sky-500/30 transition cursor-pointer w-full justify-center"
+                  >
+                    {isCopiedSyncSave ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{isCopiedSyncSave ? "コピー完了" : "📋 GASコピー (同期・保存)"}</span>
+                  </button>
                 </div>
               </div>
 

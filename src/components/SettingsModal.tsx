@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { LATEST_GAS_SCRIPT } from "../gasScriptCode";
+import { SYNC_AND_SAVE_GAS_SCRIPT } from "../gasScriptCode";
 import { Copy, Check, FileSpreadsheet, ExternalLink, HelpCircle, Activity, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { fetchGasGet, sanitizeGasUrl } from "../utils/gasClient";
 
@@ -341,7 +341,7 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
             <button
               type="button"
               onClick={() => {
-                navigator.clipboard.writeText(LATEST_GAS_SCRIPT);
+                navigator.clipboard.writeText(SYNC_AND_SAVE_GAS_SCRIPT);
                 setIsCopiedGas(true);
                 onSaveToast("最新のGASスクリプトコードをクリップボードにコピーしました！");
                 setTimeout(() => setIsCopiedGas(false), 3000);
