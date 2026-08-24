@@ -350,7 +350,7 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
               title="スプレッドシートのGASエディタに貼り付ける最新コードをコピーします"
             >
               {isCopiedGas ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
-              {isCopiedGas ? "GASコードをコピー完了" : "📋 最新GASコードをコピー"}
+              {isCopiedGas ? "GASコードをコピー完了" : "📋 統合版GASコードをコピー"}
             </button>
           </div>
           
@@ -419,7 +419,7 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
                       <li>GASエディタで<strong>「デプロイ」＞「新しいデプロイ」</strong>を実行しましたか？（保存だけでは反映されません）</li>
                       <li>「アクセスできるユーザー」を<strong>『全員 (Anyone)』</strong>に設定しましたか？</li>
                       <li>URLの末尾が <strong>/exec</strong> で終わっていますか？（テスト用の /dev は使えません）</li>
-                      <li>GASエディタ右上の「📋 最新GASコードをコピー」の内容を貼り付けましたか？</li>
+                      <li>GASエディタ右上の「📋 統合版GASコードをコピー」の内容を貼り付けましたか？</li>
                     </ul>
                   </div>
                 )}
@@ -465,7 +465,7 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
                   <li>ヘッダー右側の「<span className="text-[var(--text)]">☁ クラウド同期</span>」を開き、「<span className="text-[var(--text)]">📥 スプレッドシートから強制ダウンロード</span>」を実行します（ローカルデータが指定シートの内容で完全に置き換わります）。</li>
                 </ol>
               </li>
-              <li><strong className="text-[var(--text)]">GASコードの更新が必要な場合:</strong> 以前のGASスクリプトをお使いの場合は、右上の「<span className="text-[#c4b5fd]">📋 最新GASコードをコピー</span>」ボタンでコードを取得し、GASエディタに貼り付けて『<span className="text-[var(--text)]">新しいデプロイ</span>』を行ってください。</li>
+              <li><strong className="text-[var(--text)]">GASコードの更新が必要な場合:</strong> 以前のGASスクリプトをお使いの場合は、右上の「<span className="text-[#c4b5fd]">📋 統合版GASコードをコピー</span>」ボタンでコードを取得し、GASエディタに貼り付けて『<span className="text-[var(--text)]">新しいデプロイ</span>』を行ってください。</li>
               <li>設定方法: <span className="text-[var(--text)]">新しいデプロイ ＞ 種類: ウェブアプリ ＞ アクセスできるユーザー: <strong>全員</strong> (Anyone)</span> に設定し、発行された最新のURL（末尾が <span className="text-[var(--text)]">/exec</span>）を貼り付けてください。</li>
             </ul>
           </div>

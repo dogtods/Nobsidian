@@ -127,6 +127,9 @@ function processApiRequest(e) {
       result = syncExternalSources(options, targetSheet);
     } else if (action === "fetchDriveFile") {
       result = fetchDriveFile(postData.url);
+    } else if (action === "importRawRowsToApp") { 
+      const rowIndices = typeof postData.rowIndices === "string" ? JSON.parse(postData.rowIndices) : postData.rowIndices;
+      result = importRawRowsToApp(postData.sourceSsId, postData.sheetName, postData.targetSsId, postData.targetSheetName, rowIndices);
     } else if (action === "fetchUnprocessedHighlights") {
       result = fetchUnprocessedHighlights(postData.sourceSsId, postData.sheetName);
     } else if (action === "markHighlightsProcessed") {
@@ -923,7 +926,7 @@ function fetchUnprocessedHighlights(sourceSsId, sheetName) {
 
       if (!isProcessed) {
         items.push({
-          rowIndex: i + 1,
+          rowIndex: i,
           title: col.title !== -1 ? String(row[col.title]) : "無題",
           url: col.url !== -1 ? String(row[col.url]) : "",
           tags: col.tags !== -1 ? String(row[col.tags]) : "",
@@ -959,8 +962,8 @@ function markHighlightsProcessed(sourceSsId, sheetName, rowIndices) {
     }
 
     rowIndices.forEach(function(rowIndex) {
-      if (rowIndex > 1 && rowIndex <= data.length) {
-        sheet.getRange(rowIndex, colIndex + 1).setValue(true);
+      if (rowIndex >= 1 && rowIndex < data.length) {
+        sheet.getRange(rowIndex + 1, colIndex + 1).setValue(true);
       }
     });
 
@@ -1057,4 +1060,61 @@ function authorizeDrivePermissions() {
   tempFolder.setTrashed(true);
   Logger.log("✅ Google Drive (DriveApp) permissions authorized successfully!");
   return "✅ Google Driveの新規フォルダ作成・保存権限の承認が正常に完了しました！";
+}
+
+function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, rowIndices) {
+  try {
+    const srcSs = SpreadsheetApp.openById(sourceSsId);
+    const srcSheet = srcSs.getSheetByName(sheetName);
+    if (!srcSheet) return { success: false, error: "取込元のシートが見つかりません" };
+
+    let targetSs;
+    if (targetSsId && targetSsId.trim() !== "") {
+      try { targetSs = SpreadsheetApp.openById(targetSsId.trim()); } catch(e) { return { success: false, error: "取込先スプレッドシートを開けません" }; }
+    } else { targetSs = SpreadsheetApp.getActiveSpreadsheet(); }
+
+    const tSheetName = (targetSheetName && String(targetSheetName).trim()) ? String(targetSheetName).trim() : "Notes";
+    let targetSheet = targetSs.getSheetByName(tSheetName);
+    if (!targetSheet) targetSheet = targetSs.insertSheet(tSheetName);
+
+    const srcData = srcSheet.getDataRange().getValues();
+    const headers = srcData[0].map(h => String(h).trim().toLowerCase());
+    
+    // Header for target
+    if (targetSheet.getLastRow() === 0) {
+      targetSheet.appendRow(["id", "title", "url", "tags", "highlights", "saved_at", "processed", "nobsidian", "all", "apendix", "date", "timeline", "source", "edited_content", "updated_at"]);
+    }
+    
+    let addedCount = 0;
+    
+    for (const rIdx of rowIndices) {
+      const row = srcData[rIdx];
+      if (!row) continue;
+      
+      console.log(`[DEBUG] Processing row index: ${rIdx} (Spreadsheet row: ${rIdx + 1})`);
+      
+      // A列からM列（またはそれ以上）をそのままコピペ
+      const newRow = [];
+      for (let i = 0; i < 15; i++) {
+         newRow.push(row[i] !== undefined ? row[i] : "");
+      }
+      
+      targetSheet.appendRow(newRow);
+      
+      // Mark as processed in source
+      let nColIdx = headers.indexOf("nobsidian");
+      if (nColIdx === -1) nColIdx = 7; // column H
+      
+      console.log(`[DEBUG] MarkingIMPORTED at row ${rIdx + 1}, col ${nColIdx + 1}`);
+      srcSheet.getRange(rIdx + 1, nColIdx + 1).setValue("IMPORTED");
+      
+      addedCount++;
+    }
+    
+    SpreadsheetApp.flush();
+    
+    return { success: true, count: addedCount };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 }

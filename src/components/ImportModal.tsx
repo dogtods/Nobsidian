@@ -7,7 +7,7 @@ import React, { useState, useEffect } from "react";
 import { Note } from "../types";
 import { formatDateStr } from "../utils/graphDataParser";
 import { getStoredPrompt, DEFAULT_PROMPTS, PROMPT_KEYS } from "./PromptSettingsModal";
-import { RAW_IMPORT_GAS_SCRIPT, SYNC_AND_SAVE_GAS_SCRIPT } from "../gasScriptCode";
+import { SYNC_AND_SAVE_GAS_SCRIPT } from "../gasScriptCode";
 import { fetchGasGet, fetchGasPost, sanitizeGasUrl } from "../utils/gasClient";
 import { 
   HelpCircle, 
@@ -82,7 +82,6 @@ export default function ImportModal({
   const [syncRaindrop, setSyncRaindrop] = useState(false);
   const [syncDrive, setSyncDrive] = useState(true);
   const [showGasUrlHelp, setShowGasUrlHelp] = useState(false);
-  const [isCopiedRawImport, setIsCopiedRawImport] = useState(false);
   const [isCopiedSyncSave, setIsCopiedSyncSave] = useState(false);
   
   // Connection Test state
@@ -243,18 +242,10 @@ export default function ImportModal({
     }
   };
 
-  // Copy GAS Code
-  const handleCopyRawImportCode = () => {
-    navigator.clipboard.writeText(RAW_IMPORT_GAS_SCRIPT);
-    setIsCopiedRawImport(true);
-    onSaveToast("データ取り込み用GASコードをコピーしました！");
-    setTimeout(() => setIsCopiedRawImport(false), 3000);
-  };
-
   const handleCopyAiSyncCode = () => {
     navigator.clipboard.writeText(SYNC_AND_SAVE_GAS_SCRIPT);
     setIsCopiedSyncSave(true);
-    onSaveToast("同期・保存用GASコードをコピーしました！");
+    onSaveToast("統合版GASコードをコピーしました！");
     setTimeout(() => setIsCopiedSyncSave(false), 3000);
   };
 
@@ -262,7 +253,7 @@ export default function ImportModal({
   const handleExecuteExternalSync = async () => {
     const trimmedUrl = gasUrl.trim();
     if (!trimmedUrl) {
-      onSaveToast("外部データ取り込み用のGAS WebアプリURLを設定してください");
+      onSaveToast("GAS WebアプリURLを設定してください");
       return;
     }
     if (!syncRaindrop && !syncDrive) {
@@ -338,7 +329,12 @@ export default function ImportModal({
 
     onSaveToast("未処理データを取得中...");
     try {
-      const res = await apiPost({ 
+      const cleanedUrl = sanitizeGasUrl(gasUrl);
+      if (!cleanedUrl || cleanedUrl.includes("YOUR_")) {
+        throw new Error("① GAS WebアプリURL を設定してください");
+      }
+      
+      const res = await fetchGasPost(cleanedUrl, { 
         action: "fetchUnprocessedHighlights", 
         sourceSsId, 
         sheetName: extractSheetName.trim() 
@@ -377,12 +373,16 @@ export default function ImportModal({
     setProcessingText("インポート中...");
 
     const selectedItems = selectedIndices.map(idx => pendingSheetItems[idx]);
-    const rowIndices = selectedItems.map(item => item.rowIndex);
+    const rowIndices = selectedItems.map(item => item.rowIndex - 1);
 
     try {
       const targetSheetName = gasSheetName.trim() || "Notes";
       const targetSsId = targetSsUrl ? extractSheetId(targetSsUrl) : undefined;
-      const res = await apiPost({
+      const cleanedUrl = sanitizeGasUrl(gasUrl);
+      if (!cleanedUrl || cleanedUrl.includes("YOUR_")) {
+        throw new Error("① GAS WebアプリURL を設定してください");
+      }
+      const res = await fetchGasPost(cleanedUrl, {
         action: "importRawRowsToApp",
         sourceSsId,
         sheetName: extractSheetName.trim(),
@@ -400,6 +400,9 @@ export default function ImportModal({
         onSaveToast(`${rowIndices.length}件のデータの登録が完了しました ✦`);
       }
       
+      // 成功時に状態をリセット
+      setPendingSheetItems([]);
+      setSelectedIndices([]);
       onClose();
     } catch (e: any) {
       onSaveToast("インポートエラー: " + e.message);
@@ -688,7 +691,7 @@ export default function ImportModal({
               {/* 1-1. GAS Web App URL */}
               <div className="flex flex-col gap-1">
                 <label className="text-[11px] font-bold text-gray-300 flex items-center justify-between">
-                  <span>① 外部データ収集用 GAS WebアプリURL</span>
+                  <span>① GAS WebアプリURL</span>
                   <span className="text-[10px] text-gray-500 font-normal">末尾: /exec</span>
                 </label>
                 <div className="flex gap-2">
@@ -908,14 +911,25 @@ export default function ImportModal({
                   <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
                   <span>A. 取り込み元シート（未処理ハイライト）から抽出・コピペ</span>
                 </label>
-                <button
-                  type="button"
-                  onClick={() => setShowExtractHelp(!showExtractHelp)}
-                  className="text-[10px] text-gray-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer"
-                >
-                  <HelpCircle className="w-3 h-3" />
-                  <span>使い方</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCopyAiSyncCode}
+                    className="flex items-center gap-1 px-2 py-0.5 text-[10px] rounded font-medium bg-sky-500/20 text-sky-300 border border-sky-500/40 hover:bg-sky-500/30 transition cursor-pointer"
+                    title="GASエディタに貼り付ける最新スクリプトコードをコピー"
+                  >
+                    {isCopiedSyncSave ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                    <span>{isCopiedSyncSave ? "コピー完了" : "📋 GASコピー"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowExtractHelp(!showExtractHelp)}
+                    className="text-[10px] text-gray-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer"
+                  >
+                    <HelpCircle className="w-3 h-3" />
+                    <span>使い方</span>
+                  </button>
+                </div>
               </div>
 
               {showExtractHelp && (
@@ -1004,25 +1018,6 @@ export default function ImportModal({
                   <p className="text-[10px] text-gray-500 mt-1 leading-relaxed">
                     ※ここに未処理データがコピペされます。取り込み先スプレッドシートURLを省略した場合は、GAS初期設定時のスプレッドシートが使用されます。
                   </p>
-                </div>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-4">
-                  <button
-                    type="button"
-                    onClick={handleCopyRawImportCode}
-                    className="flex items-center gap-2 px-3 py-1.5 text-xs rounded font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition cursor-pointer w-full justify-center"
-                  >
-                    {isCopiedRawImport ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{isCopiedRawImport ? "コピー完了" : "📋 GASコピー (データ取り込み)"}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCopyAiSyncCode}
-                    className="flex items-center gap-2 px-3 py-1.5 text-xs rounded font-medium bg-sky-500/20 text-sky-300 border border-sky-500/40 hover:bg-sky-500/30 transition cursor-pointer w-full justify-center"
-                  >
-                    {isCopiedSyncSave ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{isCopiedSyncSave ? "コピー完了" : "📋 GASコピー (同期・保存)"}</span>
-                  </button>
                 </div>
               </div>
 
