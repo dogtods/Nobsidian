@@ -254,151 +254,187 @@ function handleGetNotes(targetSheetName) {
 
 // ---- ノート単体保存（A〜M列を非破壊保持し、N列・O列にアプリデータを書き込み） ----
 function saveNote(note, targetSheetName) {
-  const sheet = getSheet(targetSheetName);
-  const lastRow = sheet.getLastRow();
-
-  if (lastRow >= 2) {
-    const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues().flat().map(String);
-    const idx = ids.indexOf(String(note.id));
-
-    if (idx !== -1) {
-      const rowNum = idx + 2;
-      const currentCols = Math.max(15, sheet.getLastColumn());
-      const currentRow = sheet.getRange(rowNum, 1, 1, currentCols).getValues()[0];
-
-      // A〜M列の既存データを非破壊で保持しつつ、アプリ編集内容を反映
-      const updatedRow = [
-        note.id,                                                 // A: id
-        note.title || currentRow[1] || "",                       // B: title
-        note.sourceUrl || currentRow[2] || "",                   // C: url
-        note.keywords || currentRow[3] || "",                    // D: tags
-        note.summary || currentRow[4] || "",                     // E: highlights
-        currentRow[5] || note.createdAt || new Date(),           // F: saved_at
-        'true',                                                  // G: processed
-        currentRow[7] || "",                                     // H: nobsidian
-        currentRow[8] || note.rawContent || "",                  // I: all (生本文保持)
-        note.columnJ || note.metaInfo || currentRow[9] || "",    // J: apendix
-        note.dateStr || currentRow[10] || "",                    // K: date
-        note.timeline !== undefined ? note.timeline : (currentRow[11] || ""), // L: timeline
-        note.source || currentRow[12] || "app",                  // M: source
-        note.content || "",                                      // N: edited_content (編集本文)
-        note.updatedAt || Date.now()                             // O: updated_at (更新日時)
-      ];
-
-      sheet.getRange(rowNum, 1, 1, 15).setValues([updatedRow]);
-      return { success: true, action: "updated", id: note.id, sheetName: sheet.getName() };
+  const lock = LockService.getScriptLock();
+  try {
+    if (!lock.tryLock(10000)) {
+      return { success: false, error: "システムが混み合っています。少し待ってから再度保存してください。" };
     }
+
+    const sheet = getSheet(targetSheetName);
+    const lastRow = sheet.getLastRow();
+
+    if (lastRow >= 2) {
+      const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues().flat().map(String);
+      const idx = ids.indexOf(String(note.id));
+
+      if (idx !== -1) {
+        const rowNum = idx + 2;
+        const currentCols = Math.max(15, sheet.getLastColumn());
+        const currentRow = sheet.getRange(rowNum, 1, 1, currentCols).getValues()[0];
+
+        // A〜M列の既存データを非破壊で保持しつつ、アプリ編集内容を反映
+        const updatedRow = [
+          note.id,                                                 // A: id
+          note.title || currentRow[1] || "",                       // B: title
+          note.sourceUrl || currentRow[2] || "",                   // C: url
+          note.keywords || currentRow[3] || "",                    // D: tags
+          note.summary || currentRow[4] || "",                     // E: highlights
+          currentRow[5] || note.createdAt || new Date(),           // F: saved_at
+          'true',                                                  // G: processed
+          currentRow[7] || "",                                     // H: nobsidian
+          currentRow[8] || note.rawContent || "",                  // I: all (生本文保持)
+          note.columnJ || note.metaInfo || currentRow[9] || "",    // J: apendix
+          note.dateStr || currentRow[10] || "",                    // K: date
+          note.timeline !== undefined ? note.timeline : (currentRow[11] || ""), // L: timeline
+          note.source || currentRow[12] || "app",                  // M: source
+          note.content || "",                                      // N: edited_content (編集本文)
+          note.updatedAt || Date.now()                             // O: updated_at (更新日時)
+        ];
+
+        sheet.getRange(rowNum, 1, 1, 15).setValues([updatedRow]);
+        SpreadsheetApp.flush();
+        return { success: true, action: "updated", id: note.id, sheetName: sheet.getName() };
+      }
+    }
+
+    // 新規ノート追加
+    sheet.appendRow([
+      note.id,
+      note.title,
+      note.sourceUrl || "",
+      note.keywords || "",
+      note.summary || "",
+      note.createdAt || new Date(),
+      'true',
+      '',
+      note.rawContent || "",
+      note.columnJ || note.metaInfo || "",
+      note.dateStr || "",
+      note.timeline || "",
+      note.source || "app",
+      note.content || "",
+      note.updatedAt || Date.now()
+    ]);
+    SpreadsheetApp.flush();
+    return { success: true, action: "created", id: note.id, sheetName: sheet.getName() };
+  } catch (err) {
+    return { success: false, error: err.message };
+  } finally {
+    lock.releaseLock();
   }
-
-  // 新規ノート追加
-  sheet.appendRow([
-    note.id,
-    note.title,
-    note.sourceUrl || "",
-    note.keywords || "",
-    note.summary || "",
-    note.createdAt || new Date(),
-    'true',
-    '',
-    note.rawContent || "",
-    note.columnJ || note.metaInfo || "",
-    note.dateStr || "",
-    note.timeline || "",
-    note.source || "app",
-    note.content || "",
-    note.updatedAt || Date.now()
-  ]);
-
-  return { success: true, action: "created", id: note.id, sheetName: sheet.getName() };
 }
 
 // ---- ノート削除 ----
 function deleteNote(id, targetSheetName) {
-  const sheet = getSheet(targetSheetName);
-  const lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return { success: false, reason: "データが存在しません" };
+  const lock = LockService.getScriptLock();
+  try {
+    if (!lock.tryLock(10000)) {
+      return { success: false, error: "システムが混み合っています。少し待ってから再度削除してください。" };
+    }
 
-  const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues().flat().map(String);
-  const idx = ids.indexOf(String(id));
+    const sheet = getSheet(targetSheetName);
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return { success: false, reason: "データが存在しません" };
 
-  if (idx !== -1) {
-    sheet.deleteRow(idx + 2);
-    return { success: true, id: id, sheetName: sheet.getName() };
+    const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues().flat().map(String);
+    const idx = ids.indexOf(String(id));
+
+    if (idx !== -1) {
+      sheet.deleteRow(idx + 2);
+      SpreadsheetApp.flush();
+      return { success: true, id: id, sheetName: sheet.getName() };
+    }
+    return { success: false, reason: "削除対象が見つかりません" };
+  } catch (err) {
+    return { success: false, error: err.message };
+  } finally {
+    lock.releaseLock();
   }
-  return { success: false, reason: "削除対象が見つかりません" };
 }
 
 // ---- 全ノート一括保存（A〜M列を非破壊保持しつつN・O列を更新） ----
 function saveAll(notes, targetSheetName) {
-  const sheet = getSheet(targetSheetName);
-  const lastRow = sheet.getLastRow();
+  const lock = LockService.getScriptLock();
+  try {
+    if (!lock.tryLock(15000)) {
+      return { success: false, error: "システムが混み合っています。少し待ってから再度保存してください。" };
+    }
 
-  // 既存のスプレッドシート行をIDベースでマップ
-  const existingMap = {};
-  if (lastRow >= 2) {
-    const numCols = Math.max(15, sheet.getLastColumn());
-    const data = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
-    data.forEach((row, i) => {
-      const id = String(row[0]);
-      if (id) existingMap[id] = row;
-    });
-  }
+    const sheet = getSheet(targetSheetName);
+    const lastRow = sheet.getLastRow();
 
-  if (notes && notes.length > 0) {
-    const rows = notes.map(n => {
-      const existing = existingMap[String(n.id)];
-      if (existing) {
-        return [
-          n.id,
-          n.title || existing[1] || "",
-          n.sourceUrl || existing[2] || "",
-          n.keywords || existing[3] || "",
-          n.summary || existing[4] || "",
-          existing[5] || n.createdAt || new Date(),
-          'true',
-          existing[7] || "",
-          existing[8] || n.rawContent || "",
-          n.columnJ || n.metaInfo || existing[9] || "",
-          n.dateStr || existing[10] || "",
-          n.timeline !== undefined ? n.timeline : (existing[11] || ""),
-          n.source || existing[12] || "app",
-          n.content || "",
-          n.updatedAt || Date.now()
-        ];
-      } else {
-        return [
-          n.id,
-          n.title,
-          n.sourceUrl || "",
-          n.keywords || "",
-          n.summary || "",
-          n.createdAt || new Date(),
-          'true',
-          '',
-          n.rawContent || "",
-          n.columnJ || n.metaInfo || "",
-          n.dateStr || "",
-          n.timeline || "",
-          n.source || "app",
-          n.content || "",
-          n.updatedAt || Date.now()
-        ];
+    // 既存のスプレッドシート行をIDベースでマップ
+    const existingMap = {};
+    if (lastRow >= 2) {
+      const numCols = Math.max(15, sheet.getLastColumn());
+      const data = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
+      data.forEach((row, i) => {
+        const id = String(row[0]);
+        if (id) existingMap[id] = row;
+      });
+    }
+
+    if (notes && notes.length > 0) {
+      const rows = notes.map(n => {
+        const existing = existingMap[String(n.id)];
+        if (existing) {
+          return [
+            n.id,
+            n.title || existing[1] || "",
+            n.sourceUrl || existing[2] || "",
+            n.keywords || existing[3] || "",
+            n.summary || existing[4] || "",
+            existing[5] || n.createdAt || new Date(),
+            'true',
+            existing[7] || "",
+            existing[8] || n.rawContent || "",
+            n.columnJ || n.metaInfo || existing[9] || "",
+            n.dateStr || existing[10] || "",
+            n.timeline !== undefined ? n.timeline : (existing[11] || ""),
+            n.source || existing[12] || "app",
+            n.content || "",
+            n.updatedAt || Date.now()
+          ];
+        } else {
+          return [
+            n.id,
+            n.title,
+            n.sourceUrl || "",
+            n.keywords || "",
+            n.summary || "",
+            n.createdAt || new Date(),
+            'true',
+            '',
+            n.rawContent || "",
+            n.columnJ || n.metaInfo || "",
+            n.dateStr || "",
+            n.timeline || "",
+            n.source || "app",
+            n.content || "",
+            n.updatedAt || Date.now()
+          ];
+        }
+      });
+
+      const neededRows = rows.length + 1;
+      const currentMaxRows = sheet.getMaxRows();
+      if (neededRows > currentMaxRows) {
+        sheet.insertRowsAfter(currentMaxRows, neededRows - currentMaxRows);
       }
-    });
 
-    const neededRows = rows.length + 1;
-    const currentMaxRows = sheet.getMaxRows();
-    if (neededRows > currentMaxRows) {
-      sheet.insertRowsAfter(currentMaxRows, neededRows - currentMaxRows);
+      if (lastRow > 1) {
+        sheet.getRange(2, 1, lastRow - 1, Math.max(15, sheet.getLastColumn())).clearContent();
+      }
+      sheet.getRange(2, 1, rows.length, 15).setValues(rows);
     }
-
-    if (lastRow > 1) {
-      sheet.getRange(2, 1, lastRow - 1, Math.max(15, sheet.getLastColumn())).clearContent();
-    }
-    sheet.getRange(2, 1, rows.length, 15).setValues(rows);
+    
+    SpreadsheetApp.flush();
+    return { success: true, count: notes ? notes.length : 0, sheetName: sheet.getName() };
+  } catch (err) {
+    return { success: false, error: err.message };
+  } finally {
+    lock.releaseLock();
   }
-
-  return { success: true, count: notes ? notes.length : 0, sheetName: sheet.getName() };
 }
 
 // ====================================================================
@@ -1065,7 +1101,13 @@ function authorizeDrivePermissions() {
 }
 
 function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, selectedIds) {
+  const lock = LockService.getScriptLock();
   try {
+    // 最大15秒間ロックを待機
+    if (!lock.tryLock(15000)) {
+      return { success: false, error: "現在他の処理が実行中です。数秒待ってから再度お試しください。" };
+    }
+    
     const srcSs = SpreadsheetApp.openById(sourceSsId);
     const srcSheet = srcSs.getSheetByName(sheetName);
     if (!srcSheet) return { success: false, error: "取込元のシートが見つかりません" };
@@ -1126,5 +1168,8 @@ function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, 
     return { success: true, count: addedCount };
   } catch (err) {
     return { success: false, error: err.message };
+  } finally {
+    // ロックを確実に解放
+    lock.releaseLock();
   }
 }
