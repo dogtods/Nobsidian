@@ -131,7 +131,9 @@ export default function ImportModal({
     if (isOpen) {
       const storedGasUrl = localStorage.getItem("cn_gas_api_url") || "";
       const storedExtSheet = localStorage.getItem("cn_external_sync_sheet_name") || "Notes";
-      const storedAppSheet = localStorage.getItem("cn_gas_sheet_name") || "Notes";
+            const storedAppSheet = localStorage.getItem("cn_gas_sheet_name") || "Notes";
+      setGasSheetName(storedAppSheet);
+      setTargetSsUrl(localStorage.getItem("cn_target_ss_url") || "");
 
       setGasUrl(storedGasUrl);
       setExternalSyncSheetName(storedExtSheet);
@@ -956,8 +958,8 @@ export default function ImportModal({
                       type="text"
                       className="w-full text-xs p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
                       placeholder="https://docs.google.com/spreadsheets/d/.../edit"
-                      value={extractSheetUrl}
-                      onChange={(e) => setExtractSheetUrl(e.target.value)}
+                      defaultValue={extractSheetUrl}
+                      onBlur={(e) => setExtractSheetUrl(e.target.value)}
                     />
                   </div>
                   <div>
@@ -966,8 +968,8 @@ export default function ImportModal({
                       type="text"
                       className="w-full text-xs p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
                       placeholder="未処理データ (例: シート1, 未処理データ)"
-                      value={extractSheetName}
-                      onChange={(e) => setExtractSheetName(e.target.value)}
+                      defaultValue={extractSheetName}
+                      onBlur={(e) => setExtractSheetName(e.target.value)}
                     />
                   </div>
                 </div>
@@ -981,8 +983,8 @@ export default function ImportModal({
                       type="text"
                       className="w-full text-xs p-2 bg-[#0d1117] border border-emerald-500/50 rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
                       placeholder="https://script.google.com/macros/s/.../exec"
-                      value={gasUrl}
-                      onChange={(e) => {
+                      defaultValue={gasUrl}
+                      onBlur={(e) => {
                         setGasUrl(e.target.value);
                         if (e.target.value.trim()) {
                           localStorage.setItem("cn_gas_api_url", e.target.value.trim());
@@ -1000,8 +1002,8 @@ export default function ImportModal({
                       type="text"
                       className="w-full text-xs p-2 bg-[#0d1117] border border-emerald-500/50 rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
                       placeholder="未入力の場合は GAS初期設定のシートIDを使用"
-                      value={targetSsUrl}
-                      onChange={(e) => {
+                      defaultValue={targetSsUrl}
+                      onBlur={(e) => {
                         setTargetSsUrl(e.target.value);
                         localStorage.setItem("cn_target_ss_url", e.target.value.trim());
                       }}
@@ -1017,8 +1019,8 @@ export default function ImportModal({
                     type="text"
                     className="w-full text-xs p-2 bg-[#0d1117] border border-emerald-500/50 rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
                     placeholder="Notes"
-                    value={gasSheetName}
-                    onChange={(e) => {
+                    defaultValue={gasSheetName}
+                    onBlur={(e) => {
                       setGasSheetName(e.target.value);
                       localStorage.setItem("cn_gas_sheet_name", e.target.value.trim());
                     }}
@@ -1031,12 +1033,16 @@ export default function ImportModal({
 
               <button
                 type="button"
-                className="w-full py-2 bg-[#21262d] hover:bg-[#30363d] text-xs border border-[#30363d] rounded-lg text-gray-100 font-semibold cursor-pointer transition flex items-center justify-center gap-1.5"
+                className="w-full py-2.5 bg-[#21262d] hover:bg-[#30363d] text-xs border border-[#30363d] rounded-lg text-gray-100 font-semibold cursor-pointer transition flex items-center justify-center gap-2 disabled:opacity-50"
                 onClick={fetchSheetData}
                 disabled={isProcessing}
               >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
-                <span>未処理データ一覧を取得</span>
+                {isProcessing && processingText === "取得中..." ? (
+                  <RefreshCw className="w-3.5 h-3.5 text-emerald-400 animate-spin" />
+                ) : (
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+                )}
+                <span>{isProcessing && processingText === "取得中..." ? "取得中..." : "未処理データ一覧を取得"}</span>
               </button>
 
               {/* Pending Items Table */}
@@ -1086,13 +1092,25 @@ export default function ImportModal({
                       />
                       <span>AIでタイトルを自動最適化</span>
                     </label>
+                    <label className="flex items-center gap-1.5 text-[11px] text-gray-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={overwriteBatch}
+                        onChange={(e) => setOverwriteBatch(e.target.checked)}
+                        className="accent-purple-500"
+                      />
+                      <span>既存IDと重複時は上書きする</span>
+                    </label>
                     <button
                       type="button"
                       onClick={importSelectedItems}
                       disabled={isProcessing || selectedIndices.length === 0}
-                      className="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-lg transition cursor-pointer disabled:opacity-50"
+                      className="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                     >
-                      {isProcessing ? processingText : `選択した ${selectedIndices.length} 件をアプリへ取り込む`}
+                      {isProcessing && (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      )}
+                      <span>{isProcessing ? processingText : `選択した ${selectedIndices.length} 件をアプリへ取り込む`}</span>
                     </button>
                   </div>
                 </div>

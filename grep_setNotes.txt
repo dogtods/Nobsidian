@@ -1,0 +1,225 @@
+441-          }
+442-        });
+443-
+444-        const mergedList = Object.values(mergedMap).sort((a, b) => b.updatedAt - a.updatedAt);
+445-        
+446:        setNotes(mergedList);
+447-        triggerLocalSave(mergedList, activeId);
+448-        
+449-        if (localHasNewerUpdates) {
+450-          updateSyncStatus("syncing", "サーバーとアップロード同期中...");
+451-          await apiPost({ action: "saveAll", notes: mergedList });
+--
+499-        } else if (data.sheetName !== targetSheet) {
+500-           throw new Error(`⚠️ GAS側で読み込まれたシート（${data.sheetName}）が指定したシート（${targetSheet}）と異なります。GASの【新しいデプロイ】が正しく行われているか確認してください。`);
+501-        }
+502-
+503-        const serverNotes: Note[] = data.notes;
+504:        setNotes(serverNotes);
+505-        if (serverNotes.length > 0) {
+506-          setActiveId(serverNotes[0].id);
+507-        } else {
+508-          setActiveId(null);
+509-        }
+--
+581-    try {
+582-      const stored = localStorage.getItem(LS_KEY);
+583-      if (stored) {
+584-        const data = JSON.parse(stored);
+585-        if (data.notes && data.notes.length > 0) {
+586:          setNotes(data.notes);
+587-          // 起動時は常にダッシュボードを表示
+588-          setActiveId(null);
+589-        } else {
+590-          loadDefaultNotes();
+591-        }
+--
+650-        sourceUrl: "",
+651-        createdAt: Date.now(),
+652-        updatedAt: Date.now()
+653-      }
+654-    ];
+655:    setNotes(fresh);
+656-    setActiveId(null);
+657-    triggerLocalSave(fresh, null);
+658-  };
+659-
+660-  const getActiveNote = (): Note | undefined => {
+--
+683-      createdAt: Date.now(),
+684-      updatedAt: Date.now()
+685-    };
+686-
+687-    const nextList = [newN, ...notes];
+688:    setNotes(nextList);
+689-    setActiveId(newN.id);
+690-    setMode("preview");
+691-    triggerLocalSave(nextList, newN.id);
+692-    pushNoteToServer(newN);
+693-    setAiPanelOpen(false);
+--
+704-      createdAt: timestamp || Date.now(),
+705-      updatedAt: Date.now()
+706-    };
+707-
+708-    const nextList = [newN, ...notes];
+709:    setNotes(nextList);
+710-    setActiveId(newN.id);
+711-    setMode("preview");
+712-    triggerLocalSave(nextList, newN.id);
+713-    pushNoteToServer(newN);
+714-    setAiPanelOpen(false);
+715-    return newN;
+716-  };
+717-
+718-  const handleBatchUpgradeNotes = (batchList: Note[], overwrite = false) => {
+719-    const applyUpgrade = (finalUpdatedRange: Note[]) => {
+720:      setNotes(finalUpdatedRange);
+721-      if (finalUpdatedRange.length > 0) {
+722-        setActiveId(finalUpdatedRange[0].id);
+723-      }
+724-      triggerLocalSave(finalUpdatedRange, finalUpdatedRange[0]?.id || null);
+725-
+--
+770-      confirmText: "削除する",
+771-      cancelText: "キャンセル",
+772-      variant: "danger",
+773-      onConfirm: () => {
+774-        const nextList = notes.filter(n => n.id !== id);
+775:        setNotes(nextList);
+776-        
+777-        let nextActiveId = activeId;
+778-        if (activeId === id) {
+779-          nextActiveId = nextList[0]?.id || null;
+780-          setActiveId(nextActiveId);
+--
+805-      content: val,
+806-      updatedAt: Date.now()
+807-    };
+808-
+809-    const newList = notes.map(n => n.id === active.id ? updated : n);
+810:    setNotes(newList);
+811-    triggerLocalSave(newList, active.id);
+812-    scheduleDelayedSave(updated);
+813-
+814-    // Track Autocomplete query on [[ trigger
+815-    checkForWikiLinksSuggest(val);
+--
+824-      title: val,
+825-      updatedAt: Date.now()
+826-    };
+827-
+828-    const newList = notes.map(n => n.id === active.id ? updated : n);
+829:    setNotes(newList);
+830-    triggerLocalSave(newList, active.id);
+831-    scheduleDelayedSave(updated);
+832-  };
+833-
+834-  const handleNoteFolderChange = (val: string) => {
+--
+854-      keywords: kws,
+855-      updatedAt: Date.now()
+856-    };
+857-
+858-    const newList = notes.map(n => n.id === active.id ? updated : n);
+859:    setNotes(newList);
+860-    triggerLocalSave(newList, active.id);
+861-    scheduleDelayedSave(updated);
+862-  };
+863-
+864-  // Autocomplete suggestions handler
+--
+1769-            updatedCount++;
+1770-          }
+1771-        });
+1772-        
+1773-        if (updatedCount > 0) {
+1774:          setNotes(newNotesList);
+1775-          const active = getActiveNote();
+1776-          if (active) {
+1777-            triggerLocalSave(newNotesList, active.id);
+1778-          } else if (newNotesList.length > 0) {
+1779-            triggerLocalSave(newNotesList, newNotesList[0].id);
+--
+1903-          return text;
+1904-        })(),
+1905-        updatedAt: Date.now()
+1906-      };
+1907-      const newList = notes.map(n => n.id === active.id ? updated : n);
+1908:      setNotes(newList);
+1909-      triggerLocalSave(newList, active.id);
+1910-      toast("内容を末尾に追記しました ✦");
+1911-    } catch (e: any) {
+1912-      console.error(e);
+1913-      toast("追記に失敗しました。");
+--
+1995-          summary: needSummary ? (resultObj.summary || "") : active.summary,
+1996-          updatedAt: Date.now()
+1997-        };
+1998-
+1999-        const newList = notes.map(n => n.id === active.id ? updated : n);
+2000:        setNotes(newList);
+2001-        triggerLocalSave(newList, active.id);
+2002-        pushNoteToServer(updated);
+2003-      } else if (needSummary && resultObj.summary) {
+2004-        const updated = {
+2005-          ...active,
+2006-          summary: resultObj.summary,
+2007-          updatedAt: Date.now()
+2008-        };
+2009-
+2010-        const newList = notes.map(n => n.id === active.id ? updated : n);
+2011:        setNotes(newList);
+2012-        triggerLocalSave(newList, active.id);
+2013-        pushNoteToServer(updated);
+2014-      }
+2015-
+2016-      toast("AI分析完了しました ✦");
+--
+2389-        };
+2390-      }
+2391-      return n;
+2392-    });
+2393-
+2394:    setNotes(updatedList);
+2395-    setEditingFolder(null);
+2396-    triggerLocalSave(updatedList, activeId);
+2397-    apiPost({ action: "saveAll", notes: updatedList })
+2398-      .then(() => toast("フォルダ名を変更しました"))
+2399-      .catch((e) => toast("更新保存エラー: " + e.message));
+--
+2466-              };
+2467-            }
+2468-            return n;
+2469-          });
+2470-
+2471:          setNotes(updatedList);
+2472-          triggerLocalSave(updatedList, activeId);
+2473-          await apiPost({ action: "saveAll", notes: updatedList });
+2474-          toast("AI一括カテゴリフォルダ分類が完了しました ✦");
+2475-        } catch (e: any) {
+2476-          toast("AIフォルダ自動化エラー: " + e.message);
+--
+2715-            } : null);
+2716-          }
+2717-        }
+2718-
+2719-        // 1件完了ごとにステートを更新して保存（進行度の同期）
+2720:        setNotes(updatedNotesState);
+2721-        triggerLocalSave(updatedNotesState, activeId);
+2722-        apiPost({ action: "saveAll", notes: updatedNotesState }).catch(err => {
+2723-          console.warn("Intermediate server sync mismatch:", err);
+2724-        });
+2725-
+--
+3658-                                ...active,
+3659-                                content: active.content + "\n\n" + (aiResults.visual_structure.includes('```mermaid') ? aiResults.visual_structure : "```mermaid\n" + aiResults.visual_structure.trim() + "\n```"),
+3660-                                updatedAt: Date.now()
+3661-                              };
+3662-                              const newList = notes.map(n => n.id === active.id ? updated : n);
+3663:                              setNotes(newList);
+3664-                              triggerLocalSave(newList, active.id);
+3665-                              toast("図解（Mermaid）を本文末尾に追記しました ✦");
+3666-                            }
+3667-                          }}
+3668-                        >

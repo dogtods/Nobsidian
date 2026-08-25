@@ -806,9 +806,12 @@ export default function App() {
       updatedAt: Date.now()
     };
 
-    const newList = notes.map(n => n.id === active.id ? updated : n);
-    setNotes(newList);
-    triggerLocalSave(newList, active.id);
+    let newList: Note[] = [];
+      setNotes(prev => {
+        newList = prev.map(n => n.id === active.id ? updated : n);
+        triggerLocalSave(newList, active.id);
+        return newList;
+      });
     scheduleDelayedSave(updated);
 
     // Track Autocomplete query on [[ trigger
@@ -825,9 +828,12 @@ export default function App() {
       updatedAt: Date.now()
     };
 
-    const newList = notes.map(n => n.id === active.id ? updated : n);
-    setNotes(newList);
-    triggerLocalSave(newList, active.id);
+    let newList: Note[] = [];
+      setNotes(prev => {
+        newList = prev.map(n => n.id === active.id ? updated : n);
+        triggerLocalSave(newList, active.id);
+        return newList;
+      });
     scheduleDelayedSave(updated);
   };
 
@@ -855,9 +861,12 @@ export default function App() {
       updatedAt: Date.now()
     };
 
-    const newList = notes.map(n => n.id === active.id ? updated : n);
-    setNotes(newList);
-    triggerLocalSave(newList, active.id);
+    let newList: Note[] = [];
+      setNotes(prev => {
+        newList = prev.map(n => n.id === active.id ? updated : n);
+        triggerLocalSave(newList, active.id);
+        return newList;
+      });
     scheduleDelayedSave(updated);
   };
 
@@ -1904,9 +1913,12 @@ const renderMarkdownToElements = (contentStr: string) => {
         })(),
         updatedAt: Date.now()
       };
-      const newList = notes.map(n => n.id === active.id ? updated : n);
-      setNotes(newList);
-      triggerLocalSave(newList, active.id);
+      let newList: Note[] = [];
+      setNotes(prev => {
+        newList = prev.map(n => n.id === active.id ? updated : n);
+        triggerLocalSave(newList, active.id);
+        return newList;
+      });
       toast("内容を末尾に追記しました ✦");
     } catch (e: any) {
       console.error(e);
@@ -1996,9 +2008,12 @@ const renderMarkdownToElements = (contentStr: string) => {
           updatedAt: Date.now()
         };
 
-        const newList = notes.map(n => n.id === active.id ? updated : n);
-        setNotes(newList);
+        let newList: Note[] = [];
+      setNotes(prev => {
+        newList = prev.map(n => n.id === active.id ? updated : n);
         triggerLocalSave(newList, active.id);
+        return newList;
+      });
         pushNoteToServer(updated);
       } else if (needSummary && resultObj.summary) {
         const updated = {
@@ -2007,9 +2022,12 @@ const renderMarkdownToElements = (contentStr: string) => {
           updatedAt: Date.now()
         };
 
-        const newList = notes.map(n => n.id === active.id ? updated : n);
-        setNotes(newList);
+        let newList: Note[] = [];
+      setNotes(prev => {
+        newList = prev.map(n => n.id === active.id ? updated : n);
         triggerLocalSave(newList, active.id);
+        return newList;
+      });
         pushNoteToServer(updated);
       }
 
@@ -2450,27 +2468,30 @@ const renderMarkdownToElements = (contentStr: string) => {
           }
           const mapping = parseAIJSON(cleanText);
 
-          const updatedList = notes.map(n => {
-            const nextFolder = mapping[n.id];
-            if (nextFolder) {
-              let kws = n.keywords || "";
-              if (kws.includes("[folder:")) {
-                kws = kws.replace(/\[folder:(.+?)\]/, `[folder:${nextFolder}]`);
-              } else {
-                kws = kws ? `${kws}, [folder:${nextFolder}]` : `[folder:${nextFolder}]`;
+          let finalUpdatedList: Note[] = [];
+          setNotes(prev => {
+            finalUpdatedList = prev.map(n => {
+              const nextFolder = mapping[n.id];
+              if (nextFolder) {
+                let kws = n.keywords || "";
+                if (kws.includes("[folder:")) {
+                  kws = kws.replace(/\[folder:(.+?)\]/, `[folder:${nextFolder}]`);
+                } else {
+                  kws = kws ? `${kws}, [folder:${nextFolder}]` : `[folder:${nextFolder}]`;
+                }
+                return {
+                  ...n,
+                  keywords: kws,
+                  updatedAt: Date.now()
+                };
               }
-              return {
-                ...n,
-                keywords: kws,
-                updatedAt: Date.now()
-              };
-            }
-            return n;
+              return n;
+            });
+            triggerLocalSave(finalUpdatedList, activeId);
+            return finalUpdatedList;
           });
-
-          setNotes(updatedList);
-          triggerLocalSave(updatedList, activeId);
-          await apiPost({ action: "saveAll", notes: updatedList });
+          // Bulk save via saveAll is risky but since we are replacing all, we can keep saveAll or call saveNote sequentially. Let's stick to saveAll but with the accurate finalUpdatedList.
+          await apiPost({ action: "saveAll", notes: finalUpdatedList });
           toast("AI一括カテゴリフォルダ分類が完了しました ✦");
         } catch (e: any) {
           toast("AIフォルダ自動化エラー: " + e.message);
@@ -2716,12 +2737,18 @@ const renderMarkdownToElements = (contentStr: string) => {
           }
         }
 
+        
         // 1件完了ごとにステートを更新して保存（進行度の同期）
-        setNotes(updatedNotesState);
-        triggerLocalSave(updatedNotesState, activeId);
-        apiPost({ action: "saveAll", notes: updatedNotesState }).catch(err => {
+        let nextState: Note[] = [];
+        setNotes(prev => {
+          nextState = prev.map(n => n.id === freshNote.id ? updatedNotesState.find(u => u.id === freshNote.id) || n : n);
+          triggerLocalSave(nextState, activeId);
+          return nextState;
+        });
+        apiPost({ action: "saveNote", note: nextState.find(n => n.id === freshNote.id)! }).catch(err => {
           console.warn("Intermediate server sync mismatch:", err);
         });
+
 
         // 1件毎の冷却スリープ（AI時のみ）
         if (mode === "ai" && i < folderNotes.length - 1) {
@@ -2790,8 +2817,14 @@ const renderMarkdownToElements = (contentStr: string) => {
               }`}
               onClick={() => setIsSyncManagerOpen(true)}
               title="クリックして同期オプションを選択（アップロード・ダウンロード・自動マージ）"
+              style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
             >
-              ● {syncLabel}
+              {syncStatus === "syncing" ? (
+                <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+              ) : (
+                "●"
+              )}
+              {syncLabel}
             </div>
           </div>
 
@@ -3659,9 +3692,12 @@ const renderMarkdownToElements = (contentStr: string) => {
                                 content: active.content + "\n\n" + (aiResults.visual_structure.includes('```mermaid') ? aiResults.visual_structure : "```mermaid\n" + aiResults.visual_structure.trim() + "\n```"),
                                 updatedAt: Date.now()
                               };
-                              const newList = notes.map(n => n.id === active.id ? updated : n);
-                              setNotes(newList);
-                              triggerLocalSave(newList, active.id);
+                              let newList: Note[] = [];
+      setNotes(prev => {
+        newList = prev.map(n => n.id === active.id ? updated : n);
+        triggerLocalSave(newList, active.id);
+        return newList;
+      });
                               toast("図解（Mermaid）を本文末尾に追記しました ✦");
                             }
                           }}
