@@ -919,13 +919,15 @@ function fetchUnprocessedHighlights(sourceSsId, sheetName) {
       if (col.nobsidian !== -1) {
         const val = row[col.nobsidian];
         const valStr = String(val).trim().toLowerCase();
-        if (valStr !== "" && valStr !== "false" && valStr !== "0") {
+        // 明示的に "imported" も処理済みとみなす
+        if (valStr !== "" && valStr !== "false" && valStr !== "0" && valStr !== "imported" && valStr !== "true") {
           isProcessed = true;
         }
       }
 
       if (!isProcessed) {
         items.push({
+          id: `${sheetName}_${i}`, // Unique ID: SheetName + RowIndex (0-based)
           rowIndex: i,
           title: col.title !== -1 ? String(row[col.title]) : "無題",
           url: col.url !== -1 ? String(row[col.url]) : "",
@@ -1062,7 +1064,7 @@ function authorizeDrivePermissions() {
   return "✅ Google Driveの新規フォルダ作成・保存権限の承認が正常に完了しました！";
 }
 
-function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, rowIndices) {
+function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, selectedIds) {
   try {
     const srcSs = SpreadsheetApp.openById(sourceSsId);
     const srcSheet = srcSs.getSheetByName(sheetName);
@@ -1087,11 +1089,19 @@ function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, 
     
     let addedCount = 0;
     
-    for (const rIdx of rowIndices) {
+    for (const id of selectedIds) {
+      // Parse ID: SheetName_RowIndex
+      const parts = id.split('_');
+      const rIdx = parseInt(parts[1], 10);
+      
       const row = srcData[rIdx];
       if (!row) continue;
       
-      console.log(`[DEBUG] Processing row index: ${rIdx} (Spreadsheet row: ${rIdx + 1})`);
+      // Idempotency check: Skip if already marked as imported
+      let nColIdx = headers.indexOf("nobsidian");
+      if (nColIdx === -1) nColIdx = 7; // column H
+      const currentStatus = String(row[nColIdx]).trim().toLowerCase();
+      if (currentStatus === "imported" || currentStatus === "true") continue;
       
       // A列からM列（またはそれ以上）をそのままコピペ
       const newRow = [];
@@ -1102,15 +1112,15 @@ function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, 
       targetSheet.appendRow(newRow);
       
       // Mark as processed in source
-      let nColIdx = headers.indexOf("nobsidian");
-      if (nColIdx === -1) nColIdx = 7; // column H
-      
       console.log(`[DEBUG] MarkingIMPORTED at row ${rIdx + 1}, col ${nColIdx + 1}`);
-      srcSheet.getRange(rIdx + 1, nColIdx + 1).setValue("IMPORTED");
+      srcSheet.getRange(rIdx + 1, nColIdx + 1).setValue("imported");
       
+      // 書き込みを確実に反映させるために小さな待機を追加
+      Utilities.sleep(100); 
       addedCount++;
     }
     
+    // 最後に再度flush
     SpreadsheetApp.flush();
     
     return { success: true, count: addedCount };
