@@ -375,7 +375,7 @@ export default function ImportModal({
     setProcessingText("インポート中...");
 
     const selectedItems = selectedIndices.map(idx => pendingSheetItems[idx]);
-    const selectedIds = selectedItems.map(item => item.id);
+    const rowIndices = selectedItems.map(item => item.rowIndex);
 
     try {
       const targetSheetName = gasSheetName.trim() || "Notes";
@@ -390,13 +390,13 @@ export default function ImportModal({
         sheetName: extractSheetName.trim(),
         targetSsId,
         targetSheetName,
-        selectedIds
+        rowIndices
       });
 
       if (!res.success) throw new Error(res.error || "インポートに失敗しました");
 
       if (onSyncFromServer) {
-        onSaveToast(`${selectedIds.length}件のデータをアプリ用シートへ登録しました。再読み込み中...`);
+        onSaveToast(`${rowIndices.length}件のデータをアプリ用シートへ登録しました。再読み込み中...`);
         try {
           // 待機してから再読み込みを行う
           await new Promise(resolve => setTimeout(resolve, 1500));
@@ -407,7 +407,7 @@ export default function ImportModal({
           onSaveToast("再読み込みに失敗しました: " + syncError.message);
         }
       } else {
-        onSaveToast(`${selectedIds.length}件のデータの登録が完了しました ✦`);
+        onSaveToast(`${rowIndices.length}件のデータの登録が完了しました ✦`);
       }
       
       // 成功時に状態をリセット

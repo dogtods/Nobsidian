@@ -1088,7 +1088,7 @@ function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, 
     let addedCount = 0;
     
     for (const rIdx of rowIndices) {
-      const row = srcData[rIdx];
+      const row = srcData[rIdx - 1];
       if (!row) continue;
       
       // A列からM列（またはそれ以上）をそのままコピペ
@@ -1102,7 +1102,7 @@ function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, 
       // Mark as processed in source
       let nColIdx = headers.indexOf("nobsidian");
       if (nColIdx === -1) nColIdx = 7; // column H
-      srcSheet.getRange(rIdx + 1, nColIdx + 1).setValue("IMPORTED");
+      srcSheet.getRange(rIdx, nColIdx + 1).setValue("IMPORTED");
       
       addedCount++;
     }
@@ -2204,7 +2204,7 @@ function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, 
     let addedCount = 0;
     
     for (const rIdx of rowIndices) {
-      const row = srcData[rIdx];
+      const row = srcData[rIdx - 1];
       if (!row) continue;
       
       // A列からM列（またはそれ以上）をそのままコピペ
@@ -2218,7 +2218,7 @@ function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, 
       // Mark as processed in source
       let nColIdx = headers.indexOf("nobsidian");
       if (nColIdx === -1) nColIdx = 7; // column H
-      srcSheet.getRange(rIdx + 1, nColIdx + 1).setValue("IMPORTED");
+      srcSheet.getRange(rIdx, nColIdx + 1).setValue("IMPORTED");
       
       addedCount++;
     }
