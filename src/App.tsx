@@ -370,6 +370,12 @@ export default function App() {
         body.sheetName = targetSheetName.trim();
       }
     }
+    const targetSsUrl = localStorage.getItem("cn_gas_target_ss_url");
+    if (targetSsUrl && targetSsUrl.trim() !== "") {
+      if (!body.targetSsUrl) {
+        body.targetSsUrl = targetSsUrl.trim();
+      }
+    }
     
     return await fetchGasPost(url, body);
   };
@@ -383,6 +389,10 @@ export default function App() {
     const sheetName = localStorage.getItem("cn_gas_sheet_name");
     if (sheetName && sheetName.trim() !== "") {
       params.sheetName = sheetName.trim();
+    }
+    const targetSsUrl = localStorage.getItem("cn_gas_target_ss_url");
+    if (targetSsUrl && targetSsUrl.trim() !== "") {
+      params.targetSsUrl = targetSsUrl.trim();
     }
     
     return await fetchGasGet(url, params);

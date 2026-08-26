@@ -112,13 +112,7 @@ export default function ImportModal({
   const [extractSheetUrl, setExtractSheetUrl] = useState("https://docs.google.com/spreadsheets/d/.../edit");
   const [extractSheetName, setExtractSheetName] = useState("未処理データ");
   const [targetSsUrl, setTargetSsUrl] = useState(() => localStorage.getItem("cn_target_ss_url") || "");
-  const [gasSheetName, setGasSheetName] = useState(() => {
-    const today = new Date();
-    const yyyy = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const dd = String(today.getDate()).padStart(2, '0');
-    return `${yyyy}${mm}${dd}`;
-  });
+  const [gasSheetName, setGasSheetName] = useState(() => localStorage.getItem("cn_gas_sheet_name") || "Notes");
   const [showExtractHelp, setShowExtractHelp] = useState(false);
   const [pendingSheetItems, setPendingSheetItems] = useState<any[]>([]);
   const [selectedIndices, setSelectedIndices] = useState<number[]>([]);

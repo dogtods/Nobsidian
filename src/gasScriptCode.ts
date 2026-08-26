@@ -45,10 +45,24 @@ const SHEET_HEADERS = [
 ];
 
 // スプレッドシート内の保存先シートを取得/自動生成する関数
-function getSheet(targetSheetName) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+function getSheet(targetSheetName, targetSsUrl) {
+  let ss = null;
+  if (targetSsUrl && String(targetSsUrl).trim() !== "") {
+    try {
+      ss = SpreadsheetApp.openByUrl(String(targetSsUrl).trim());
+    } catch(e) {
+      const match = String(targetSsUrl).match(/[-\w]{25,}/);
+      if (match) {
+        ss = SpreadsheetApp.openById(match[0]);
+      } else {
+        throw new Error("指定されたスプレッドシートを開けません。URLを確認してください。");
+      }
+    }
+  } else {
+    ss = SpreadsheetApp.getActiveSpreadsheet();
+  }
   if (!ss) {
-    throw new Error("スプレッドシートのアクティブなインスタンスが見つかりません。コンテナバインドスクリプトとして作成してください。");
+    throw new Error("スプレッドシートが見つかりません。URLが正しいか確認してください。");
   }
   const name = (targetSheetName && String(targetSheetName).trim()) ? String(targetSheetName).trim() : "Notes";
   let sheet = ss.getSheetByName(name);
@@ -101,6 +115,7 @@ function processApiRequest(e) {
 
   const action = postData.action || (e.parameter ? e.parameter.action : "");
   const targetSheet = postData.sheetName || (e.parameter ? e.parameter.sheetName : "");
+  const targetSsUrl = postData.targetSsUrl || (e.parameter ? e.parameter.targetSsUrl : "");
 
   if (!action) {
     return createJsonResponse({ 
@@ -113,18 +128,18 @@ function processApiRequest(e) {
 
   try {
     if (action === "getNotes") {
-      result = handleGetNotes(targetSheet);
+      result = handleGetNotes(targetSheet, targetSsUrl);
     } else if (action === "saveNote") {
       const note = typeof postData.note === "string" ? JSON.parse(postData.note) : postData.note;
-      result = saveNote(note, targetSheet);
+      result = saveNote(note, targetSheet, targetSsUrl);
     } else if (action === "deleteNote") {
-      result = deleteNote(postData.id, targetSheet);
+      result = deleteNote(postData.id, targetSheet, targetSsUrl);
     } else if (action === "saveAll") {
       const notes = typeof postData.notes === "string" ? JSON.parse(postData.notes) : postData.notes;
-      result = saveAll(notes, targetSheet);
+      result = saveAll(notes, targetSheet, targetSsUrl);
     } else if (action === "syncExternalSources" || action === "syncAllExternalSources") {
       const options = postData.options || { raindrop: true, drive: true };
-      result = syncExternalSources(options, targetSheet);
+      result = syncExternalSources(options, targetSheet, targetSsUrl);
     } else if (action === "fetchDriveFile") {
       result = fetchDriveFile(postData.url);
     } else if (action === "importRawRowsToApp") { 
@@ -169,8 +184,8 @@ function createJsonResponse(data) {
 }
 
 // ---- ノート一覧取得 (A〜M列保持 + N列編集本文 + O列更新日時) ----
-function handleGetNotes(targetSheetName) {
-  const sheet = getSheet(targetSheetName);
+function handleGetNotes(targetSheetName, targetSsUrl) {
+  const sheet = getSheet(targetSheetName, targetSsUrl);
   const lastRow = sheet.getLastRow();
   if (lastRow <= 1) {
     return { notes: [], sheetName: sheet.getName() };
@@ -253,8 +268,8 @@ function handleGetNotes(targetSheetName) {
 }
 
 // ---- ノート単体保存（A〜M列を非破壊保持し、N列・O列にアプリデータを書き込み） ----
-function saveNote(note, targetSheetName) {
-  const sheet = getSheet(targetSheetName);
+function saveNote(note, targetSheetName, targetSsUrl) {
+  const sheet = getSheet(targetSheetName, targetSsUrl);
   const lastRow = sheet.getLastRow();
 
   if (lastRow >= 2) {
@@ -313,8 +328,8 @@ function saveNote(note, targetSheetName) {
 }
 
 // ---- ノート削除 ----
-function deleteNote(id, targetSheetName) {
-  const sheet = getSheet(targetSheetName);
+function deleteNote(id, targetSheetName, targetSsUrl) {
+  const sheet = getSheet(targetSheetName, targetSsUrl);
   const lastRow = sheet.getLastRow();
   if (lastRow <= 1) return { success: false, reason: "データが存在しません" };
 
@@ -329,8 +344,8 @@ function deleteNote(id, targetSheetName) {
 }
 
 // ---- 全ノート一括保存（A〜M列を非破壊保持しつつN・O列を更新） ----
-function saveAll(notes, targetSheetName) {
-  const sheet = getSheet(targetSheetName);
+function saveAll(notes, targetSheetName, targetSsUrl) {
+  const sheet = getSheet(targetSheetName, targetSsUrl);
   const lastRow = sheet.getLastRow();
 
   // 既存のスプレッドシート行をIDベースでマップ
@@ -405,7 +420,7 @@ function saveAll(notes, targetSheetName) {
 // 外部データ同期エンジン (Raindrop & Google Drive MHT / PDF / 画像)
 // ====================================================================
 
-function syncExternalSources(options, targetSheetName) {
+function syncExternalSources(options, targetSheetName, targetSsUrl) {
   const config = options || { raindrop: true, drive: true };
   const START_TIME = Date.now();
   const TIME_LIMIT = 3.5 * 60 * 1000;
@@ -416,7 +431,7 @@ function syncExternalSources(options, targetSheetName) {
   let problematicItem = null;
 
   try {
-    const sheet = getSheet(targetSheetName);
+    const sheet = getSheet(targetSheetName, targetSsUrl);
     const lastRow = sheet.getLastRow();
     const existingIds = lastRow > 1 
       ? new Set(sheet.getRange(2, 1, lastRow - 1, 1).getValues().flat().map(String)) 
@@ -492,7 +507,9 @@ function syncExternalSources(options, targetSheetName) {
                   const text = resJson.candidates[0].content.parts[0].text.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '').trim();
                   const result = JSON.parse(text);
                   keyword = result.keyword || "一般";
-                  summary = manualHighlights ? manualHighlights + "\\n\\n【自動要約】\\n" + result.summary : (result.summary || "");
+                  let rawSummary = result.summary || "";
+                  rawSummary = String(rawSummary).replace(/\\\\n/g, '\\n');
+                  summary = manualHighlights ? manualHighlights + "\\n\\n【自動要約】\\n" + rawSummary : rawSummary;
                 }
               }
             } else {
@@ -566,7 +583,7 @@ function syncExternalSources(options, targetSheetName) {
 
             const result = callGeminiVision(file, geminiApiKey, geminiModel, persona, syncPrompt);
             const pubDateStr = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
-            sheet.appendRow([articleId, articleId, file.getUrl(), result.keyword, result.summary, new Date(), 'false', '', '', '', pubDateStr, '', 'drive_pdf', '', '']);
+            sheet.appendRow([articleId, articleId, file.getUrl(), result.keyword, result.summary, new Date(), 'false', '', '', '', pubDateStr, '', file.getName(), '', '']);
             SpreadsheetApp.flush();
             existingIds.add(articleId);
             addedCount++;
@@ -578,7 +595,7 @@ function syncExternalSources(options, targetSheetName) {
             if (!existingIds.has(ssId)) {
               const result = callGeminiVision(file, geminiApiKey, geminiModel, persona, syncPrompt);
               const pubDateStr = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
-              sheet.appendRow([ssId, fileName, file.getUrl(), result.keyword, result.summary, new Date(), 'false', '', '', '', pubDateStr, '', 'drive_image', '', '']);
+              sheet.appendRow([ssId, fileName, file.getUrl(), result.keyword, result.summary, new Date(), 'false', '', '', '', pubDateStr, '', file.getName(), '', '']);
               SpreadsheetApp.flush();
               existingIds.add(ssId);
               addedCount++;
@@ -706,7 +723,7 @@ function processMhtFile_Advanced(file, sheet, existingIds, persona, syncPrompt, 
       metaInfo,
       pubDateStr,
       geminiResultJson.timeline || "",
-      'mht',
+      file.getName(),
       '',
       ''
     ]);
@@ -1073,24 +1090,11 @@ function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, 
       try { targetSs = SpreadsheetApp.openById(targetSsId.trim()); } catch(e) { return { success: false, error: "取込先スプレッドシートを開けません" }; }
     } else { targetSs = SpreadsheetApp.getActiveSpreadsheet(); }
 
-    let tSheetName = (targetSheetName && String(targetSheetName).trim()) ? String(targetSheetName).trim() : "Notes";
+    const tSheetName = (targetSheetName && String(targetSheetName).trim()) ? String(targetSheetName).trim() : "Notes";
     let targetSheet = targetSs.getSheetByName(tSheetName);
-    
-    // シートが存在し、かつすでにデータが入っている場合（別のロットとして扱う）は連番を付与する
-    if (targetSheet && targetSheet.getLastRow() > 0) {
-      let counter = 1;
-      let newSheetName = tSheetName + "-" + counter;
-      while (targetSs.getSheetByName(newSheetName) && targetSs.getSheetByName(newSheetName).getLastRow() > 0) {
-        counter++;
-        newSheetName = tSheetName + "-" + counter;
-      }
-      tSheetName = newSheetName;
-      targetSheet = targetSs.getSheetByName(tSheetName);
-    }
-    
     if (!targetSheet) targetSheet = targetSs.insertSheet(tSheetName);
 
-    const srcData = srcSheet.getDataRange().getValues();
+        const srcData = srcSheet.getDataRange().getValues();
     const headers = srcData[0].map(h => String(h).trim().toLowerCase());
     
     // Header for target
@@ -1098,17 +1102,49 @@ function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, 
       targetSheet.appendRow(["id", "title", "url", "tags", "highlights", "saved_at", "processed", "nobsidian", "all", "apendix", "date", "timeline", "source", "edited_content", "updated_at"]);
     }
     
+    // 今日の日付からロット名を生成 (例: 20260826)
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    const baseLotName = yyyy + mm + dd;
+    
+    // targetSheetの既存データを調べて、同じ日付のロット番号の最大値を探す (date列: index 10)
+    let maxLotNum = 0;
+    if (targetSheet.getLastRow() > 1) {
+      const targetData = targetSheet.getRange(2, 11, targetSheet.getLastRow() - 1, 1).getValues();
+      for (const row of targetData) {
+        const dVal = String(row[0]).trim();
+        if (dVal === baseLotName) {
+          if (maxLotNum < 1) maxLotNum = 1;
+        } else if (dVal.startsWith(baseLotName + "-")) {
+          const numStr = dVal.split("-")[1];
+          const num = parseInt(numStr, 10);
+          if (!isNaN(num) && num >= maxLotNum) {
+            maxLotNum = num + 1; // 既にある最大値の次
+          }
+        }
+      }
+    }
+    const currentLotName = maxLotNum === 0 ? baseLotName : baseLotName + "-" + maxLotNum;
+    
     let addedCount = 0;
     
     for (const rIdx of rowIndices) {
       const row = srcData[rIdx - 1];
       if (!row) continue;
       
-      // A列からM列（またはそれ以上）をそのままコピペ
       const newRow = [];
-      for (let i = 0; i < 15; i++) {
-         newRow.push(row[i] !== undefined ? row[i] : "");
+      for (let i = 0; i < 15; i++) { 
+        newRow.push(row[i] !== undefined ? row[i] : "");
       }
+      
+      // date列 (index 10) を今回のロット名で上書きする
+      newRow[10] = currentLotName;
+      
+      // N列(edited_content)とO列(updated_at)はインポート時は必ず空にする
+      newRow[13] = "";
+      newRow[14] = "";
       
       targetSheet.appendRow(newRow);
       
@@ -1174,10 +1210,24 @@ const SHEET_HEADERS = [
 ];
 
 // スプレッドシート内の保存先シートを取得/自動生成する関数
-function getSheet(targetSheetName) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+function getSheet(targetSheetName, targetSsUrl) {
+  let ss = null;
+  if (targetSsUrl && String(targetSsUrl).trim() !== "") {
+    try {
+      ss = SpreadsheetApp.openByUrl(String(targetSsUrl).trim());
+    } catch(e) {
+      const match = String(targetSsUrl).match(/[-\w]{25,}/);
+      if (match) {
+        ss = SpreadsheetApp.openById(match[0]);
+      } else {
+        throw new Error("指定されたスプレッドシートを開けません。URLを確認してください。");
+      }
+    }
+  } else {
+    ss = SpreadsheetApp.getActiveSpreadsheet();
+  }
   if (!ss) {
-    throw new Error("スプレッドシートのアクティブなインスタンスが見つかりません。コンテナバインドスクリプトとして作成してください。");
+    throw new Error("スプレッドシートが見つかりません。URLが正しいか確認してください。");
   }
   const name = (targetSheetName && String(targetSheetName).trim()) ? String(targetSheetName).trim() : "Notes";
   let sheet = ss.getSheetByName(name);
@@ -1230,6 +1280,7 @@ function processApiRequest(e) {
 
   const action = postData.action || (e.parameter ? e.parameter.action : "");
   const targetSheet = postData.sheetName || (e.parameter ? e.parameter.sheetName : "");
+  const targetSsUrl = postData.targetSsUrl || (e.parameter ? e.parameter.targetSsUrl : "");
 
   if (!action) {
     return createJsonResponse({ 
@@ -1242,18 +1293,18 @@ function processApiRequest(e) {
 
   try {
     if (action === "getNotes") {
-      result = handleGetNotes(targetSheet);
+      result = handleGetNotes(targetSheet, targetSsUrl);
     } else if (action === "saveNote") {
       const note = typeof postData.note === "string" ? JSON.parse(postData.note) : postData.note;
-      result = saveNote(note, targetSheet);
+      result = saveNote(note, targetSheet, targetSsUrl);
     } else if (action === "deleteNote") {
-      result = deleteNote(postData.id, targetSheet);
+      result = deleteNote(postData.id, targetSheet, targetSsUrl);
     } else if (action === "saveAll") {
       const notes = typeof postData.notes === "string" ? JSON.parse(postData.notes) : postData.notes;
-      result = saveAll(notes, targetSheet);
+      result = saveAll(notes, targetSheet, targetSsUrl);
     } else if (action === "syncExternalSources" || action === "syncAllExternalSources") {
       const options = postData.options || { raindrop: true, drive: true };
-      result = syncExternalSources(options, targetSheet);
+      result = syncExternalSources(options, targetSheet, targetSsUrl);
     } else if (action === "fetchDriveFile") {
       result = fetchDriveFile(postData.url);
     } else if (action === "importRawRowsToApp") { 
@@ -1298,8 +1349,8 @@ function createJsonResponse(data) {
 }
 
 // ---- ノート一覧取得 (A〜M列保持 + N列編集本文 + O列更新日時) ----
-function handleGetNotes(targetSheetName) {
-  const sheet = getSheet(targetSheetName);
+function handleGetNotes(targetSheetName, targetSsUrl) {
+  const sheet = getSheet(targetSheetName, targetSsUrl);
   const lastRow = sheet.getLastRow();
   if (lastRow <= 1) {
     return { notes: [], sheetName: sheet.getName() };
@@ -1382,8 +1433,8 @@ function handleGetNotes(targetSheetName) {
 }
 
 // ---- ノート単体保存（A〜M列を非破壊保持し、N列・O列にアプリデータを書き込み） ----
-function saveNote(note, targetSheetName) {
-  const sheet = getSheet(targetSheetName);
+function saveNote(note, targetSheetName, targetSsUrl) {
+  const sheet = getSheet(targetSheetName, targetSsUrl);
   const lastRow = sheet.getLastRow();
 
   if (lastRow >= 2) {
@@ -1442,8 +1493,8 @@ function saveNote(note, targetSheetName) {
 }
 
 // ---- ノート削除 ----
-function deleteNote(id, targetSheetName) {
-  const sheet = getSheet(targetSheetName);
+function deleteNote(id, targetSheetName, targetSsUrl) {
+  const sheet = getSheet(targetSheetName, targetSsUrl);
   const lastRow = sheet.getLastRow();
   if (lastRow <= 1) return { success: false, reason: "データが存在しません" };
 
@@ -1458,8 +1509,8 @@ function deleteNote(id, targetSheetName) {
 }
 
 // ---- 全ノート一括保存（A〜M列を非破壊保持しつつN・O列を更新） ----
-function saveAll(notes, targetSheetName) {
-  const sheet = getSheet(targetSheetName);
+function saveAll(notes, targetSheetName, targetSsUrl) {
+  const sheet = getSheet(targetSheetName, targetSsUrl);
   const lastRow = sheet.getLastRow();
 
   // 既存のスプレッドシート行をIDベースでマップ
@@ -1534,7 +1585,7 @@ function saveAll(notes, targetSheetName) {
 // 外部データ同期エンジン (Raindrop & Google Drive MHT / PDF / 画像)
 // ====================================================================
 
-function syncExternalSources(options, targetSheetName) {
+function syncExternalSources(options, targetSheetName, targetSsUrl) {
   const config = options || { raindrop: true, drive: true };
   const START_TIME = Date.now();
   const TIME_LIMIT = 3.5 * 60 * 1000;
@@ -1545,7 +1596,7 @@ function syncExternalSources(options, targetSheetName) {
   let problematicItem = null;
 
   try {
-    const sheet = getSheet(targetSheetName);
+    const sheet = getSheet(targetSheetName, targetSsUrl);
     const lastRow = sheet.getLastRow();
     const existingIds = lastRow > 1 
       ? new Set(sheet.getRange(2, 1, lastRow - 1, 1).getValues().flat().map(String)) 
@@ -1621,7 +1672,9 @@ function syncExternalSources(options, targetSheetName) {
                   const text = resJson.candidates[0].content.parts[0].text.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '').trim();
                   const result = JSON.parse(text);
                   keyword = result.keyword || "一般";
-                  summary = manualHighlights ? manualHighlights + "\\n\\n【自動要約】\\n" + result.summary : (result.summary || "");
+                  let rawSummary = result.summary || "";
+                  rawSummary = String(rawSummary).replace(/\\\\n/g, '\\n');
+                  summary = manualHighlights ? manualHighlights + "\\n\\n【自動要約】\\n" + rawSummary : rawSummary;
                 }
               }
             } else {
@@ -1695,7 +1748,7 @@ function syncExternalSources(options, targetSheetName) {
 
             const result = callGeminiVision(file, geminiApiKey, geminiModel, persona, syncPrompt);
             const pubDateStr = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
-            sheet.appendRow([articleId, articleId, file.getUrl(), result.keyword, result.summary, new Date(), 'false', '', '', '', pubDateStr, '', 'drive_pdf', '', '']);
+            sheet.appendRow([articleId, articleId, file.getUrl(), result.keyword, result.summary, new Date(), 'false', '', '', '', pubDateStr, '', file.getName(), '', '']);
             SpreadsheetApp.flush();
             existingIds.add(articleId);
             addedCount++;
@@ -1707,7 +1760,7 @@ function syncExternalSources(options, targetSheetName) {
             if (!existingIds.has(ssId)) {
               const result = callGeminiVision(file, geminiApiKey, geminiModel, persona, syncPrompt);
               const pubDateStr = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
-              sheet.appendRow([ssId, fileName, file.getUrl(), result.keyword, result.summary, new Date(), 'false', '', '', '', pubDateStr, '', 'drive_image', '', '']);
+              sheet.appendRow([ssId, fileName, file.getUrl(), result.keyword, result.summary, new Date(), 'false', '', '', '', pubDateStr, '', file.getName(), '', '']);
               SpreadsheetApp.flush();
               existingIds.add(ssId);
               addedCount++;
@@ -1835,7 +1888,7 @@ function processMhtFile_Advanced(file, sheet, existingIds, persona, syncPrompt, 
       metaInfo,
       pubDateStr,
       geminiResultJson.timeline || "",
-      'mht',
+      file.getName(),
       '',
       ''
     ]);
@@ -2202,24 +2255,11 @@ function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, 
       try { targetSs = SpreadsheetApp.openById(targetSsId.trim()); } catch(e) { return { success: false, error: "取込先スプレッドシートを開けません" }; }
     } else { targetSs = SpreadsheetApp.getActiveSpreadsheet(); }
 
-    let tSheetName = (targetSheetName && String(targetSheetName).trim()) ? String(targetSheetName).trim() : "Notes";
+    const tSheetName = (targetSheetName && String(targetSheetName).trim()) ? String(targetSheetName).trim() : "Notes";
     let targetSheet = targetSs.getSheetByName(tSheetName);
-    
-    // シートが存在し、かつすでにデータが入っている場合（別のロットとして扱う）は連番を付与する
-    if (targetSheet && targetSheet.getLastRow() > 0) {
-      let counter = 1;
-      let newSheetName = tSheetName + "-" + counter;
-      while (targetSs.getSheetByName(newSheetName) && targetSs.getSheetByName(newSheetName).getLastRow() > 0) {
-        counter++;
-        newSheetName = tSheetName + "-" + counter;
-      }
-      tSheetName = newSheetName;
-      targetSheet = targetSs.getSheetByName(tSheetName);
-    }
-    
     if (!targetSheet) targetSheet = targetSs.insertSheet(tSheetName);
 
-    const srcData = srcSheet.getDataRange().getValues();
+        const srcData = srcSheet.getDataRange().getValues();
     const headers = srcData[0].map(h => String(h).trim().toLowerCase());
     
     // Header for target
@@ -2227,17 +2267,49 @@ function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, 
       targetSheet.appendRow(["id", "title", "url", "tags", "highlights", "saved_at", "processed", "nobsidian", "all", "apendix", "date", "timeline", "source", "edited_content", "updated_at"]);
     }
     
+    // 今日の日付からロット名を生成 (例: 20260826)
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    const baseLotName = yyyy + mm + dd;
+    
+    // targetSheetの既存データを調べて、同じ日付のロット番号の最大値を探す (date列: index 10)
+    let maxLotNum = 0;
+    if (targetSheet.getLastRow() > 1) {
+      const targetData = targetSheet.getRange(2, 11, targetSheet.getLastRow() - 1, 1).getValues();
+      for (const row of targetData) {
+        const dVal = String(row[0]).trim();
+        if (dVal === baseLotName) {
+          if (maxLotNum < 1) maxLotNum = 1;
+        } else if (dVal.startsWith(baseLotName + "-")) {
+          const numStr = dVal.split("-")[1];
+          const num = parseInt(numStr, 10);
+          if (!isNaN(num) && num >= maxLotNum) {
+            maxLotNum = num + 1; // 既にある最大値の次
+          }
+        }
+      }
+    }
+    const currentLotName = maxLotNum === 0 ? baseLotName : baseLotName + "-" + maxLotNum;
+    
     let addedCount = 0;
     
     for (const rIdx of rowIndices) {
       const row = srcData[rIdx - 1];
       if (!row) continue;
       
-      // A列からM列（またはそれ以上）をそのままコピペ
       const newRow = [];
-      for (let i = 0; i < 15; i++) {
-         newRow.push(row[i] !== undefined ? row[i] : "");
+      for (let i = 0; i < 15; i++) { 
+        newRow.push(row[i] !== undefined ? row[i] : "");
       }
+      
+      // date列 (index 10) を今回のロット名で上書きする
+      newRow[10] = currentLotName;
+      
+      // N列(edited_content)とO列(updated_at)はインポート時は必ず空にする
+      newRow[13] = "";
+      newRow[14] = "";
       
       targetSheet.appendRow(newRow);
       

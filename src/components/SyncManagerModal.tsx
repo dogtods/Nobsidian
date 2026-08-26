@@ -28,7 +28,8 @@ export default function SyncManagerModal({
   const [loadingType, setLoadingType] = useState<"merge" | "download" | "upload" | "workspace" | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [workspaceSheet, setWorkspaceSheet] = useState(localStorage.getItem("cn_gas_sheet_name") || "Notes");
+    const [workspaceSheet, setWorkspaceSheet] = useState(localStorage.getItem("cn_gas_sheet_name") || "Notes");
+  const [workspaceSsUrl, setWorkspaceSsUrl] = useState(localStorage.getItem("cn_gas_target_ss_url") || "");
 
   if (!isOpen) return null;
 
@@ -228,30 +229,50 @@ export default function SyncManagerModal({
                 </p>
               </div>
             </div>
-            <div className="flex gap-2 items-center pl-[42px]">
+            <div className="flex flex-col gap-2 pl-[42px]">
               <input
                 type="text"
-                value={workspaceSheet}
-                onChange={(e) => setWorkspaceSheet(e.target.value)}
-                placeholder="シート名 (例: ProjectA)"
-                className="flex-1 bg-[#0d1117] border border-[#30363d] rounded-md px-3 py-1.5 text-xs text-white outline-none focus:border-[var(--purple)] transition-colors"
+                value={workspaceSsUrl}
+                onChange={(e) => setWorkspaceSsUrl(e.target.value)}
+                placeholder="スプレッドシートのURL (省略時は既存のシート)"
+                className="w-full bg-[#0d1117] border border-[#30363d] rounded-md px-3 py-1.5 text-xs text-white outline-none focus:border-[var(--purple)] transition-colors"
                 disabled={isAnyLoading}
               />
-              <button
-                type="button"
-                disabled={isAnyLoading}
-                onClick={() => {
-                  if (!workspaceSheet.trim()) {
-                    setErrorMessage("シート名を入力してください。");
-                    return;
-                  }
-                  localStorage.setItem("cn_gas_sheet_name", workspaceSheet.trim());
-                  handleAction("workspace", onForceDownload);
-                }}
+              <div className="flex gap-2 items-center">
+                <input
+                  type="text"
+                  value={workspaceSheet}
+                  onChange={(e) => setWorkspaceSheet(e.target.value)}
+                  placeholder="シート名 (例: ProjectA)"
+                  className="flex-1 bg-[#0d1117] border border-[#30363d] rounded-md px-3 py-1.5 text-xs text-white outline-none focus:border-[var(--purple)] transition-colors"
+                  disabled={isAnyLoading}
+                />
+                <button
+                  type="button"
+                  disabled={isAnyLoading}
+                  onClick={() => {
+                    if (!workspaceSheet.trim()) {
+                      setErrorMessage("シート名を入力してください。");
+                      return;
+                    }
+                    localStorage.setItem("cn_gas_sheet_name", workspaceSheet.trim());
+                    if (workspaceSsUrl.trim()) {
+                      localStorage.setItem("cn_gas_target_ss_url", workspaceSsUrl.trim());
+                    } else {
+                      localStorage.removeItem("cn_gas_target_ss_url");
+                    }
+                    // リロードして反映させるか、親の再取得を走らせる
+                    handleAction("workspace", async () => {
+                       await onForceDownload();
+                       // Optionally reload the window to apply changes fully everywhere
+                       // window.location.reload(); 
+                    });
+                  }}
                 className="bg-[#238636] hover:bg-[#2ea043] text-white font-bold text-[11px] px-4 py-1.5 rounded-md transition-colors disabled:opacity-50 cursor-pointer"
               >
                 入れ替える
               </button>
+              </div>
             </div>
           </div>
         </div>
