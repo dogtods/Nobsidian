@@ -1073,8 +1073,21 @@ function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, 
       try { targetSs = SpreadsheetApp.openById(targetSsId.trim()); } catch(e) { return { success: false, error: "取込先スプレッドシートを開けません" }; }
     } else { targetSs = SpreadsheetApp.getActiveSpreadsheet(); }
 
-    const tSheetName = (targetSheetName && String(targetSheetName).trim()) ? String(targetSheetName).trim() : "Notes";
+    let tSheetName = (targetSheetName && String(targetSheetName).trim()) ? String(targetSheetName).trim() : "Notes";
     let targetSheet = targetSs.getSheetByName(tSheetName);
+    
+    // シートが存在し、かつすでにデータが入っている場合（別のロットとして扱う）は連番を付与する
+    if (targetSheet && targetSheet.getLastRow() > 0) {
+      let counter = 1;
+      let newSheetName = tSheetName + "-" + counter;
+      while (targetSs.getSheetByName(newSheetName) && targetSs.getSheetByName(newSheetName).getLastRow() > 0) {
+        counter++;
+        newSheetName = tSheetName + "-" + counter;
+      }
+      tSheetName = newSheetName;
+      targetSheet = targetSs.getSheetByName(tSheetName);
+    }
+    
     if (!targetSheet) targetSheet = targetSs.insertSheet(tSheetName);
 
     const srcData = srcSheet.getDataRange().getValues();
@@ -2189,8 +2202,21 @@ function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, 
       try { targetSs = SpreadsheetApp.openById(targetSsId.trim()); } catch(e) { return { success: false, error: "取込先スプレッドシートを開けません" }; }
     } else { targetSs = SpreadsheetApp.getActiveSpreadsheet(); }
 
-    const tSheetName = (targetSheetName && String(targetSheetName).trim()) ? String(targetSheetName).trim() : "Notes";
+    let tSheetName = (targetSheetName && String(targetSheetName).trim()) ? String(targetSheetName).trim() : "Notes";
     let targetSheet = targetSs.getSheetByName(tSheetName);
+    
+    // シートが存在し、かつすでにデータが入っている場合（別のロットとして扱う）は連番を付与する
+    if (targetSheet && targetSheet.getLastRow() > 0) {
+      let counter = 1;
+      let newSheetName = tSheetName + "-" + counter;
+      while (targetSs.getSheetByName(newSheetName) && targetSs.getSheetByName(newSheetName).getLastRow() > 0) {
+        counter++;
+        newSheetName = tSheetName + "-" + counter;
+      }
+      tSheetName = newSheetName;
+      targetSheet = targetSs.getSheetByName(tSheetName);
+    }
+    
     if (!targetSheet) targetSheet = targetSs.insertSheet(tSheetName);
 
     const srcData = srcSheet.getDataRange().getValues();
