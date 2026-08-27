@@ -298,10 +298,10 @@ export default function ImportModal({
         problematicItem: res?.problematicItem,
         message: added > 0 
           ? `${added} 件の新規MHTデータをスプレッドシート（シート: ${targetExtSheet}）へ追加しました ✦`
-          : `Googleドライブに対象の未処理MHTデータはありませんでした（新規追加 0件）。`
+          : `Googleドライブ（フォルダ名: Connected Notes 取り込み）に対象の未処理データはありませんでした。`
       });
 
-      onSaveToast(added > 0 ? `MHTデータの自動取り込み完了: ${added} 件追加 (シート: ${targetExtSheet})` : `未処理のMHTファイルはありませんでした`);
+      onSaveToast(added > 0 ? `外部データの自動取り込み完了: ${added} 件追加 (シート: ${targetExtSheet})` : `「Connected Notes 取り込み」フォルダに未処理ファイルはありませんでした`);
 
     } catch (e: any) {
       setExternalSyncResult({
@@ -855,7 +855,7 @@ export default function ImportModal({
                   </label>
                 </div>
                 <p className="text-[10px] text-gray-400 leading-relaxed mt-0.5">
-                  💡 Googleドライブ内の未処理MHTファイルのみを検出し、スプレッドシートへ追記します（処理済みファイルは「処理済み」フォルダに退避されるため二重取り込みされません）。
+                  💡 Googleドライブのルートに自動作成される「Connected Notes 取り込み」フォルダ内の未処理MHT・PDFファイルを検出し、スプレッドシートへ追記します（処理済みファイルは「_processed」フォルダに退避されるため二重取り込みされません）。
                 </p>
               </div>
 

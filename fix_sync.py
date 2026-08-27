@@ -3,24 +3,26 @@ import re
 with open("src/components/SyncManagerModal.tsx", "r") as f:
     content = f.read()
 
-bad = """                className="bg-[#238636] hover:bg-[#2ea043] text-white font-bold text-[11px] px-4 py-1.5 rounded-md transition-colors disabled:opacity-50 cursor-pointer"
-              >
-                入れ替える
-              </button>
-            </div>
-          </div>
-        </div>"""
+find_str = """                    // リロードして反映させるか、親の再取得を走らせる
+                    handleAction("workspace", async () => {
+                       await onForceDownload();
+                       // Optionally reload the window to apply changes fully everywhere
+                       // window.location.reload();
+                     });
+                  }}"""
 
-good = """                className="bg-[#238636] hover:bg-[#2ea043] text-white font-bold text-[11px] px-4 py-1.5 rounded-md transition-colors disabled:opacity-50 cursor-pointer"
-              >
-                入れ替える
-              </button>
-              </div>
-            </div>
-          </div>
-        </div>"""
+replace_str = """                    // ローカルの古いデータを完全に消去する
+                    // （古いデータが残っていると、次の読み込み時に新しいシートへ自動マージ・アップロードされてしまうのを防ぐため）
+                    localStorage.removeItem("cn_notes");
+                    localStorage.removeItem("cn_active_id");
 
-content = content.replace(bad, good)
+                    // 完全にクリーンな状態で再読み込みし、初回起動処理（自動ダウンロード）を走らせる
+                    window.location.reload();
+                  }}"""
+
+content = content.replace(find_str, replace_str)
+
 with open("src/components/SyncManagerModal.tsx", "w") as f:
     f.write(content)
-print("Fixed.")
+
+print("Updated SyncManagerModal.tsx")

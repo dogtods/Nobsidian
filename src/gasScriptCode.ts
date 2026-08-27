@@ -440,7 +440,8 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
     const geminiApiKey = props.getProperty('GEMINI_API_KEY') || "";
     const geminiModel = getConfig('GEMINI_MODEL');
     const raindropToken = props.getProperty('RAINDROP_TOKEN') || "";
-    const driveFolderId = props.getProperty('SCREENSHOT_FOLDER_ID') || "";
+    let driveFolderId = props.getProperty('SCREENSHOT_FOLDER_ID') || "";
+    let driveFolderName = "Connected Notes 取り込み";
     const persona = getConfig('SYSTEM_PERSONA');
     const syncPrompt = getConfig('SYNC_PROMPT');
 
@@ -539,7 +540,25 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
     }
 
     // --- B. Googleドライブからの同期 (MHT / PDF / 画像) ---
-    if (config.drive === true && !isTimeOut && driveFolderId) {
+    if (config.drive === true && !isTimeOut) {
+      let targetDriveFolder;
+      if (driveFolderId) {
+        try {
+          targetDriveFolder = DriveApp.getFolderById(driveFolderId);
+          driveFolderName = targetDriveFolder.getName();
+        } catch (e) { driveFolderId = ""; }
+      }
+      if (!driveFolderId) {
+        const folders = DriveApp.getFoldersByName(driveFolderName);
+        if (folders.hasNext()) {
+          targetDriveFolder = folders.next();
+        } else {
+          targetDriveFolder = DriveApp.createFolder(driveFolderName);
+        }
+        driveFolderId = targetDriveFolder.getId();
+        props.setProperty('SCREENSHOT_FOLDER_ID', driveFolderId);
+      }
+      
       console.log("Googleドライブ同期を開始します...");
       const { files, processedFolder } = fetchDriveScreenshots(driveFolderId);
 
@@ -1605,7 +1624,8 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
     const geminiApiKey = props.getProperty('GEMINI_API_KEY') || "";
     const geminiModel = getConfig('GEMINI_MODEL');
     const raindropToken = props.getProperty('RAINDROP_TOKEN') || "";
-    const driveFolderId = props.getProperty('SCREENSHOT_FOLDER_ID') || "";
+    let driveFolderId = props.getProperty('SCREENSHOT_FOLDER_ID') || "";
+    let driveFolderName = "Connected Notes 取り込み";
     const persona = getConfig('SYSTEM_PERSONA');
     const syncPrompt = getConfig('SYNC_PROMPT');
 
@@ -1704,7 +1724,25 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
     }
 
     // --- B. Googleドライブからの同期 (MHT / PDF / 画像) ---
-    if (config.drive === true && !isTimeOut && driveFolderId) {
+    if (config.drive === true && !isTimeOut) {
+      let targetDriveFolder;
+      if (driveFolderId) {
+        try {
+          targetDriveFolder = DriveApp.getFolderById(driveFolderId);
+          driveFolderName = targetDriveFolder.getName();
+        } catch (e) { driveFolderId = ""; }
+      }
+      if (!driveFolderId) {
+        const folders = DriveApp.getFoldersByName(driveFolderName);
+        if (folders.hasNext()) {
+          targetDriveFolder = folders.next();
+        } else {
+          targetDriveFolder = DriveApp.createFolder(driveFolderName);
+        }
+        driveFolderId = targetDriveFolder.getId();
+        props.setProperty('SCREENSHOT_FOLDER_ID', driveFolderId);
+      }
+      
       console.log("Googleドライブ同期を開始します...");
       const { files, processedFolder } = fetchDriveScreenshots(driveFolderId);
 
