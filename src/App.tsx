@@ -171,6 +171,16 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState<"synced" | "syncing" | "offline" | "error">("offline");
   const [syncLabel, setSyncLabel] = useState("オフライン");
 
+  // Auto sync state
+  const [autoSync, setAutoSync] = useState<boolean>(() => {
+    const saved = localStorage.getItem("cn_auto_sync_enabled");
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+
+  useEffect(() => {
+    localStorage.setItem("cn_auto_sync_enabled", JSON.stringify(autoSync));
+  }, [autoSync]);
+
   // AI results box state within the editor helper panel
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
   const [aiIsLoading, setAiIsLoading] = useState(false);
@@ -567,6 +577,7 @@ export default function App() {
   };
 
   const pushNoteToServer = async (note: Note) => {
+    if (!autoSync) return;
     const url = getApiUrl();
     if (!url || url.includes("YOUR_") || url.includes("YOUR_GAS_URL")) return;
     updateSyncStatus("syncing", "保存中...");
@@ -579,6 +590,7 @@ export default function App() {
   };
 
   const pushDeleteToServer = async (id: string) => {
+    if (!autoSync) return;
     const url = getApiUrl();
     if (!url || url.includes("YOUR_") || url.includes("YOUR_GAS_URL")) return;
     try {
@@ -712,12 +724,14 @@ export default function App() {
       }
       triggerLocalSave(finalUpdatedRange, finalUpdatedRange[0]?.id || null);
 
-      // Auto-save/sync to Google Sheet if API is set up
-      const url = getApiUrl();
-      if (url && !url.includes("YOUR_") && !url.includes("YOUR_GAS_URL")) {
-        apiPost({ action: "saveAll", notes: finalUpdatedRange })
-          .then(() => toast("Googleスプレッドシートに同期・保存しました"))
-          .catch((e) => console.error("Auto GAS sync error", e));
+      // Auto-save/sync to Google Sheet if API is set up and autoSync is enabled
+      if (autoSync) {
+        const url = getApiUrl();
+        if (url && !url.includes("YOUR_") && !url.includes("YOUR_GAS_URL")) {
+          apiPost({ action: "saveAll", notes: finalUpdatedRange })
+            .then(() => toast("Googleスプレッドシートに同期・保存しました"))
+            .catch((e) => console.error("Auto GAS sync error", e));
+        }
       }
     };
 
@@ -2817,6 +2831,19 @@ const renderMarkdownToElements = (contentStr: string) => {
             </div>
           </div>
 
+          <div className="flex items-center justify-between pt-1">
+            <label className="flex items-center gap-2 text-[11px] text-[var(--subtle)] cursor-pointer select-none hover:text-white transition-colors">
+              <input
+                type="checkbox"
+                checked={autoSync}
+                onChange={(e) => setAutoSync(e.target.checked)}
+                className="rounded bg-[#0d1117] border-[#30363d] text-[var(--blue)] focus:ring-0 cursor-pointer w-3.5 h-3.5"
+                title="チェック時のみ、編集時に自動同期します"
+              />
+              <span>編集時の自動同期</span>
+            </label>
+          </div>
+
           <button
             onClick={() => {
               setActiveId(null);
@@ -4449,6 +4476,8 @@ const renderMarkdownToElements = (contentStr: string) => {
         onForceUpload={forceUploadToServer}
         syncStatus={syncStatus}
         syncLabel={syncLabel}
+        autoSync={autoSync}
+        setAutoSync={setAutoSync}
       />
 
       {/* Batch Folder Link progress modal */}

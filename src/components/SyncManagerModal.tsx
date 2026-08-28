@@ -14,6 +14,8 @@ interface SyncManagerModalProps {
   onForceUpload: () => Promise<void>;
   syncStatus: "synced" | "syncing" | "offline" | "error";
   syncLabel: string;
+  autoSync: boolean;
+  setAutoSync: (val: boolean) => void;
 }
 
 export default function SyncManagerModal({
@@ -24,6 +26,8 @@ export default function SyncManagerModal({
   onForceUpload,
   syncStatus,
   syncLabel,
+  autoSync,
+  setAutoSync,
 }: SyncManagerModalProps) {
   const [loadingType, setLoadingType] = useState<"merge" | "download" | "upload" | "workspace" | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -110,6 +114,22 @@ export default function SyncManagerModal({
           <div className="text-right text-[11px] text-gray-500">
             <div>端末間の不整合を解決します。</div>
           </div>
+        </div>
+
+        {/* Auto Sync Toggle */}
+        <div className="bg-[#0d1117] border border-[#30363d] rounded-xl p-3.5 flex items-center justify-between text-xs">
+          <label className="flex items-center gap-2.5 cursor-pointer select-none w-full">
+            <input
+              type="checkbox"
+              checked={autoSync}
+              onChange={(e) => setAutoSync(e.target.checked)}
+              className="rounded bg-[#161b22] border-[#30363d] text-[var(--blue)] focus:ring-0 cursor-pointer w-4 h-4"
+            />
+            <div className="flex flex-col">
+              <span className="font-bold text-white text-xs">編集時の自動同期（リアルタイム保存）を有効にする</span>
+              <span className="text-[10px] text-[var(--subtle)]">チェック中のみ、ノートの作成・編集時に自動でGoogleスプレッドシートへ同期します。</span>
+            </div>
+          </label>
         </div>
 
         {errorMessage && (
