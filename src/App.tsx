@@ -640,28 +640,7 @@ export default function App() {
   }, [activeId]);
 
   const loadDefaultNotes = () => {
-    const fresh: Note[] = [
-      {
-        id: "welcome-note-idx-1",
-        title: "ようこそ",
-        content: "# ようこそ Connected Notes へ！\n\n[[使い方]] を見てみましょう。\n\n[[アイデア]] や [[タスク]] にリンクできます。",
-        summary: "",
-        keywords: "",
-        sourceUrl: "",
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-      },
-      {
-        id: "usage-note-idx-2",
-        title: "使い方",
-        content: "# 使い方\n\n- `[[ノート名]]` と記述するとWikiLink（自動生成リンク）になります。\n- プレビュー上でWikiリンクをクリックして、即座に該当ノートへ移動できます。\n- 右側のパネルでバックリンク（このノートをリンク先に指定している他のノート）を確認できます。\n\n[[ようこそ]] に戻る",
-        summary: "",
-        keywords: "",
-        sourceUrl: "",
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-      }
-    ];
+    const fresh: Note[] = [];
     setNotes(fresh);
     setActiveId(null);
     triggerLocalSave(fresh, null);
