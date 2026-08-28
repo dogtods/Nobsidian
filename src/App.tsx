@@ -4202,20 +4202,26 @@ const renderMarkdownToElements = (contentStr: string) => {
 
                     return (
                       <div className="flex justify-around items-center w-full">
-                        {sortedCats.map((cat, idx) => {
-                          const count = catCounts[cat] || (4 - idx);
-                          const size = 48 + Math.min(count * 10, 40);
-                          return (
-                            <div
-                              key={cat}
-                              style={{ width: size, height: size, backgroundColor: themeColors[idx % 4] }}
-                              className={`rounded-full flex flex-col items-center justify-center border font-semibold hover:scale-110 transition-all text-center p-1 cursor-pointer shadow-lg ${borderColors[idx % 4]}`}
-                            >
-                              <span className="text-[10.5px] text-white truncate max-w-full font-bold">{cat}</span>
-                              <span className="text-[9px] text-[var(--subtle)] font-semibold mt-0.5">{count}個</span>
-                            </div>
-                          );
-                        })}
+                        {sortedCats.length === 0 ? (
+                          <div className="text-xs text-gray-500 italic py-6">
+                            ノートがありません (0個)
+                          </div>
+                        ) : (
+                          sortedCats.map((cat, idx) => {
+                            const count = catCounts[cat] || 0;
+                            const size = 48 + Math.min(count * 10, 40);
+                            return (
+                              <div
+                                key={cat}
+                                style={{ width: size, height: size, backgroundColor: themeColors[idx % 4] }}
+                                className={`rounded-full flex flex-col items-center justify-center border font-semibold hover:scale-110 transition-all text-center p-1 cursor-pointer shadow-lg ${borderColors[idx % 4]}`}
+                              >
+                                <span className="text-[10.5px] text-white truncate max-w-full font-bold">{cat}</span>
+                                <span className="text-[9px] text-[var(--subtle)] font-semibold mt-0.5">{count}個</span>
+                              </div>
+                            );
+                          })
+                        )}
                       </div>
                     );
                   })()}
