@@ -199,42 +199,70 @@ export default function TimelineModal({
 
       // Extract strictly if Column L timeline data exists
       if (note.timeline && note.timeline.trim() !== "") {
-        const lines = note.timeline.split("\n");
+        const lines = note.timeline.split(/\r?\n/);
         lines.forEach(line => {
-          // Patterns match e.g. [2026/06/18] Event text or [2026/03] Event text or [2024] Event text
-          const match = line.match(/^\s*\[([\d/]+)\]\s*(.*)$/);
-          if (match) {
-            const datePart = match[1].trim();
-            const eventText = match[2].trim();
-            if (!eventText) return;
+          const trimmedLine = line.trim().replace(/^[-*•]\s*/, "");
+          if (!trimmedLine) return;
 
-            const dateParts = datePart.split("/");
-            const year = dateParts[0];
+          // Patterns match bracketed dates e.g. [2026/06/18] Event text or [2024年4月] or 【2025-03】
+          let datePart = "";
+          let eventText = "";
+
+          const bracketMatch = trimmedLine.match(/^[\[【]([\d/.\-年日月\s]+)[\]】]\s*[:：\-ー]?\s*(.*)$/);
+          if (bracketMatch) {
+            datePart = bracketMatch[1].trim();
+            eventText = bracketMatch[2].trim();
+          } else {
+            // Also match non-bracketed starting date e.g. 2024/04/01 Event, 2024年4月: Event
+            const plainMatch = trimmedLine.match(/^(\d{4}[\/.\-年]\d{1,2}(?:[\/.\-月]\d{1,2}日?)?|\d{4}年?)\s*[:：\-ー]?\s+(.*)$/);
+            if (plainMatch) {
+              datePart = plainMatch[1].trim();
+              eventText = plainMatch[2].trim();
+            }
+          }
+
+          if (datePart && eventText) {
+            let year = "";
             let month = "00";
             let day = "00";
-            let displayDate = `${year}年`;
+            let displayDate = "";
 
-            if (dateParts.length >= 2 && dateParts[1]) {
-              month = dateParts[1].padStart(2, "0");
-              displayDate += `${parseInt(dateParts[1], 10)}月`;
+            const ymdMatch = datePart.match(/(\d{4})(?:[\/.\-年](\d{1,2}))?(?:[\/.\-月](\d{1,2}))?/);
+            if (ymdMatch) {
+              year = ymdMatch[1];
+              displayDate = `${year}年`;
+              if (ymdMatch[2]) {
+                const mNum = parseInt(ymdMatch[2], 10);
+                month = String(mNum).padStart(2, "0");
+                displayDate += `${mNum}月`;
+              }
+              if (ymdMatch[3]) {
+                const dNum = parseInt(ymdMatch[3], 10);
+                day = String(dNum).padStart(2, "0");
+                displayDate += `${dNum}日`;
+              }
+            } else {
+              const onlyYear = datePart.match(/(\d{4})/);
+              if (onlyYear) {
+                year = onlyYear[1];
+                displayDate = `${year}年`;
+              }
             }
-            if (dateParts.length >= 3 && dateParts[2]) {
-              day = dateParts[2].padStart(2, "0");
-              displayDate += `${parseInt(dateParts[2], 10)}日`;
+
+            if (year) {
+              const normalized = `${year}-${month}-${day}`;
+
+              timelineItemsList.push({
+                id: `timeline-l-${note.id}-${Math.random().toString(36).substring(2, 7)}`,
+                dateStr: displayDate || datePart,
+                normalizedDate: normalized,
+                event: eventText,
+                noteId: note.id,
+                noteTitle: note.title,
+                category: folderName,
+                comment: getDateTypeComment(eventText)
+              });
             }
-
-            const normalized = `${year}-${month}-${day}`;
-
-            timelineItemsList.push({
-              id: `timeline-l-${note.id}-${Math.random().toString(36).substring(2, 7)}`,
-              dateStr: displayDate,
-              normalizedDate: normalized,
-              event: eventText,
-              noteId: note.id,
-              noteTitle: note.title,
-              category: folderName,
-              comment: getDateTypeComment(eventText)
-            });
           }
         });
       }
