@@ -440,7 +440,13 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
     const geminiApiKey = props.getProperty('GEMINI_API_KEY') || "";
     const geminiModel = getConfig('GEMINI_MODEL');
     const raindropToken = props.getProperty('RAINDROP_TOKEN') || "";
-    let driveFolderId = props.getProperty('SCREENSHOT_FOLDER_ID') || "";
+    function extractFolderId(input) {
+      if (!input) return "";
+      const match = input.match(/folders\/([a-zA-Z0-9-_]+)/);
+      return match ? match[1] : input.trim();
+    }
+    let driveFolderId = extractFolderId(config.driveSourceFolder) || props.getProperty('SCREENSHOT_FOLDER_ID') || "";
+    let driveProcessedFolderId = extractFolderId(config.driveProcessedFolder) || "";
     let driveFolderName = "Connected Notes 取り込み";
     const persona = getConfig('SYSTEM_PERSONA');
     const syncPrompt = getConfig('SYNC_PROMPT');
@@ -560,7 +566,7 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
       }
       
       console.log("Googleドライブ同期を開始します...");
-      const { files, processedFolder } = fetchDriveScreenshots(driveFolderId);
+      const { files, processedFolder } = fetchDriveScreenshots(driveFolderId, driveProcessedFolderId);
 
       // MHTファイルをPDFより先に処理
       files.sort((a, b) => {
@@ -835,16 +841,23 @@ function fetchRaindropData(token) {
   return JSON.parse(response.getContentText()).items || [];
 }
 
-function fetchDriveScreenshots(folderId) {
+function fetchDriveScreenshots(folderId, processedFolderId) {
   const folder = DriveApp.getFolderById(folderId);
-  const processedFolderName = "_processed";
   let processedFolder;
-  const subFolders = folder.getFoldersByName(processedFolderName);
-
-  if (subFolders.hasNext()) {
-    processedFolder = subFolders.next();
-  } else {
-    processedFolder = folder.createFolder(processedFolderName);
+  if (processedFolderId) {
+    try {
+      processedFolder = DriveApp.getFolderById(processedFolderId);
+    } catch (e) { processedFolder = null; }
+  }
+  
+  if (!processedFolder) {
+    const processedFolderName = "_processed";
+    const subFolders = folder.getFoldersByName(processedFolderName);
+    if (subFolders.hasNext()) {
+      processedFolder = subFolders.next();
+    } else {
+      processedFolder = folder.createFolder(processedFolderName);
+    }
   }
 
   const files = [];
@@ -1624,7 +1637,13 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
     const geminiApiKey = props.getProperty('GEMINI_API_KEY') || "";
     const geminiModel = getConfig('GEMINI_MODEL');
     const raindropToken = props.getProperty('RAINDROP_TOKEN') || "";
-    let driveFolderId = props.getProperty('SCREENSHOT_FOLDER_ID') || "";
+    function extractFolderId(input) {
+      if (!input) return "";
+      const match = input.match(/folders\/([a-zA-Z0-9-_]+)/);
+      return match ? match[1] : input.trim();
+    }
+    let driveFolderId = extractFolderId(config.driveSourceFolder) || props.getProperty('SCREENSHOT_FOLDER_ID') || "";
+    let driveProcessedFolderId = extractFolderId(config.driveProcessedFolder) || "";
     let driveFolderName = "Connected Notes 取り込み";
     const persona = getConfig('SYSTEM_PERSONA');
     const syncPrompt = getConfig('SYNC_PROMPT');
@@ -1744,7 +1763,7 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
       }
       
       console.log("Googleドライブ同期を開始します...");
-      const { files, processedFolder } = fetchDriveScreenshots(driveFolderId);
+      const { files, processedFolder } = fetchDriveScreenshots(driveFolderId, driveProcessedFolderId);
 
       // MHTファイルをPDFより先に処理
       files.sort((a, b) => {
@@ -2019,16 +2038,23 @@ function fetchRaindropData(token) {
   return JSON.parse(response.getContentText()).items || [];
 }
 
-function fetchDriveScreenshots(folderId) {
+function fetchDriveScreenshots(folderId, processedFolderId) {
   const folder = DriveApp.getFolderById(folderId);
-  const processedFolderName = "_processed";
   let processedFolder;
-  const subFolders = folder.getFoldersByName(processedFolderName);
-
-  if (subFolders.hasNext()) {
-    processedFolder = subFolders.next();
-  } else {
-    processedFolder = folder.createFolder(processedFolderName);
+  if (processedFolderId) {
+    try {
+      processedFolder = DriveApp.getFolderById(processedFolderId);
+    } catch (e) { processedFolder = null; }
+  }
+  
+  if (!processedFolder) {
+    const processedFolderName = "_processed";
+    const subFolders = folder.getFoldersByName(processedFolderName);
+    if (subFolders.hasNext()) {
+      processedFolder = subFolders.next();
+    } else {
+      processedFolder = folder.createFolder(processedFolderName);
+    }
   }
 
   const files = [];

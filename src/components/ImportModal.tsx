@@ -46,7 +46,9 @@ interface ImportModalProps {
   onNotesUpdateBatch: (newNotes: Note[], overwrite?: boolean) => void;
   onSyncExternalSources?: (options: { 
     raindrop: boolean; 
-    drive: boolean; 
+    drive: boolean;
+    driveSourceFolder?: string;
+    driveProcessedFolder?: string; 
     persona?: string; 
     syncPrompt?: string; 
     weeklyReportPrompt?: string; 
@@ -72,7 +74,9 @@ export default function ImportModal({
   syncLabel,
   notesCount = 0
 }: ImportModalProps) {
-  const [activeTab, setActiveTab] = useState<"step_1" | "step_2" | "prompts">("step_1");
+  const [activeTab, setActiveTab] = useState<"step_1" | "step_2" | "prompts" | "folders">("step_1");
+  const [driveSourceFolderInput, setDriveSourceFolderInput] = useState("");
+  const [driveProcessedFolderInput, setDriveProcessedFolderInput] = useState("");
 
   // ==========================================
   // STEP 1: External Source Data Collection Config
@@ -137,6 +141,8 @@ export default function ImportModal({
 
       setGasUrl(storedGasUrl);
       setExternalSyncSheetName(storedExtSheet);
+      setDriveSourceFolderInput(localStorage.getItem("cn_drive_source_folder") || "");
+      setDriveProcessedFolderInput(localStorage.getItem("cn_drive_processed_folder") || "");
 
       const storedRaindrop = localStorage.getItem("cn_sync_raindrop");
       setSyncRaindrop(storedRaindrop !== null ? storedRaindrop === "true" : false);
@@ -174,6 +180,12 @@ export default function ImportModal({
     } else {
       localStorage.removeItem("cn_gas_api_url");
     }
+
+    if (driveSourceFolderInput) localStorage.setItem("cn_drive_source_folder", driveSourceFolderInput.trim());
+    else localStorage.removeItem("cn_drive_source_folder");
+
+    if (driveProcessedFolderInput) localStorage.setItem("cn_drive_processed_folder", driveProcessedFolderInput.trim());
+    else localStorage.removeItem("cn_drive_processed_folder");
 
     if (finalExtSheet) {
       localStorage.setItem("cn_external_sync_sheet_name", finalExtSheet);
@@ -273,6 +285,8 @@ export default function ImportModal({
     const syncOptions = {
       raindrop: syncRaindrop,
       drive: syncDrive,
+      driveSourceFolder: driveSourceFolderInput.trim(),
+      driveProcessedFolder: driveProcessedFolderInput.trim(),
       persona: syncPersonaInput || getStoredPrompt("SYSTEM_PERSONA"),
       syncPrompt: syncPromptInput || getStoredPrompt("SYNC_PROMPT"),
       weeklyReportPrompt: weeklyReportPromptInput || getStoredPrompt("WEEKLY_REPORT_PROMPT"),
@@ -635,6 +649,18 @@ export default function ImportModal({
           >
             <Sliders className="w-3.5 h-3.5" />
             <span>⚙ 3. AIプロンプト設定</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("folders")}
+            className={`pb-2.5 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border-b-2 ${
+              activeTab === "folders"
+                ? "border-blue-500 text-blue-300"
+                : "border-transparent text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            <Database className="w-3.5 h-3.5" />
+            <span>⚙ 4. フォルダ設定</span>
           </button>
         </div>
 
@@ -1279,6 +1305,51 @@ export default function ImportModal({
                   />
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        
+        {/* TAB 4: Folders Configuration */}
+        {activeTab === "folders" && (
+          <div className="flex flex-col gap-3">
+            <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 flex flex-col gap-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Database className="w-4 h-4 text-blue-400" />
+                <span className="text-xs font-bold text-gray-100">Googleドライブ フォルダ設定</span>
+              </div>
+              
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-gray-400 font-bold">取り込み前（未処理）データフォルダ (URL または ID):</span>
+                <input
+                  type="text"
+                  placeholder="未指定の場合は自動で「Connected Notes 取り込み」が作成・参照されます"
+                  className="w-full text-xs p-2.5 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-200 outline-none focus:border-blue-500 transition"
+                  value={driveSourceFolderInput}
+                  onChange={(e) => {
+                    setDriveSourceFolderInput(e.target.value);
+                    saveAllSettings();
+                  }}
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-gray-400 font-bold">取り込み後（処理済み）データフォルダ (URL または ID):</span>
+                <input
+                  type="text"
+                  placeholder="未指定の場合は対象フォルダ内に自動で「_processed」が作成・参照されます"
+                  className="w-full text-xs p-2.5 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-200 outline-none focus:border-blue-500 transition"
+                  value={driveProcessedFolderInput}
+                  onChange={(e) => {
+                    setDriveProcessedFolderInput(e.target.value);
+                    saveAllSettings();
+                  }}
+                />
+              </div>
+              
+              <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg text-blue-200 text-xs leading-relaxed">
+                <p>💡 <b>フォルダIDの指定方法:</b> Googleドライブのフォルダを開いた時のURL (<code>https://drive.google.com/drive/folders/〇〇〇</code>) の 〇〇〇 の部分、またはURL全体を貼り付けてください。</p>
+              </div>
             </div>
           </div>
         )}
