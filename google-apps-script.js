@@ -29,8 +29,40 @@ const DEFAULT_CONFIG = {
   GEMINI_MODEL: 'gemini-1.5-flash',
   GEMINI_MAX_TOKENS: 8000,
   GEMINI_TEMPERATURE: 0.1,
-  SYSTEM_PERSONA: "あなたは環境ビジネス・技術情報の専門アナリストです。",
-  SYNC_PROMPT: "具体的な数字、事実、市場への影響、主要なナレッジを重点的に抽出し、1000文字程度で要約してください。抽象的な一般論は不要です。\nまた、この内容が属する分野を示すキーワードを1つだけ作成してください。"
+
+  SYSTEM_PERSONA: 'あなたは環境ビジネス・技術情報の専門アナリストです。',
+
+  SYNC_PROMPT: `# 役割
+  あなたは客観的かつ論理的な「ビジネスリサーチ・アナリスト」です。
+  提供された記事から、事実と構造を正確に抽出してください。
+
+  # 厳守事項
+  - 資料外の知識で補完しない。不明な点は「資料内に記述なし」と明記すること。
+  - 事実（客観）と解釈・示唆（主観）は、指定されたセクションで完全に分離すること。
+
+  ---
+
+  # 出力構成
+
+  ### 【記事タイトルまたはテーマ】
+
+  【要約】
+  ※記事の内容をわかりやすく要約して200文字程度にしてください。
+
+  【具体的数値・事実】
+  ※数値・固有名詞・日付を最優先した箇条書き。資料にある事実のみ（3〜5点）。
+
+  【市場・実務への影響】
+  ※この記事がどのような社会的・経済的文脈にあり、市場や実務にどう影響するか（2〜3文）。
+
+  - ただし、読み込んだ記事の文字数が400文字以下の場合、上記の要約、具体的数値・事実、市場・実務への影響などは行わず、記事をそのまま貼り付けてください。
+
+  【キーワード】
+  ※記事中の専門用語・業界用語を抽出し、必ず以下の「ウィキリンク形式」で出力してください。3〜5単語。
+
+  - [[用語]]: 意味や定義
+
+  また、この内容が属する分野を示すキーワードを1つだけ作成してください。`
 };
 
 function getConfig(key) {
@@ -762,9 +794,9 @@ function callGeminiForSingleArticle(content, persona, syncPrompt, apiKey, model)
 
   const prompt = persona + "\n" + syncPrompt + `
 以下の記事本文から重要情報を抽出・要約してください。
-また、本文中に「〜年〜月」「〜日」などの具体的な日付や年号と、それに関連する出来事・計画・発表・マイルストーンの記述があれば、それらを時系列の年表データとして抽出してください。
+また、本文中に「〜年〜月」「〜日」などの具体的な日付や年号と、それに関連する出来事・計画・発表・マイルストーンの記述があれば、それらを時系列の年表データとして抽出してください。該当がない場合は空文字列にしてください。
 
-出力は必ず以下のJSON形式にしてください。
+出力は必ず以下のJSON形式のみを出力してください（Markdownの\`\`\`などは不要です）。JSONのキー名は厳密に守ってください。改行は必ず \\n を使用し、生の改行を含めないでください。
 {
   "tags": "分野キーワード（1〜2単語）",
   "highlights": "ナレッジの要約（1000文字程度）",
@@ -777,17 +809,37 @@ function callGeminiForSingleArticle(content, persona, syncPrompt, apiKey, model)
   try {
     const payload = {
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: "application/json", temperature: 0.1 }
+      generationConfig: {
+        responseMimeType: "application/json",
+        temperature: 0.1,
+        maxOutputTokens: 4096
+      }
     };
     const response = UrlFetchApp.fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
       { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true }
     );
-    if (response.getResponseCode() === 200) {
-      const resJson = JSON.parse(response.getContentText());
-      const text = resJson.candidates[0].content.parts[0].text.replace(/```json/g, '').replace(/```/g, '').trim();
-      return JSON.parse(text);
+
+    if (response.getResponseCode() !== 200) {
+      console.error("Gemini APIエラー: " + response.getResponseCode() + " " + response.getContentText());
+      return { tags: "一般", highlights: content.substring(0, 300), timeline: "" };
     }
+
+    const resJson = JSON.parse(response.getContentText());
+    const candidate = resJson.candidates && resJson.candidates[0];
+    const part = candidate && candidate.content && candidate.content.parts && candidate.content.parts[0];
+    if (!part || !part.text) {
+      console.error("Gemini応答が空です: " + response.getContentText());
+      return { tags: "一般", highlights: content.substring(0, 300), timeline: "" };
+    }
+
+    const text = part.text.replace(/```json/g, '').replace(/```/g, '').trim();
+    const parsed = JSON.parse(text);
+    return {
+      tags: parsed.tags || parsed.keyword || "未分類",
+      highlights: parsed.highlights || parsed.summary || "",
+      timeline: parsed.timeline || ""
+    };
   } catch (e) {
     console.error("Gemini Error: " + e.message);
   }
