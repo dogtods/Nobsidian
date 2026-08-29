@@ -547,6 +547,7 @@ export default function App() {
     syncPrompt?: string; 
     weeklyReportPrompt?: string; 
     targetSheetName?: string;
+    targetSsUrl?: string;
   }) => {
     const url = getApiUrl();
     if (!url || url.includes("YOUR_") || url.includes("YOUR_GAS_URL")) {
@@ -561,7 +562,8 @@ export default function App() {
       const res = await apiPost({ 
         action: "syncExternalSources", 
         options, 
-        sheetName: targetSheet 
+        sheetName: targetSheet,
+        targetSsUrl: options.targetSsUrl
       });
       if (!res || !res.success) {
         throw new Error(res?.error || "外部データの取得に失敗しました");

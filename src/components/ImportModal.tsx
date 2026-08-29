@@ -54,6 +54,7 @@ interface ImportModalProps {
     syncPrompt?: string; 
     weeklyReportPrompt?: string; 
     targetSheetName?: string;
+    targetSsUrl?: string;
     autoReloadApp?: boolean;
   }) => Promise<any>;
   onSyncFromServer?: () => Promise<any>;
@@ -291,7 +292,8 @@ export default function ImportModal({
       persona: syncPersonaInput || getStoredPrompt("SYSTEM_PERSONA"),
       syncPrompt: syncPromptInput || getStoredPrompt("SYNC_PROMPT"),
       weeklyReportPrompt: weeklyReportPromptInput || getStoredPrompt("WEEKLY_REPORT_PROMPT"),
-      targetSheetName: targetExtSheet
+      targetSheetName: targetExtSheet,
+      targetSsUrl: extractSheetUrl.trim()
     };
 
     try {
@@ -302,7 +304,8 @@ export default function ImportModal({
         res = await apiPost({ 
           action: "syncExternalSources", 
           options: syncOptions, 
-          sheetName: targetExtSheet 
+          sheetName: targetExtSheet,
+          targetSsUrl: extractSheetUrl.trim()
         });
       }
 
@@ -1175,20 +1178,25 @@ export default function ImportModal({
               </div>
 
               {/* GAS Connection Info for Step 1 */}
-              <div className="bg-amber-950/20 border border-amber-500/30 rounded-lg px-3 py-2 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 text-[11px] text-amber-300">
-                  <Settings2 className="w-3 h-3 shrink-0" />
-                  <span>接続先GAS URL：<span className="font-medium text-gray-300">【共通】システム接続設定欄で入力済み</span></span>
+              <div className="bg-amber-950/20 border border-amber-500/30 rounded-lg px-3 py-2 flex flex-col gap-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-[11px] text-amber-300">
+                    <Settings2 className="w-3 h-3 shrink-0" />
+                    <span>GAS URL入力欄：<span className="font-medium text-gray-300">【共通】システム接続設定欄で入力済みのため、ここには不要</span></span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCopyAiSyncCode}
+                    className="flex items-center gap-1 px-2.5 py-1 text-[10.5px] rounded font-medium bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition cursor-pointer shrink-0"
+                    title="このボタンを動かすためのGASスクリプトコードをコピー"
+                  >
+                    {isCopiedSyncSave ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                    <span>{isCopiedSyncSave ? "コピー完了" : "📋 GASコードをコピー"}</span>
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleCopyAiSyncCode}
-                  className="flex items-center gap-1 px-2.5 py-1 text-[10.5px] rounded font-medium bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition cursor-pointer shrink-0"
-                  title="このボタンを動かすためのGASスクリプトコードをコピー"
-                >
-                  {isCopiedSyncSave ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
-                  <span>{isCopiedSyncSave ? "コピー完了" : "📋 GASコードをコピー"}</span>
-                </button>
+                <p className="text-[10px] text-gray-500 leading-relaxed pl-4">
+                  💡 収集元スプレッドシートにGASは不要です。GAS（Webアプリ）は<strong className="text-gray-400">取り込み先のスプレッドシート</strong>にのみデプロイしてください。収集元へのアクセスはGASがURLをもとに自動で行います。
+                </p>
               </div>
                 
               <button

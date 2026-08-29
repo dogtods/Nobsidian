@@ -449,8 +449,8 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
     let driveFolderId = extractFolderId(config.driveSourceFolder) || props.getProperty('SCREENSHOT_FOLDER_ID') || "";
     let driveProcessedFolderId = extractFolderId(config.driveProcessedFolder) || "";
     let driveFolderName = "Connected Notes 取り込み";
-    const persona = getConfig('SYSTEM_PERSONA');
-    const syncPrompt = getConfig('SYNC_PROMPT');
+    const persona = config.persona || getConfig('SYSTEM_PERSONA');
+    const syncPrompt = config.syncPrompt || getConfig('SYNC_PROMPT');
 
     // --- A. Raindropからの同期 ---
     if (config.raindrop === true && raindropToken) {
@@ -726,6 +726,7 @@ function processMhtFile_Advanced(file, sheet, existingIds, persona, syncPrompt, 
       rawContent = articleHtml.replace(/<[^>]+>/g, '\\n').trim();
     }
     rawContent = cleanMhtNoise(rawContent);
+    rawContent = rawContent.replace(/\\s+PDF\\s*\$/i, '').replace(/\\n\\s*\\n/g, '\\n\\n').trim();
 
     const safeContent = rawContent.length > 49000
       ? rawContent.substring(0, 49000) + "\\n...（文字数上限により省略）"
@@ -741,8 +742,8 @@ function processMhtFile_Advanced(file, sheet, existingIds, persona, syncPrompt, 
       articleId,
       titleOnly,
       pdfUrl,
-      geminiResultJson.tags,
-      geminiResultJson.highlights,
+      geminiResultJson.tags || geminiResultJson.keyword || "未分類",
+      geminiResultJson.highlights || geminiResultJson.summary || "",
       new Date(),
       'false',
       '',
@@ -770,9 +771,9 @@ function callGeminiForSingleArticle(content, persona, syncPrompt, apiKey, model)
 
   const prompt = persona + "\\n" + syncPrompt + \`
 以下の記事本文から重要情報を抽出・要約してください。
-また、本文中に「〜年〜月」「〜日」などの具体的な日付や年号と、それに関連する出来事・計画・発表・マイルストーンの記述があれば、それらを時系列の年表データとして抽出してください。
+また、本文中に「〜年〜月」「〜日」などの具体的な日付や年号と、それに関連する出来事・計画・発表・マイルストーンの記述があれば、それらを時系列の年表データとして抽出してください。該当がない場合は空文字列にしてください。
 
-出力は必ず以下のJSON形式にしてください。
+出力は必ず以下のJSON形式のみを出力してください（Markdownの\`\`\`などは不要です）。JSONのキー名は厳密に守ってください。改行は必ず \\\\n を使用し、生の改行を含めないでください。
 {
   "tags": "分野キーワード（1〜2単語）",
   "highlights": "ナレッジの要約（1000文字程度）",
@@ -793,8 +794,14 @@ function callGeminiForSingleArticle(content, persona, syncPrompt, apiKey, model)
     );
     if (response.getResponseCode() === 200) {
       const resJson = JSON.parse(response.getContentText());
-      const text = resJson.candidates[0].content.parts[0].text.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '').trim();
-      return JSON.parse(text);
+      let text = resJson.candidates[0].content.parts[0].text.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '').trim();
+      text = text.replace(/(?<!\\\\)\\n/g, '\\\\n'); // JSONパースエラーを防ぐため生の改行をエスケープ
+      const parsed = JSON.parse(text);
+      return {
+        tags: parsed.tags || parsed.keyword || "未分類",
+        highlights: parsed.highlights || parsed.summary || "",
+        timeline: parsed.timeline || ""
+      };
     }
   } catch (e) {
     console.error("Gemini Error: " + e.message);
@@ -1647,8 +1654,8 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
     let driveFolderId = extractFolderId(config.driveSourceFolder) || props.getProperty('SCREENSHOT_FOLDER_ID') || "";
     let driveProcessedFolderId = extractFolderId(config.driveProcessedFolder) || "";
     let driveFolderName = "Connected Notes 取り込み";
-    const persona = getConfig('SYSTEM_PERSONA');
-    const syncPrompt = getConfig('SYNC_PROMPT');
+    const persona = config.persona || getConfig('SYSTEM_PERSONA');
+    const syncPrompt = config.syncPrompt || getConfig('SYNC_PROMPT');
 
     // --- A. Raindropからの同期 ---
     if (config.raindrop === true && raindropToken) {
@@ -1923,6 +1930,7 @@ function processMhtFile_Advanced(file, sheet, existingIds, persona, syncPrompt, 
       rawContent = articleHtml.replace(/<[^>]+>/g, '\\n').trim();
     }
     rawContent = cleanMhtNoise(rawContent);
+    rawContent = rawContent.replace(/\\s+PDF\\s*\$/i, '').replace(/\\n\\s*\\n/g, '\\n\\n').trim();
 
     const safeContent = rawContent.length > 49000
       ? rawContent.substring(0, 49000) + "\\n...（文字数上限により省略）"
@@ -1938,8 +1946,8 @@ function processMhtFile_Advanced(file, sheet, existingIds, persona, syncPrompt, 
       articleId,
       titleOnly,
       pdfUrl,
-      geminiResultJson.tags,
-      geminiResultJson.highlights,
+      geminiResultJson.tags || geminiResultJson.keyword || "未分類",
+      geminiResultJson.highlights || geminiResultJson.summary || "",
       new Date(),
       'false',
       '',
@@ -1967,9 +1975,9 @@ function callGeminiForSingleArticle(content, persona, syncPrompt, apiKey, model)
 
   const prompt = persona + "\\n" + syncPrompt + \`
 以下の記事本文から重要情報を抽出・要約してください。
-また、本文中に「〜年〜月」「〜日」などの具体的な日付や年号と、それに関連する出来事・計画・発表・マイルストーンの記述があれば、それらを時系列の年表データとして抽出してください。
+また、本文中に「〜年〜月」「〜日」などの具体的な日付や年号と、それに関連する出来事・計画・発表・マイルストーンの記述があれば、それらを時系列の年表データとして抽出してください。該当がない場合は空文字列にしてください。
 
-出力は必ず以下のJSON形式にしてください。
+出力は必ず以下のJSON形式のみを出力してください（Markdownの\`\`\`などは不要です）。JSONのキー名は厳密に守ってください。改行は必ず \\\\n を使用し、生の改行を含めないでください。
 {
   "tags": "分野キーワード（1〜2単語）",
   "highlights": "ナレッジの要約（1000文字程度）",
@@ -1990,8 +1998,14 @@ function callGeminiForSingleArticle(content, persona, syncPrompt, apiKey, model)
     );
     if (response.getResponseCode() === 200) {
       const resJson = JSON.parse(response.getContentText());
-      const text = resJson.candidates[0].content.parts[0].text.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '').trim();
-      return JSON.parse(text);
+      let text = resJson.candidates[0].content.parts[0].text.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '').trim();
+      text = text.replace(/(?<!\\\\)\\n/g, '\\\\n'); // JSONパースエラーを防ぐため生の改行をエスケープ
+      const parsed = JSON.parse(text);
+      return {
+        tags: parsed.tags || parsed.keyword || "未分類",
+        highlights: parsed.highlights || parsed.summary || "",
+        timeline: parsed.timeline || ""
+      };
     }
   } catch (e) {
     console.error("Gemini Error: " + e.message);

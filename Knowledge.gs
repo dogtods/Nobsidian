@@ -1,1450 +1,1110 @@
 /**
- * @license
- * SPDX-License-Identifier: Apache-2.0
+ * 設定値
  */
+const props = PropertiesService.getScriptProperties();
 
-import React, { useState, useEffect } from "react";
-import { Note } from "../types";
-import { formatDateStr } from "../utils/graphDataParser";
-import { getStoredPrompt, DEFAULT_PROMPTS, PROMPT_KEYS } from "./PromptSettingsModal";
-import { SYNC_AND_SAVE_GAS_SCRIPT } from "../gasScriptCode";
-import { fetchGasGet, fetchGasPost, sanitizeGasUrl } from "../utils/gasClient";
-import { 
-  HelpCircle, 
-  RefreshCw, 
-  CheckCircle2, 
-  AlertCircle, 
-  FileText, 
-  Globe, 
-  CheckSquare, 
-  Sparkles, 
-  Sliders, 
-  RotateCcw, 
-  Save, 
-  ChevronDown, 
-  ChevronUp, 
-  FileSpreadsheet,
-  Copy,
-  Check,
-  Loader2,
-  Activity,
-  ArrowDown,
-  ArrowRight,
-  Database,
-  Layers,
-  UploadCloud,
-  Settings2,
-  ExternalLink,
-  Link
-} from "lucide-react";
+const RAINDROP_TOKEN = props.getProperty('RAINDROP_TOKEN');
+const GEMINI_API_KEY = props.getProperty('GEMINI_API_KEY');
 
-interface ImportModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onCreateNoteExt: (title: string, content: string, folder: string, sourceUrl: string, timestamp?: number) => void;
-  onSaveToast: (msg: string) => void;
-  apiPost: (body: any) => Promise<any>;
-  onNotesUpdateBatch: (newNotes: Note[], overwrite?: boolean) => void;
-  onSyncExternalSources?: (options: { 
-    raindrop: boolean; 
-    drive: boolean;
-    driveSourceFolder?: string;
-    driveProcessedFolder?: string; 
-    persona?: string; 
-    syncPrompt?: string; 
-    weeklyReportPrompt?: string; 
-    targetSheetName?: string;
-    autoReloadApp?: boolean;
-  }) => Promise<any>;
-  onSyncFromServer?: () => Promise<any>;
-  syncStatus?: "idle" | "syncing" | "saved" | "error";
-  syncLabel?: string;
-  notesCount?: number;
+const NOTION_TOKEN = props.getProperty('NOTION_TOKEN');
+const NOTION_DATABASE_ID = props.getProperty('NOTION_DATABASE_ID');
+const MY_EMAIL = props.getProperty('MY_EMAIL');
+const SHEET_ID = props.getProperty('SHEET_ID');
+const SCREENSHOT_FOLDER_ID = props.getProperty('SCREENSHOT_FOLDER_ID');
+
+/**
+ * システム設定のデフォルト値
+ */
+const DEFAULT_CONFIG = {
+  GEMINI_MODEL: 'gemini-1.5-flash',
+  GEMINI_MAX_TOKENS: 8000,
+  GEMINI_TEMPERATURE: 0.1,
+  SYSTEM_PERSONA: "あなたは環境ビジネスの営業職です。",
+  SYNC_PROMPT: "具体的な数字、事実、市場への影響、主要なナレッジを重点的に抽出し、1000文字程度で要約してください。抽象的な一般論は不要です。\nまた、この内容が属する分野を示すキーワードを1つだけ作成してください。",
+  REPORT_PROMPT: "今週のナレッジを統合し、戦略的な示唆を含むレポートを作成してください。",
+  VOICE_PROMPT: "環境ビジネスの戦略アドバイザー視点で、営業マンが隙間時間に「音声で聞き流すためのアナウンサー原稿」を作成してください。",
+  REPORT_ITEMS: "マクロ環境の変化と共通テーマ\n各記事の要点と市場へのインパクト\n顧客の潜在的課題と分析ニーズの推論\n提案時の「反論・リスク」と「死角」\n実行すべき戦略的営業アクション（3つ）\n深掘りすべきキーワードと次の情報取得の優先順位",
+  VOICE_ITEMS: "簡潔な全体要約\n耳で聞いてわかりやすい重要キーワードの解説\n明日から使える営業トークのフック",
+  ENGLISH_PROMPT: "# 目的\n提供する日本語のニュース記事を、英語学習に最適な教材へと変換してください。\n変換後の英語テキストは、音声読み上げ機能（TTS）で聴くことを前提とした自然な表現にしてください。\n\n# 出力フォーマット\n以下の構成のみを出力してください。余計な挨拶や解説は不要です。\n\n---\n■ 1. ニュースの英語要約（目標：{{LEVEL}}）\n[ニュースの要約を150語程度の自然な英語で記述]\n\n■ 2. 重要ボキャブラリー（5選）\n[英単語/表現] (品詞) - [日本語の意味]\n例文: [その単語を使った短い英語の例文]\n\n■ 3. 音読・シャドーイング用一言フレーズ\n[日常会話やビジネスで応用できる、ニュースから抽出した1文]\nカタカナ発音: [日本人が発音しやすいカタカナ表記]\n---\n\n# ニュース記事（日本語）"
+};
+
+/**
+ * 設定値を取得する（スクリプトプロパティ優先、なければデフォルト）
+ */
+function getConfig(key) {
+  const val = props.getProperty(key);
+  return val !== null ? val : DEFAULT_CONFIG[key];
 }
 
-export default function ImportModal({ 
-  isOpen, 
-  onClose, 
-  onCreateNoteExt, 
-  onSaveToast, 
-  apiPost, 
-  onNotesUpdateBatch,
-  onSyncExternalSources,
-  onSyncFromServer,
-  syncStatus,
-  syncLabel,
-  notesCount = 0
-}: ImportModalProps) {
-  const [activeTab, setActiveTab] = useState<"hub_config" | "step_2" | "prompts">("hub_config");
-  const [driveSourceFolderInput, setDriveSourceFolderInput] = useState("");
-  const [driveProcessedFolderInput, setDriveProcessedFolderInput] = useState("");
+// 動的な設定値の参照
+const GEMINI_MODEL = getConfig('GEMINI_MODEL');
+const GEMINI_MAX_TOKENS = parseInt(getConfig('GEMINI_MAX_TOKENS'));
+const GEMINI_TEMPERATURE = parseFloat(getConfig('GEMINI_TEMPERATURE'));
 
-  // ==========================================
-  // STEP 1: External Source Data Collection Config
-  // ==========================================
-  const [gasUrl, setGasUrl] = useState("");
-  const [externalSyncSheetName, setExternalSyncSheetName] = useState("");
-  const [syncRaindrop, setSyncRaindrop] = useState(false);
-  const [syncDrive, setSyncDrive] = useState(true);
-  const [showGasUrlHelp, setShowGasUrlHelp] = useState(false);
-  const [isCopiedSyncSave, setIsCopiedSyncSave] = useState(false);
-  
-  // Connection Test state
-  const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
-  const [testMessage, setTestMessage] = useState("");
+/**
+ * メイン関数：週次レポートの生成
+ */
+function weeklyReport() {
+  try {
+    console.log("データの同期を開始します...");
+    syncAllExternalSources();
 
-  // External sync execution state
-  const [isSyncingExternal, setIsSyncingExternal] = useState(false);
-  const [externalSyncStatus, setExternalSyncStatus] = useState<string | null>(null);
-  const [externalSyncResult, setExternalSyncResult] = useState<{
-    addedCount?: number;
-    isTimeOut?: boolean;
-    problematicItem?: any;
-    message?: string;
-  } | null>(null);
+    const ss = SpreadsheetApp.openById(SHEET_ID);
+    const sheet = ss.getSheets()[0];
+    const data = sheet.getDataRange().getValues();
 
-  // ==========================================
-  // Prompts config
-  // ==========================================
-  const [activePromptSubTab, setActivePromptSubTab] = useState<"persona" | "sync" | "weekly">("persona");
-  const [syncPersonaInput, setSyncPersonaInput] = useState(() => getStoredPrompt("SYSTEM_PERSONA"));
-  const [syncPromptInput, setSyncPromptInput] = useState(() => getStoredPrompt("SYNC_PROMPT"));
-  const [weeklyReportPromptInput, setWeeklyReportPromptInput] = useState(() => getStoredPrompt("WEEKLY_REPORT_PROMPT"));
+    const unprocessedItems = [];
+    const unprocessedIndices = [];
 
-  // ==========================================
-  // STEP 2: Direct Sheet Extraction / File Import
-  // ==========================================
-  const [extractSheetUrl, setExtractSheetUrl] = useState("https://docs.google.com/spreadsheets/d/.../edit");
-  const [extractSheetName, setExtractSheetName] = useState("未処理データ");
-  const [targetSsUrl, setTargetSsUrl] = useState(() => localStorage.getItem("cn_target_ss_url") || "");
-  const [gasSheetName, setGasSheetName] = useState(() => localStorage.getItem("cn_gas_sheet_name") || "Notes");
-  const [showExtractHelp, setShowExtractHelp] = useState(false);
-  const [pendingSheetItems, setPendingSheetItems] = useState<any[]>([]);
-  const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
-  const [optimizeTitle, setOptimizeTitle] = useState(false);
-  const [overwriteBatch, setOverwriteBatch] = useState(false);
-
-  // File / URL direct import state
-  const [importUrl, setImportUrl] = useState("");
-  const [importMode, setImportMode] = useState("raw");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [processingText, setProcessingText] = useState("実行");
-
-  // Load stored configurations on modal open
-  useEffect(() => {
-    if (isOpen) {
-      const storedGasUrl = localStorage.getItem("cn_gas_api_url") || "";
-      const storedExtSheet = localStorage.getItem("cn_external_sync_sheet_name") || "Notes";
-            const storedAppSheet = localStorage.getItem("cn_gas_sheet_name") || "Notes";
-      setGasSheetName(storedAppSheet);
-      setTargetSsUrl(localStorage.getItem("cn_target_ss_url") || "");
-
-      setGasUrl(storedGasUrl);
-      setExternalSyncSheetName(storedExtSheet);
-      setDriveSourceFolderInput(localStorage.getItem("cn_drive_source_folder") || "");
-      setDriveProcessedFolderInput(localStorage.getItem("cn_drive_processed_folder") || "");
-
-      const storedRaindrop = localStorage.getItem("cn_sync_raindrop");
-      setSyncRaindrop(storedRaindrop !== null ? storedRaindrop === "true" : false);
-
-      const storedDrive = localStorage.getItem("cn_sync_drive");
-      setSyncDrive(storedDrive !== null ? storedDrive === "true" : true);
-
-      setExtractSheetUrl(localStorage.getItem("cn_extract_sheet_url") || "");
-      setExtractSheetName(localStorage.getItem("cn_extract_sheet_name") || storedExtSheet);
-
-      setSyncPersonaInput(getStoredPrompt("SYSTEM_PERSONA"));
-      setSyncPromptInput(getStoredPrompt("SYNC_PROMPT"));
-      setWeeklyReportPromptInput(getStoredPrompt("WEEKLY_REPORT_PROMPT"));
-
-      setPendingSheetItems([]);
-      setSelectedIndices([]);
-      setSelectedFile(null);
-      setImportUrl("");
-      setIsProcessing(false);
-      setProcessingText("実行");
-      setExternalSyncStatus(null);
-      setExternalSyncResult(null);
-      setTestStatus("idle");
-      setTestMessage("");
-    }
-  }, [isOpen]);
-
-  // Save current GAS settings to localStorage
-  const saveAllSettings = (overrideUrl?: string, overrideExtSheet?: string) => {
-    const finalUrl = (overrideUrl !== undefined ? overrideUrl : gasUrl).trim();
-    const finalExtSheet = (overrideExtSheet !== undefined ? overrideExtSheet : externalSyncSheetName).trim();
-
-    if (finalUrl) {
-      localStorage.setItem("cn_gas_api_url", finalUrl);
-    } else {
-      localStorage.removeItem("cn_gas_api_url");
-    }
-
-    if (driveSourceFolderInput) localStorage.setItem("cn_drive_source_folder", driveSourceFolderInput.trim());
-    else localStorage.removeItem("cn_drive_source_folder");
-
-    if (driveProcessedFolderInput) localStorage.setItem("cn_drive_processed_folder", driveProcessedFolderInput.trim());
-    else localStorage.removeItem("cn_drive_processed_folder");
-
-    if (finalExtSheet) {
-      localStorage.setItem("cn_external_sync_sheet_name", finalExtSheet);
-    } else {
-      localStorage.removeItem("cn_external_sync_sheet_name");
-    }
-  };
-
-  // Test GAS Connection
-  const handleTestConnection = async () => {
-    // Sanitize URL (strip quotes, spaces, newlines, fullwidth spaces)
-    const cleaned = sanitizeGasUrl(gasUrl);
-    if (cleaned !== gasUrl) {
-      setGasUrl(cleaned);
-    }
-
-    if (!cleaned) {
-      setTestStatus("error");
-      setTestMessage("WebアプリURLが入力されていません。");
-      return;
-    }
-    if (!cleaned.startsWith("https://script.google.com/macros/s/") || !cleaned.endsWith("/exec")) {
-      setTestStatus("error");
-      setTestMessage("URLの形式が正しくありません。「https://script.google.com/macros/s/.../exec」の形式（本番デプロイURL）を入力してください。末尾が /dev のテストURLは動作しません。");
-      return;
-    }
-
-    saveAllSettings(cleaned);
-    setTestStatus("testing");
-    setTestMessage("GAS Webアプリに疎通確認中（Pingテスト実行中）...");
-
-    try {
-      // Step 1: Base URL Ping Test (confirms Web API deployment and doGet response)
-      let pingSuccess = false;
-      let pingMessage = "";
-      try {
-        const pingJson = await fetchGasGet(cleaned);
-        if (pingJson && (pingJson.status === "ok" || pingJson.message || pingJson.success !== false)) {
-          pingSuccess = true;
-          pingMessage = pingJson.message || "GAS Web API は正常に応答しています。";
-        }
-      } catch (pingErr) {
-        // Continue to check via query parameters
-      }
-
-      // Step 2: Spreadsheet / Sheet Access Test
-      const targetSheet = externalSyncSheetName.trim() || "Notes";
-      const data = await fetchGasGet(cleaned, { action: "getNotes", sheetName: targetSheet });
-
-      if (!data || data.error) {
-        if (pingSuccess || data?.status === "ok") {
-          const errDetail = data?.error || "スプレッドシートへのアクセスに失敗しました";
-          setTestStatus("success");
-          setTestMessage(`✅ WebアプリのAPI疎通は成功しました！ （※スプレッドシート側: ${errDetail}。シート名「${targetSheet}」またはスクリプトプロパティの SHEET_ID をご確認ください）`);
-          return;
-        }
-
-        setTestStatus("error");
-        setTestMessage(data?.error || `接続エラーが発生しました`);
-        return;
-      }
-
-      setTestStatus("success");
-      setTestMessage(`✅ 接続テスト完全成功！GAS Webアプリ疎通およびスプレッドシート（シート: ${data.sheetName || targetSheet}、現在のノート数: ${data.notes?.length ?? 0}件）の読み取りが確認できました。`);
-    } catch (e: any) {
-      setTestStatus("error");
-      setTestMessage(e.message || "接続テストに失敗しました");
-    }
-  };
-
-  const handleCopyAiSyncCode = () => {
-    navigator.clipboard.writeText(SYNC_AND_SAVE_GAS_SCRIPT);
-    setIsCopiedSyncSave(true);
-    onSaveToast("統合版GASコードをコピーしました！");
-    setTimeout(() => setIsCopiedSyncSave(false), 3000);
-  };
-
-  // Handle External Sync Execution (STEP 1)
-  const handleExecuteExternalSync = async () => {
-    const trimmedUrl = gasUrl.trim();
-    if (!trimmedUrl) {
-      onSaveToast("GAS WebアプリURLを設定してください");
-      return;
-    }
-    if (!syncRaindrop && !syncDrive) {
-      onSaveToast("取り込み対象（Raindrop または Googleドライブ）を少なくとも1つ選択してください");
-      return;
-    }
-
-    const targetExtSheet = externalSyncSheetName.trim() || "Notes";
-    saveAllSettings(trimmedUrl, targetExtSheet);
-
-    setIsSyncingExternal(true);
-    setExternalSyncStatus("スプレッドシートへ外部データを収集中・AI解析中...（最大3.5分）");
-    setExternalSyncResult(null);
-
-    const syncOptions = {
-      raindrop: syncRaindrop,
-      drive: syncDrive,
-      driveSourceFolder: driveSourceFolderInput.trim(),
-      driveProcessedFolder: driveProcessedFolderInput.trim(),
-      persona: syncPersonaInput || getStoredPrompt("SYSTEM_PERSONA"),
-      syncPrompt: syncPromptInput || getStoredPrompt("SYNC_PROMPT"),
-      weeklyReportPrompt: weeklyReportPromptInput || getStoredPrompt("WEEKLY_REPORT_PROMPT"),
-      targetSheetName: targetExtSheet
-    };
-
-    try {
-      let res;
-      if (onSyncExternalSources) {
-        res = await onSyncExternalSources(syncOptions);
-      } else {
-        res = await apiPost({ 
-          action: "syncExternalSources", 
-          options: syncOptions, 
-          sheetName: targetExtSheet 
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][6] === false || data[i][6] === 'false') {
+        unprocessedItems.push({
+          title: data[i][1],
+          url: data[i][2],
+          highlights: data[i][4]
         });
+        unprocessedIndices.push(i + 1);
       }
-
-      const added = res?.addedCount || 0;
-      const processed = res?.processedCount || 0;
-      let msg = "";
-      if (added > 0) {
-        msg = `${added} 件の新規データをスプレッドシート（シート: ${targetExtSheet}）へ追加しました（処理ファイル数: ${processed}件） ✦`;
-      } else if (processed > 0) {
-        msg = `Googleドライブから ${processed} 件のファイルを検出し処理（処理済みフォルダへ移動）しました（新規追加は0件、または既に登録済みです）。`;
-      } else {
-        msg = `Googleドライブ（指定フォルダ）に対象の未処理データはありませんでした。`;
-      }
-
-      setExternalSyncResult({
-        addedCount: added,
-        isTimeOut: res?.isTimeOut,
-        problematicItem: res?.problematicItem,
-        message: msg
-      });
-
-      onSaveToast(added > 0 ? `外部データの自動取り込み完了: ${added} 件追加 (シート: ${targetExtSheet})` : (processed > 0 ? `ファイル ${processed}件を処理・移動しました` : `指定フォルダに未処理ファイルはありませんでした`));
-
-    } catch (e: any) {
-      setExternalSyncResult({
-        message: `エラー: ${e.message || String(e)}`
-      });
-      onSaveToast("外部取り込みエラー: " + e.message);
-    } finally {
-      setIsSyncingExternal(false);
-      setExternalSyncStatus(null);
     }
-  };
 
-  // Extract ID from Sheet URL
-  const extractSheetId = (input: string) => {
-    const match = input.match(/\/d\/([a-zA-Z0-9-_]+)/);
-    return match ? match[1] : input.trim();
-  };
-
-  // Fetch unprocessed data from sheet (STEP 2)
-  const fetchSheetData = async () => {
-    const sourceSsId = extractSheetId(extractSheetUrl);
-    if (!sourceSsId) return onSaveToast("スプレッドシートのURLを入力してください");
-    if (!extractSheetName.trim()) return onSaveToast("シート名を入力してください");
-
-    localStorage.setItem("cn_extract_sheet_url", extractSheetUrl.trim());
-    localStorage.setItem("cn_extract_sheet_name", extractSheetName.trim());
-
-    onSaveToast("未処理データを取得中...");
-    try {
-      const cleanedUrl = sanitizeGasUrl(gasUrl);
-      if (!cleanedUrl || cleanedUrl.includes("YOUR_")) {
-        throw new Error("① GAS WebアプリURL を設定してください");
-      }
-      
-      const res = await fetchGasPost(cleanedUrl, { 
-        action: "fetchUnprocessedHighlights", 
-        sourceSsId, 
-        sheetName: extractSheetName.trim() 
-      });
-      if (!res.success) throw new Error(res.error);
-
-      const items = res.items || [];
-      setPendingSheetItems(items);
-      setSelectedIndices(items.map((_, idx) => idx));
-      if (items.length > 0) {
-        onSaveToast(`${items.length}件の未処理データを自動選択して取得しました`);
-      } else {
-        onSaveToast("未処理のデータはありません（すべて処理済です）");
-      }
-    } catch (e: any) {
-      onSaveToast("取得エラー: " + e.message);
-    }
-  };
-
-  const handleCheckboxChange = (idx: number) => {
-    if (selectedIndices.includes(idx)) {
-      setSelectedIndices(selectedIndices.filter(i => i !== idx));
-    } else {
-      setSelectedIndices([...selectedIndices, idx]);
-    }
-  };
-
-  // Import Selected Sheet Items
-  const importSelectedItems = async () => {
-    if (selectedIndices.length === 0) return onSaveToast("項目が選択されていません");
-
-    const sourceSsId = extractSheetId(extractSheetUrl);
-    if (!sourceSsId) return onSaveToast("スプレッドシートのURLが無効です");
-
-    setIsProcessing(true);
-    setProcessingText("インポート中...");
-
-    const selectedItems = selectedIndices.map(idx => pendingSheetItems[idx]);
-    const rowIndices = selectedItems.map(item => item.rowIndex);
-
-    try {
-      const targetSheetName = gasSheetName.trim() || "Notes";
-      const targetSsId = targetSsUrl ? extractSheetId(targetSsUrl) : undefined;
-      const cleanedUrl = sanitizeGasUrl(gasUrl);
-      if (!cleanedUrl || cleanedUrl.includes("YOUR_")) {
-        throw new Error("① GAS WebアプリURL を設定してください");
-      }
-      const res = await fetchGasPost(cleanedUrl, {
-        action: "importRawRowsToApp",
-        sourceSsId,
-        sheetName: extractSheetName.trim(),
-        targetSsId,
-        targetSheetName,
-        rowIndices
-      });
-
-      if (!res.success) throw new Error(res.error || "インポートに失敗しました");
-
-      onSaveToast(`${rowIndices.length}件のデータの登録が完了しました ✦`);
-      
-      // 成功時に状態をリセット
-      setPendingSheetItems([]);
-      setSelectedIndices([]);
-      onClose();
-    } catch (e: any) {
-      onSaveToast("インポートエラー: " + e.message);
-    } finally {
-      setIsProcessing(false);
-      setProcessingText("実行");
-    }
-  };
-
-  // Direct File / URL Import
-  const handleExecuteDirectImport = async () => {
-    const apiKey = localStorage.getItem("cn_gemini_key");
-    const model = localStorage.getItem("cn_gemini_model") || "gemini-flash-latest";
-
-    if (!selectedFile && !importUrl.trim()) {
-      onSaveToast("ファイルを選択するか、Web URLを入力してください");
+    if (unprocessedItems.length === 0) {
+      GmailApp.sendEmail(MY_EMAIL, "【通知】週次レポート対象記事なし", "今週、未処理の記事はありませんでした。");
       return;
     }
 
-    setIsProcessing(true);
-    setProcessingText("処理中...");
+    const today = new Date();
+    const lastWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const dateRange = Utilities.formatDate(lastWeek, "JST", "MM/dd") + " - " + Utilities.formatDate(today, "JST", "MM/dd");
 
-    try {
-      let title = "取り込みメモ";
-      let text = "";
-      let sourceUrl = "";
+    console.log("Geminiによる分析を開始します...");
+    const reportText = analyzeWithGemini(unprocessedItems);
 
-      if (selectedFile) {
-        title = selectedFile.name.replace(/\.[^/.]+$/, "");
-        const rawContent = await selectedFile.text();
+    // console.log("Notionへ保存中...");
+    // saveToNotion(reportText, unprocessedItems.length, dateRange);
 
-        if (selectedFile.name.endsWith(".mht") || selectedFile.name.endsWith(".mhtml")) {
-          const boundaryMatch = rawContent.match(/boundary="?([^"\r\n]+)"?/i);
-          if (boundaryMatch) {
-            const boundary = boundaryMatch[1];
-            const parts = rawContent.split("--" + boundary);
-            for (const part of parts) {
-              if (part.includes("text/html") || part.includes("text/plain")) {
-                const bodyStartIndex = part.indexOf("\r\n\r\n");
-                if (bodyStartIndex !== -1) {
-                  const partBody = part.substring(bodyStartIndex + 4);
-                  text = partBody.replace(/<[^>]*>?/gm, " ").replace(/=\r?\n/g, "").replace(/=3D/g, "=").trim();
-                  break;
-                }
+    console.log("メールを送信中...");
+    sendReportEmail(reportText, unprocessedItems.length, dateRange);
+
+    unprocessedIndices.forEach(rowIdx => {
+      sheet.getRange(rowIdx, 7).setValue('true');
+    });
+
+    console.log("週次レポート処理が完了しました。");
+
+  } catch (e) {
+    console.error("Error in weeklyReport: " + e.message);
+  }
+}
+
+/**
+ * RaindropとGoogleドライブのデータをスプレッドシートに同期する（選択・時間制限対応版）
+ *
+ * 【列構成】全ソース共通で10列に統一（★修正：列ズレ防止）
+ * A(id) B(title) C(url) D(tags) E(highlights) F(saved_at) G(processed) H(予備) I(本文) J(メタ情報)
+ */
+function syncAllExternalSources(options) {
+  const config = options || { raindrop: true, drive: false };
+  const START_TIME = Date.now();
+  const TIME_LIMIT = 3.5 * 60 * 1000;
+
+  let currentProcessing = "処理の準備中";
+
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const sheetId = props.getProperty('SHEET_ID');
+    const ss = SpreadsheetApp.openById(sheetId);
+    const sheet = ss.getSheets()[0];
+
+    const lastRow = sheet.getLastRow();
+    const existingIds = lastRow > 0 ? new Set(sheet.getRange(1, 1, lastRow, 1).getValues().flat().map(String)) : new Set();
+
+    let addedCount = 0;
+    let isTimeOut = false;
+    let problematicItem = null;
+
+    // --- A. Raindropからの取得 ---
+    if (config.raindrop === true) {
+      console.log("Raindropの同期を開始します...");
+      const raindropItems = fetchRaindropData(props.getProperty('RAINDROP_TOKEN'));
+
+      for (const item of raindropItems) {
+        currentProcessing = `Raindrop記事: [${item.title}] (${item.link})`;
+
+        if (Date.now() - START_TIME > TIME_LIMIT) {
+          isTimeOut = true;
+          problematicItem = { title: item.title, url: item.link, reason: "時間制限に到達" };
+          break;
+        }
+
+        const id = String(item._id);
+        if (!existingIds.has(id)) {
+          let manualHighlights = item.highlights && item.highlights.length > 0 ? item.highlights.map(h => h.text).join(" / ") : "";
+          let summary = "";
+          let keyword = "未分類";
+
+          try {
+            if (item.link.includes("go.jp")) {
+              keyword = "🚨手動要";
+              summary = "サイト構造が複雑なため自動取得をスキップしました。手動での確認を推奨します。";
+              let pubDateStr = item.created ? Utilities.formatDate(new Date(item.created), "JST", "yyyy/MM/dd") : Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
+              // ★修正: 11列で書き込み（H・I・J は空文字、K列に発行日/取り込み日）
+              sheet.appendRow([id, item.title, item.link, keyword, summary, item.created, 'false', '', '', '', pubDateStr]);
+              SpreadsheetApp.flush();
+              addedCount++;
+              continue;
+            }
+
+            const fetchOptions = {
+              muteHttpExceptions: true,
+              headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept": "text/html"
+              }
+            };
+            const response = UrlFetchApp.fetch(item.link, fetchOptions);
+
+            if (response.getResponseCode() === 200) {
+              let rawHtml = response.getContentText();
+              let cleanText = cleanHtml(rawHtml); // ★修正: HTMLタグを除去してトークン節約
+
+              const persona = config.persona || getConfig('SYSTEM_PERSONA');
+              const syncPrompt = config.syncPrompt || getConfig('SYNC_PROMPT');
+              const prompt = persona + "\n" + syncPrompt + "\n出力はJSON形式{\n \"keyword\": \"\", \"summary\": \"\"\n}\n\n【データ】\n" + cleanText.substring(0, 20000); // 念のため上限設定
+              const payload = { "contents": [{ "parts": [{ "text": prompt }] }], "generationConfig": { "responseMimeType": "application/json", "temperature": 0.1 } };
+
+              const responseGemini = UrlFetchApp.fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`, { "method": "post", "contentType": "application/json", "payload": JSON.stringify(payload), "muteHttpExceptions": true });
+
+              if (responseGemini.getResponseCode() === 200) {
+                const resJson = JSON.parse(responseGemini.getContentText());
+                let text = resJson.candidates[0].content.parts[0].text.replace(/```json/g, '').replace(/```/g, '').trim();
+                const result = JSON.parse(text);
+                keyword = result.keyword;
+                summary = manualHighlights ? manualHighlights + "\n\n【自動要約】\n" + result.summary : result.summary;
+
+                let pubDateStr = item.created ? Utilities.formatDate(new Date(item.created), "JST", "yyyy/MM/dd") : Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
+                // ★修正: 11列で書き込み（H・I・J は空文字、K列に発行日/取り込み日）
+                sheet.appendRow([id, item.title, item.link, keyword, summary, item.created, 'false', '', '', '', pubDateStr]);
+                SpreadsheetApp.flush();
+                addedCount++;
+              } else {
+                throw new Error("Gemini API Error");
+              }
+            } else {
+              keyword = "🚨手動要";
+              summary = `アクセス拒否 (Status: ${response.getResponseCode()})`;
+              let pubDateStr = item.created ? Utilities.formatDate(new Date(item.created), "JST", "yyyy/MM/dd") : Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
+              // ★修正: 11列で書き込み
+              sheet.appendRow([id, item.title, item.link, keyword, summary, item.created, 'false', '', '', '', pubDateStr]);
+              SpreadsheetApp.flush();
+              addedCount++;
+            }
+          } catch (e) {
+            keyword = "🚨手動要";
+            summary = `解析エラー: ${e.message}`;
+            let pubDateStr = item.created ? Utilities.formatDate(new Date(item.created), "JST", "yyyy/MM/dd") : Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
+            // ★修正: 11列で書き込み
+            sheet.appendRow([id, item.title, item.link, keyword, summary, item.created, 'false', '', '', '', pubDateStr]);
+            SpreadsheetApp.flush();
+            addedCount++;
+
+            isTimeOut = true;
+            problematicItem = { title: item.title, url: item.link, reason: e.message };
+            break;
+          }
+        }
+      }
+    }
+
+    // --- B. Googleドライブからの取得 ---
+    if (config.drive === true && isTimeOut === false) {
+      console.log("Googleドライブの同期を開始します...");
+      const driveFolderId = props.getProperty('SCREENSHOT_FOLDER_ID');
+      const persona = config.persona || getConfig('SYSTEM_PERSONA');
+      const syncPrompt = config.syncPrompt || getConfig('SYNC_PROMPT');
+
+      if (driveFolderId) {
+        const { files, processedFolder } = fetchDriveScreenshots(driveFolderId);
+
+        // ★修正: MHTファイルを必ずPDFより先に処理（PDF紐付けの精度確保のため）
+        files.sort((a, b) => {
+          const aName = a.getName().toLowerCase();
+          const bName = b.getName().toLowerCase();
+          const aIsMht = aName.endsWith('.mht') || aName.endsWith('.mhtml');
+          const bIsMht = bName.endsWith('.mht') || bName.endsWith('.mhtml');
+          if (aIsMht && !bIsMht) return -1;
+          if (!aIsMht && bIsMht) return 1;
+          return 0;
+        });
+
+        for (const file of files) {
+          if (Date.now() - START_TIME > TIME_LIMIT) { isTimeOut = true; break; }
+
+          const fileName = file.getName();
+          const fileNameLower = fileName.toLowerCase();
+
+          try {
+            if (fileNameLower.endsWith('.mht') || fileNameLower.endsWith('.mhtml')) {
+              // MHTルート: 記事を分割して複数行書き込み・PDF紐付けも内部で実行
+              // ★修正: エラー発生時もMHTを必ず移動する（残留→再処理ループを防止）
+              let mhtResult = { addedCount: 0, isTimeOut: false };
+              try {
+                mhtResult = processMhtFile_Advanced(file, sheet, existingIds, persona, syncPrompt, driveFolderId, processedFolder);
+              } finally {
+                file.moveTo(processedFolder); // 成功・失敗に関わらず必ず移動
+              }
+              addedCount += mhtResult.addedCount;
+              if (mhtResult.isTimeOut) { isTimeOut = true; break; }
+
+            } else if (fileNameLower.endsWith('.pdf')) {
+              // PDFルート: ファイル名から記事IDを取得
+              const articleId = fileName.replace(/\.[^/.]+$/, "");
+
+              if (existingIds.has(articleId)) {
+                // MHT側で取り込み済みなら移動のみ
+                console.log(`スキップ: PDF ${articleId} は既に取り込まれています。`);
+                file.moveTo(processedFolder);
+                continue;
+              }
+
+              // 未取り込みの単体PDFのみGemini処理
+              const result = callGeminiVision(file);
+              let pubDateStr = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
+              // ★修正: 11列で書き込み（H・I・J は空文字、K列に発行日/取り込み日）
+              sheet.appendRow([articleId, articleId, file.getUrl(), result.keyword, result.summary, new Date(), 'false', '', '', '', pubDateStr]);
+              SpreadsheetApp.flush();
+              existingIds.add(articleId);
+              addedCount++;
+              file.moveTo(processedFolder);
+
+            } else {
+              // スクリーンショット等の画像（従来通り）
+              const ssId = 'ss_' + file.getId();
+              if (!existingIds.has(ssId)) {
+                const result = callGeminiVision(file);
+                let pubDateStr = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
+                // ★修正: 11列で書き込み（H・I・J は空文字、K列に発行日/取り込み日）
+                sheet.appendRow([ssId, fileName, file.getUrl(), result.keyword, result.summary, new Date(), 'false', '', '', '', pubDateStr]);
+                SpreadsheetApp.flush();
+                existingIds.add(ssId);
+                addedCount++;
+                file.moveTo(processedFolder);
+              } else {
+                file.moveTo(processedFolder);
               }
             }
-          }
-          if (!text) {
-            text = rawContent.replace(/<[^>]*>?/gm, " ").substring(0, 5000);
-          }
-        } else if (selectedFile.name.endsWith(".json")) {
-          try {
-            const parsed = JSON.parse(rawContent);
-            if (Array.isArray(parsed)) {
-              const notes: Note[] = parsed.map((item: any, idx: number) => ({
-                id: item.id || `note_json_${Date.now()}_${idx}`,
-                title: item.title || `JSONノート ${idx + 1}`,
-                content: item.content || "",
-                summary: item.summary || "",
-                keywords: item.keywords || "",
-                createdAt: item.createdAt || Date.now(),
-                updatedAt: item.updatedAt || Date.now(),
-                sourceUrl: item.sourceUrl || "",
-                timeline: item.timeline || "",
-                columnJ: item.columnJ || ""
-              }));
-              onNotesUpdateBatch(notes, overwriteBatch);
-              onSaveToast(`${notes.length}件のJSONノートを取り込みました ✦`);
-              onClose();
-              return;
-            } else {
-              text = JSON.stringify(parsed, null, 2);
-            }
-          } catch {
-            text = rawContent;
-          }
-        } else {
-          text = rawContent;
-        }
-      } else if (importUrl.trim()) {
-        sourceUrl = importUrl.trim();
-        title = "Web記事: " + sourceUrl;
-        
-        let html = "";
-        try {
-          const res = await fetch(`/api/proxy?url=${encodeURIComponent(sourceUrl)}`);
-          if (res.ok && !res.headers.get("content-type")?.includes("text/html")) {
-            html = await res.text();
-          } else {
-            // Fallback for static hosting where /api/proxy returns index.html or 404
-            const fallbackRes = await fetch(sourceUrl);
-            html = await fallbackRes.text();
-          }
-        } catch (fetchErr) {
-          try {
-            // Direct fetch attempt as a last resort (will likely hit CORS but worth trying)
-            const directRes = await fetch(sourceUrl);
-            html = await directRes.text();
-          } catch (corsErr) {
-            throw new Error(`Webページの取得に失敗しました (CORS制約、または通信エラー)。静的ホスティング(GitHub Pages等)の場合、外部サイトへの直接アクセスはブラウザの仕様により制限されます。詳細: ${String(corsErr)}`);
+          } catch (e) {
+            console.error(`ファイル解析エラー (${fileName}): ${e.message}`);
           }
         }
-
-        const doc = new DOMParser().parseFromString(html, "text/html");
-        const docTitle = doc.querySelector("title")?.textContent || "";
-        if (docTitle) title = docTitle.trim();
-        text = doc.body?.innerText || html.replace(/<[^>]*>?/gm, " ").substring(0, 6000);
       }
+    }
 
-      if (importMode === "raw" || !apiKey) {
-        const formatted = `# ${title}\n\n${text}\n\n${sourceUrl ? `**URL:** [${sourceUrl}](${sourceUrl})` : ""}`;
-        onCreateNoteExt(title, formatted, formatDateStr(Date.now()).replace(/-/g, ""), sourceUrl);
-        onSaveToast("取り込みが完了しました ✦");
-        onClose();
-      } else {
-        const prompt = importMode === "summarize"
-          ? `以下のテキストの要点を簡潔にまとめ、マークダウン形式で要約を作成してください。\n\nテキスト:\n${text.substring(0, 8000)}`
-          : `以下のテキストから重要なキーワード、主要な論点、知見を箇条書きで抽出してください。\n\nテキスト:\n${text.substring(0, 8000)}`;
+    return { success: true, addedCount: addedCount, isTimeOut: isTimeOut, problematicItem: problematicItem };
 
-        const r = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: { temperature: 0.2, maxOutputTokens: 1500 }
-            })
-          }
-        );
-        if (!r.ok) throw new Error("AI処理に失敗しました");
-        const rd = await r.json();
-        const processedText = rd.candidates?.[0]?.content?.parts?.[0]?.text || "";
-        const suffix = importMode === "summarize" ? " (要約)" : " (抽出)";
-        const finalTitle = title + suffix;
-        const formatted = `# ${finalTitle}\n\n${processedText}\n\n---\n<details><summary>元のテキスト</summary>\n\n${text}\n</details>`;
-        onCreateNoteExt(finalTitle, formatted, formatDateStr(Date.now()).replace(/-/g, ""), sourceUrl);
-        onSaveToast("取り込みとAI処理が完了しました ✦");
-        onClose();
-      }
-    } catch (e: any) {
-      onSaveToast("エラー: " + e.message);
-      console.error(e);
-    } finally {
-      setIsProcessing(false);
-      setProcessingText("実行");
+  } catch (e) {
+    const errMsg = e.message || String(e);
+    throw new Error(`処理中に致命的なクラッシュが発生しました。\n👉 原因: ${currentProcessing}\n詳細: ${errMsg}`);
+  }
+}
+
+/**
+ * Gemini Vision APIを呼び出してファイルの内容を要約
+ */
+function callGeminiVision(file) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+
+  const base64Data = Utilities.base64Encode(file.getBlob().getBytes());
+
+  const prompt = getConfig('SYSTEM_PERSONA') + "\n" + getConfig('SYNC_PROMPT') +
+                 "\n出力は必ず以下のJSON形式にしてください。\n{\n  \"keyword\": \"分野のキーワード（1単語）\",\n  \"summary\": \"ナレッジの要約（1000文字程度）\"\n}";
+
+  const payload = {
+    "contents": [{
+      "parts": [
+        { "text": prompt },
+        { "inline_data": { "mime_type": file.getMimeType(), "data": base64Data } }
+      ]
+    }],
+    "generationConfig": {
+      "responseMimeType": "application/json",
+      "maxOutputTokens": 2000
     }
   };
 
-  // Prompt save / reset
-  const handleSavePrompts = () => {
-    localStorage.setItem(PROMPT_KEYS.SYSTEM_PERSONA, syncPersonaInput);
-    localStorage.setItem(PROMPT_KEYS.SYNC_PROMPT, syncPromptInput);
-    localStorage.setItem(PROMPT_KEYS.WEEKLY_REPORT_PROMPT, weeklyReportPromptInput);
-    onSaveToast("プロンプト設定を保存しました ✦");
+  const options = {
+    "method": "post",
+    "contentType": "application/json",
+    "payload": JSON.stringify(payload)
   };
 
-  const handleResetPrompts = () => {
-    if (!window.confirm("プロンプト設定を初期値に戻しますか？")) return;
-    localStorage.removeItem(PROMPT_KEYS.SYSTEM_PERSONA);
-    localStorage.removeItem(PROMPT_KEYS.SYNC_PROMPT);
-    localStorage.removeItem(PROMPT_KEYS.WEEKLY_REPORT_PROMPT);
-    setSyncPersonaInput(DEFAULT_PROMPTS.SYSTEM_PERSONA);
-    setSyncPromptInput(DEFAULT_PROMPTS.SYNC_PROMPT);
-    setWeeklyReportPromptInput(DEFAULT_PROMPTS.WEEKLY_REPORT_PROMPT);
-    onSaveToast("プロンプトを初期値に戻しました");
+  const response = UrlFetchApp.fetch(url, options);
+  const result = JSON.parse(response.getContentText());
+  let text = result.candidates[0].content.parts[0].text;
+
+  try {
+    text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    return JSON.parse(text);
+  } catch(e) {
+    return { keyword: "画像", summary: text };
+  }
+}
+
+/**
+ * Raindrop APIからデータを取得する内部関数
+ */
+function fetchRaindropData(token) {
+  if (!token) return [];
+  const url = "https://api.raindrop.io/rest/v1/raindrops/0?perpage=50";
+  const options = {
+    "method": "get",
+    "headers": { "Authorization": "Bearer " + token }
+  };
+  const response = UrlFetchApp.fetch(url, options);
+  return JSON.parse(response.getContentText()).items || [];
+}
+
+/**
+ * Raindropのテキスト情報からGemini APIを呼び出してキーワードと要約を抽出
+ */
+function callGeminiText(title, highlights) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+
+  const payload = {
+    "contents": [{
+      "parts": [
+        { "text": getConfig('SYSTEM_PERSONA') + "\n以下の記事のタイトルと抜粋（ハイライト）から、内容を要約して重要なナレッジを抽出してください。\nまた、この記事の内容が属する分野やジャンルを示すキーワードを1つだけ作成してください。\n出力は必ず以下のJSON形式にしてください。\n{\n  \"keyword\": \"分野のキーワード（1単語）\",\n  \"summary\": \"重要なナレッジの要約\"\n}\n\n【タイトル】\n" + title + "\n\n【抜粋】\n" + highlights }
+      ]
+    }],
+    "generationConfig": {
+      "responseMimeType": "application/json"
+    }
   };
 
-  if (!isOpen) return null;
+  const options = {
+    "method": "post",
+    "contentType": "application/json",
+    "payload": JSON.stringify(payload),
+    "muteHttpExceptions": true
+  };
 
-  return (
-    <div
-      className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[200] flex items-center justify-center p-4 overflow-y-auto"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div className="bg-[#1b222c] border border-[#30363d] rounded-2xl w-[720px] max-w-full my-auto shadow-2xl flex flex-col gap-4 animate-[fadeIn_0.15s_ease-out] max-h-[94vh] overflow-y-auto p-6 text-gray-200">
-        
-        {/* Header */}
-        <div className="flex items-start justify-between border-b border-[#30363d] pb-3">
-          <div>
-            <div className="text-base font-bold text-gray-100 flex items-center gap-2">
-              <span className="p-1.5 bg-purple-500/20 text-purple-300 rounded-lg text-sm">📥</span>
-              <span>ノート・ナレッジの取り込み ＆ 同期ハブ</span>
-            </div>
-            <p className="text-xs text-gray-400 mt-1 leading-relaxed">
-              MHT・Raindropのデータ収集から、フロントエンド画面へのスプレッドシート同期まで順番に設定・実行できます。
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-200 text-sm px-2.5 py-1 rounded-lg hover:bg-[#21262d] transition"
-          >
-            ✕
-          </button>
-        </div>
+  const response = UrlFetchApp.fetch(url, options);
+  const responseText = response.getContentText();
 
-        {/* Tab Navigation */}
-        <div className="flex border-b border-[#30363d] gap-2">
-          <button
-            type="button"
-            onClick={() => setActiveTab("hub_config")}
-            className={`pb-2.5 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border-b-2 ${
-              activeTab === "hub_config"
-                ? "border-sky-500 text-sky-300"
-                : "border-transparent text-gray-400 hover:text-gray-200"
-            }`}
-          >
-            <Link className="w-3.5 h-3.5" />
-            <span>🔗 1. リンク・シート一元管理 & 外部収集・登録</span>
-          </button>
+  try {
+    const result = JSON.parse(responseText);
+    if (response.getResponseCode() !== 200) {
+      throw new Error(result.error ? result.error.message : "API Error");
+    }
+    let text = result.candidates[0].content.parts[0].text;
+    text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    return JSON.parse(text);
+  } catch(e) {
+    return { keyword: "Web記事", summary: highlights || title };
+  }
+}
 
-          <button
-            type="button"
-            onClick={() => setActiveTab("step_2")}
-            className={`pb-2.5 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border-b-2 ${
-              activeTab === "step_2"
-                ? "border-emerald-500 text-emerald-300"
-                : "border-transparent text-gray-400 hover:text-gray-200"
-            }`}
-          >
-            <UploadCloud className="w-3.5 h-3.5" />
-            <span>📁 2. ファイル / Web URL 直接登録</span>
-          </button>
+/**
+ * Driveフォルダから未処理のファイルを取得する内部関数
+ */
+function fetchDriveScreenshots(folderId) {
+  if (!folderId) return { files: [], processedFolder: null };
+  const folder = DriveApp.getFolderById(folderId);
+  const filesIter = folder.getFiles();
+  const subFolders = folder.getFoldersByName("処理済み");
+  const processedFolder = subFolders.hasNext() ? subFolders.next() : folder.createFolder("処理済み");
 
-          <button
-            type="button"
-            onClick={() => setActiveTab("prompts")}
-            className={`pb-2.5 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border-b-2 ${
-              activeTab === "prompts"
-                ? "border-purple-500 text-purple-300"
-                : "border-transparent text-gray-400 hover:text-gray-200"
-            }`}
-          >
-            <Sliders className="w-3.5 h-3.5" />
-            <span>⚙ 3. AIプロンプト設定</span>
-          </button>
-        </div>
+  const targetFiles = [];
+  while (filesIter.hasNext()) {
+    targetFiles.push(filesIter.next());
+  }
+  return { files: targetFiles, processedFolder: processedFolder };
+}
 
-        {/* TAB 2: Direct File / URL Import */}
-        {activeTab === "step_2" && (
-          <div className="flex flex-col gap-4">
-            {/* Direct File / URL Import */}
-            <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 flex flex-col gap-3">
-              <label className="text-xs font-bold text-gray-100 flex items-center gap-1.5">
-                <UploadCloud className="w-4 h-4 text-blue-400" />
-                <span>ローカルファイル / Web URL からの直接取り込み</span>
-              </label>
-              <p className="text-[11px] text-gray-400 leading-relaxed">
-                PC内のMHT / Markdownファイルや、Web記事のURLを指定して直接アプリへ取り込みます。
-              </p>
+/**
+ * Gemini APIで全体の分析を行う（自動・手動ハイブリッド対応版）
+ */
+function analyzeWithGemini(articles, maxTokens = GEMINI_MAX_TOKENS, temp = GEMINI_TEMPERATURE, checkedItems = [], customPrompt = "") {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
-              <div className="flex flex-col gap-2.5 mt-1">
-                <input
-                  type="file"
-                  accept=".mht,.mhtml,.md,.markdown,.txt,.json"
-                  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-                  className="text-xs text-gray-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-purple-600/20 file:text-purple-300 hover:file:bg-purple-600/30 cursor-pointer"
-                />
+  let promptText = getConfig('SYSTEM_PERSONA') + "\n" + getConfig('REPORT_PROMPT') + "\n\n";
 
-                <input
-                  type="text"
-                  placeholder="または Web記事のURL (https://...)"
-                  value={importUrl}
-                  onChange={(e) => setImportUrl(e.target.value)}
-                  className="flex-1 text-xs p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-blue-500"
-                />
+  if (customPrompt && customPrompt.trim() !== "") {
+    promptText += `【特別指示】\n${customPrompt}\n\n`;
+  }
 
-                <div className="flex items-center gap-3 text-xs text-gray-300">
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="importMode"
-                      value="raw"
-                      checked={importMode === "raw"}
-                      onChange={(e) => setImportMode(e.target.value)}
-                      className="accent-purple-500"
-                    />
-                    <span>生テキストのまま</span>
-                  </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="importMode"
-                      value="summarize"
-                      checked={importMode === "summarize"}
-                      onChange={(e) => setImportMode(e.target.value)}
-                      className="accent-purple-500"
-                    />
-                    <span>AI要約を生成</span>
-                  </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="importMode"
-                      value="extract"
-                      checked={importMode === "extract"}
-                      onChange={(e) => setImportMode(e.target.value)}
-                      className="accent-purple-500"
-                    />
-                    <span>知見・論点を抽出</span>
-                  </label>
-                </div>
+  promptText += `【出力形式】\n`;
+  if (checkedItems && checkedItems.length > 0) {
+    checkedItems.forEach((item, index) => {
+      promptText += `${index + 1}. ${item}\n`;
+    });
+  } else {
+    promptText += `1. 共通テーマ（箇条書き）\n2. 興味・関心の傾向（2〜3文）\n3. 各記事の要点（1〜2行ずつ）\n4. 来週学ぶべき領域の提案（3つ）\n`;
+  }
 
-                <button
-                  type="button"
-                  onClick={handleExecuteDirectImport}
-                  disabled={isProcessing || (!selectedFile && !importUrl.trim())}
-                  className="flex-1 py-2 bg-[#21262d] hover:bg-[#30363d] text-xs border border-[#30363d] rounded-lg text-gray-100 font-semibold cursor-pointer transition flex items-center justify-center gap-1.5 disabled:opacity-50"
-                >
-                  <UploadCloud className="w-3.5 h-3.5 text-blue-400" />
-                  <span>{isProcessing ? processingText : "ファイル / URLを取り込む"}</span>
-                </button>
-              </div>
-            </div>
+  promptText += `\n【データ】\n${articles.map(a => `- タイトル: ${a.title}\n  内容: ${a.highlights}`).join('\n\n')}`;
 
-            {/* Notice to Hub Config */}
-            <div className="p-3 bg-[#161b22] border border-[#30363d] rounded-xl text-xs text-gray-400 flex items-center justify-between">
-              <span>💡 スプレッドシートからの未処理データ抽出・登録は、「1. リンク・シート一元管理」のステップ2から一元的に行えます。</span>
-              <button
-                type="button"
-                onClick={() => setActiveTab("hub_config")}
-                className="text-sky-400 hover:underline shrink-0 ml-2 font-medium cursor-pointer"
-              >
-                一元管理を開く →
-              </button>
-            </div>
-          </div>
-        )}
+  const payload = {
+    "contents": [{ "parts": [{ "text": promptText }] }],
+    "generationConfig": {
+      "maxOutputTokens": maxTokens,
+      "temperature": temp
+    }
+  };
 
-        {/* TAB 3: Prompts Configuration */}
-        {activeTab === "prompts" && (
-          <div className="flex flex-col gap-3">
-            <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-100 flex items-center gap-1.5">
-                  <Sliders className="w-4 h-4 text-purple-400" />
-                  <span>AIプロンプトのカスタマイズ</span>
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleResetPrompts}
-                    className="text-[10px] text-gray-400 hover:text-red-400 flex items-center gap-1 cursor-pointer"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                    <span>初期値に戻す</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSavePrompts}
-                    className="px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-lg transition cursor-pointer flex items-center gap-1"
-                  >
-                    <Save className="w-3 h-3" />
-                    <span>保存</span>
-                  </button>
-                </div>
-              </div>
+  const options = {
+    "method": "post",
+    "contentType": "application/json",
+    "payload": JSON.stringify(payload)
+  };
 
-              {/* Sub tabs */}
-              <div className="flex gap-2 border-b border-[#30363d] pb-2">
-                <button
-                  type="button"
-                  onClick={() => setActivePromptSubTab("persona")}
-                  className={`text-xs px-2.5 py-1 rounded-md transition ${
-                    activePromptSubTab === "persona"
-                      ? "bg-purple-600/30 text-purple-200 font-bold"
-                      : "text-gray-400 hover:text-gray-200"
-                  }`}
-                >
-                  システムペルソナ
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActivePromptSubTab("sync")}
-                  className={`text-xs px-2.5 py-1 rounded-md transition ${
-                    activePromptSubTab === "sync"
-                      ? "bg-purple-600/30 text-purple-200 font-bold"
-                      : "text-gray-400 hover:text-gray-200"
-                  }`}
-                >
-                  外部データ同期 (SYNC_PROMPT)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActivePromptSubTab("weekly")}
-                  className={`text-xs px-2.5 py-1 rounded-md transition ${
-                    activePromptSubTab === "weekly"
-                      ? "bg-purple-600/30 text-purple-200 font-bold"
-                      : "text-gray-400 hover:text-gray-200"
-                  }`}
-                >
-                  週次レポート (WEEKLY_REPORT)
-                </button>
-              </div>
+  const response = UrlFetchApp.fetch(url, options);
+  const result = JSON.parse(response.getContentText());
+  return result.candidates[0].content.parts[0].text;
+}
 
-              {activePromptSubTab === "persona" && (
-                <div className="flex flex-col gap-1">
-                  <span className="text-[10px] text-gray-400">Gemini AIの分析ペルソナ・基本方針:</span>
-                  <textarea
-                    rows={8}
-                    className="flex-1 text-xs font-mono p-2.5 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-200 outline-none focus:border-purple-500"
-                    value={syncPersonaInput}
-                    onChange={(e) => setSyncPersonaInput(e.target.value)}
-                  />
-                </div>
-              )}
+/**
+ * Notionに保存
+ */
+function saveToNotion(reportText, articleCount, dateRange) {
+  const url = "https://api.notion.com/v1/pages";
+  const token = NOTION_TOKEN;
+  const dbId = NOTION_DATABASE_ID;
 
-              {activePromptSubTab === "sync" && (
-                <div className="flex flex-col gap-1">
-                  <span className="text-[10px] text-gray-400">Raindrop / MHT データ解析・要約プロンプト:</span>
-                  <textarea
-                    rows={8}
-                    className="flex-1 text-xs font-mono p-2.5 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-200 outline-none focus:border-purple-500"
-                    value={syncPromptInput}
-                    onChange={(e) => setSyncPromptInput(e.target.value)}
-                  />
-                </div>
-              )}
+  if (!token || !dbId) {
+    console.error("Notion設定エラー: トークンまたはデータベースIDが未設定です。");
+    return;
+  }
 
-              {activePromptSubTab === "weekly" && (
-                <div className="flex flex-col gap-1">
-                  <span className="text-[10px] text-gray-400">週次レポート生成プロンプト:</span>
-                  <textarea
-                    rows={8}
-                    className="flex-1 text-xs font-mono p-2.5 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-200 outline-none focus:border-purple-500"
-                    value={weeklyReportPromptInput}
-                    onChange={(e) => setWeeklyReportPromptInput(e.target.value)}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+  const payload = {
+    "parent": { "database_id": dbId },
+    "properties": {
+      "Name": { "title": [{ "text": { "content": `📚 週次レポート｜${dateRange}` } }] },
+      "記事数": { "number": articleCount },
+      "日付": { "date": { "start": new Date().toISOString().split('T')[0] } }
+    },
+    "children": [
+      {
+        "object": "block",
+        "type": "paragraph",
+        "paragraph": { "rich_text": [{ "type": "text", "text": { "content": reportText.substring(0, 2000) } }] }
+      }
+    ]
+  };
 
-        
-        {/* TAB 1: Hub Link & Sheet Management (Centralized Dashboard & Source Sync) */}
-        {activeTab === "hub_config" && (
-          <div className="flex flex-col gap-5 pb-4">
-            <div className="flex items-center justify-between border-b border-[#30363d] pb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-sky-500/20 border border-sky-500/40 flex items-center justify-center text-sky-300">
-                  <Link className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-gray-100">リンク・シート 一元管理 & 外部収集</h3>
-                  <p className="text-[10px] text-gray-400">外部データの収集からアプリ表示先へのデータの流れを一画面で設定・実行できます。</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  saveAllSettings();
-                  onSaveToast("すべてのリンク・シート設定を一括保存しました ✦");
-                }}
-                className="px-3 py-1.5 text-xs bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-lg transition flex items-center gap-1.5 cursor-pointer shadow-sm"
-              >
-                <Save className="w-3.5 h-3.5" />
-                <span>一括保存する</span>
-              </button>
-            </div>
+  const options = {
+    "method": "post",
+    "headers": {
+      "Authorization": "Bearer " + token,
+      "Content-Type": "application/json",
+      "Notion-Version": "2022-06-28"
+    },
+    "payload": JSON.stringify(payload),
+    "muteHttpExceptions": true
+  };
 
-            {/* 1. 共通: GAS接続 */}
-            <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 flex flex-col gap-3 relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500/50"></div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-xs font-bold text-gray-200 flex items-center gap-1.5">
-                    <Settings2 className="w-3.5 h-3.5 text-emerald-400" />
-                    【共通】システム接続設定 (GAS API)
-                  </h4>
-                  <p className="text-[10px] text-gray-400">アプリ全体とスプレッドシート・Driveを繋ぐためのAPIエンドポイント（GAS）です。</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleCopyAiSyncCode}
-                    className="flex items-center gap-1 px-2.5 py-1 text-[10.5px] rounded font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition cursor-pointer"
-                    title="GASエディタに貼り付ける最新スクリプトコードをコピー"
-                  >
-                    {isCopiedSyncSave ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
-                    <span>{isCopiedSyncSave ? "コピー完了" : "📋 GASコピー"}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowGasUrlHelp(!showGasUrlHelp)}
-                    className="text-[10.5px] text-gray-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer"
-                  >
-                    <HelpCircle className="w-3 h-3" />
-                    <span>使い方</span>
-                  </button>
-                </div>
-              </div>
+  try {
+    const res = UrlFetchApp.fetch(url, options);
+    const responseCode = res.getResponseCode();
+    if (responseCode !== 200) {
+      const errText = res.getContentText();
+      console.error(`Notion保存失敗 (Status: ${responseCode}): ${errText}`);
+      throw new Error(`Notion保存エラー: ${errText}`);
+    }
+    console.log("Notionへの保存に成功しました。");
+  } catch (e) {
+    console.error("Notion通信エラー: " + e.message);
+    throw e;
+  }
+}
 
-              {showGasUrlHelp && (
-                <div className="p-3 bg-emerald-950/30 border border-emerald-500/30 rounded-lg text-[11px] text-emerald-200 leading-relaxed space-y-1.5">
-                  <p className="font-semibold text-emerald-300">💡 GAS (Google Apps Script) の導入手順：</p>
-                  <p>1. 上の「📋 GASコピー」ボタンを押して最新のスクリプトコードをクリップボードにコピーします。</p>
-                  <p>2. Googleスプレッドシートの「拡張機能」→「Apps Script」を開き、コードを貼り付けて保存します。</p>
-                  <p>3. 画面右上の「デプロイ」→「新しいデプロイ」を選択し、種類の選択で「ウェブアプリ」を指定します。</p>
-                  <p>4. <strong>次のユーザーとして実行: 自分</strong>、<strong>アクセスできるユーザー: 全員</strong> に設定してデプロイします。</p>
-                  <p>5. 発行された「ウェブアプリ URL（末尾 <code>/exec</code>）」を下の入力欄に貼り付け、「接続テスト」を押してください。</p>
-                </div>
-              )}
+/**
+ * 設定画面用の設定取得
+ */
+function getSystemSettings() {
+  const settings = {};
+  for (let key in DEFAULT_CONFIG) {
+    settings[key] = getConfig(key);
+  }
+  return JSON.stringify(settings);
+}
 
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] font-bold text-gray-300">GAS Webアプリ URL</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    className="flex-1 font-mono text-[11px] p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-emerald-500 transition-all"
-                    value={gasUrl}
-                    onChange={(e) => {
-                      setGasUrl(e.target.value);
-                      saveAllSettings(e.target.value);
-                    }}
-                    placeholder="https://script.google.com/macros/s/.../exec"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleTestConnection}
-                    disabled={testStatus === "testing"}
-                    className="px-3 py-2 text-xs font-semibold rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/40 hover:bg-purple-500/30 disabled:opacity-50 transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
-                  >
-                    {testStatus === "testing" ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        確認中...
-                      </>
-                    ) : (
-                      <>
-                        <Activity className="w-3.5 h-3.5" />
-                        接続テスト
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
+/**
+ * 設定画面からの設定保存
+ */
+function saveSystemSettings(settingsJson) {
+  try {
+    const settings = JSON.parse(settingsJson);
+    for (let key in settings) {
+      PropertiesService.getScriptProperties().setProperty(key, settings[key]);
+    }
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
 
-              {/* Test Status Alert */}
-              {testStatus !== "idle" && (
-                <div className={`p-3 rounded-lg text-xs flex flex-col gap-2 border leading-relaxed ${
-                  testStatus === "success" 
-                    ? "bg-emerald-950/40 border-emerald-500/40 text-emerald-300"
-                    : testStatus === "error"
-                    ? "bg-red-950/40 border-red-500/40 text-red-300"
-                    : "bg-blue-950/40 border-blue-500/40 text-blue-300"
-                }`}>
-                  <div className="flex items-start gap-2">
-                    {testStatus === "success" && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />}
-                    {testStatus === "error" && <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />}
-                    {testStatus === "testing" && <Loader2 className="w-4 h-4 animate-spin text-blue-400 shrink-0 mt-0.5" />}
-                    <div className="flex-1">
-                      <p className="font-semibold text-sm">{testMessage}</p>
-                    </div>
-                  </div>
+/**
+ * Gmailでレポートを送信
+ */
+function sendReportEmail(reportText, articleCount, dateRange) {
+  const subject = `📚 週次ナレッジレポート｜${dateRange}（${articleCount}本）`;
+  const body = `
+今週のナレッジ収集結果をまとめました。
 
-                  {testStatus === "error" && (
-                    <div className="mt-1 pt-2 border-t border-red-500/30 text-[11px] text-red-200/90 space-y-2">
-                      <div className="p-2 bg-black/40 rounded border border-red-500/20 space-y-1">
-                        <p className="font-bold text-amber-300">🔍 なぜブラウザで見えるのに接続テストが失敗するのか？</p>
-                        <p className="text-gray-300 text-[10.5px]">
-                          ブラウザの通常タブはGoogleにログイン済みのため表示されますが、アプリは未ログイン状態でアクセスするため、GASの公開権限が「全員」でないとGoogleがブロックします。
-                        </p>
-                      </div>
+■ 収集記事数: ${articleCount} 本
 
-                      <div className="space-y-1.5 text-[11px]">
-                        <p className="font-bold text-white">🛠️ 解決のための3点チェックリスト：</p>
-                        <div className="bg-[#161b22] p-2.5 rounded border border-[#30363d] space-y-1.5 text-gray-200">
-                          <div className="flex items-start gap-1.5">
-                            <span className="text-purple-400 font-bold">1.</span>
-                            <span>
-                              <strong>「新しいデプロイ」を作成</strong>（※「デプロイを管理」の更新では反映されないGASの不具合があります）
-                            </span>
-                          </div>
-                          <div className="flex items-start gap-1.5">
-                            <span className="text-purple-400 font-bold">2.</span>
-                            <span>
-                              次のユーザーとして実行: <strong className="text-emerald-300">「自分 (Me)」</strong>
-                            </span>
-                          </div>
-                          <div className="flex items-start gap-1.5">
-                            <span className="text-purple-400 font-bold">3.</span>
-                            <span>
-                              アクセスできるユーザー: <strong className="text-emerald-300">「全員 (Anyone)」</strong><br/>
-                              <span className="text-[10px] text-gray-400">※「自分のみ」や「組織内のユーザー」は外部アクセス不可</span>
-                            </span>
-                          </div>
-                          <div className="flex items-start gap-1.5">
-                            <span className="text-purple-400 font-bold">4.</span>
-                            <span>
-                              新しく発行されたURL（末尾 <code>/exec</code>）を再コピーして貼り付け
-                            </span>
-                          </div>
-                        </div>
-                      </div>
+--------------------------------------------------
+${reportText}
+--------------------------------------------------
 
-                      <div className="flex items-center gap-2 pt-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (gasUrl.trim()) {
-                              navigator.clipboard.writeText(gasUrl.trim());
-                              onSaveToast("URLをコピーしました！シークレットウィンドウで開いてみてください");
-                            }
-                          }}
-                          className="px-2.5 py-1 text-[10.5px] bg-red-900/40 hover:bg-red-900/60 border border-red-400/40 rounded text-red-200 transition flex items-center gap-1 cursor-pointer"
-                        >
-                          📋 URLをコピーして「シークレットウィンドウ」でテストする
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+このレポートはGeminiによって自動生成されました。
+  `;
 
-            {/* Visual Arrow */}
-            <div className="flex justify-center -my-2 relative z-10">
-              <div className="bg-[#0d1117] border border-[#30363d] p-1.5 rounded-full text-gray-400">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
-              </div>
-            </div>
+  GmailApp.sendEmail(MY_EMAIL, subject, body);
+}
 
-            {/* 0. Drive Folders (ドライブ連携) */}
-            <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 flex flex-col gap-4 relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/50"></div>
-              <div>
-                <h4 className="text-xs font-bold text-gray-200 mb-1 flex items-center gap-1.5">
-                  <Database className="w-3.5 h-3.5 text-blue-400" />
-                  ステップ0: ドライブ連携 (フォルダ設定)
-                </h4>
-                <p className="text-[10px] text-gray-400 mb-3">Google Drive上にあるMHTファイルなどを読み込むためのフォルダ設定です。</p>
-                <div className="flex flex-col gap-3">
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-[11px] font-bold text-gray-300">取り込み前（未処理）データフォルダ (URL または ID)</label>
-                    <input
-                      type="text"
-                      className="flex-1 font-mono text-[11px] p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-blue-500 transition-all"
-                      value={driveSourceFolderInput}
-                      onChange={(e) => {
-                        setDriveSourceFolderInput(e.target.value);
-                        saveAllSettings();
-                      }}
-                      placeholder="未指定時は自動で「Connected Notes 取り込み」が参照されます"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-[11px] font-bold text-gray-300">取り込み後（処理済み）データフォルダ (URL または ID)</label>
-                    <input
-                      type="text"
-                      className="flex-1 font-mono text-[11px] p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-blue-500 transition-all"
-                      value={driveProcessedFolderInput}
-                      onChange={(e) => {
-                        setDriveProcessedFolderInput(e.target.value);
-                        saveAllSettings();
-                      }}
-                      placeholder="未指定時は対象フォルダ内に自動で「_processed」が参照されます"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
+/**
+ * HTMLから呼ばれる：音声要約テキストの生成
+ */
+function generateVoiceSummaryText(paramsJson) {
+  try {
+    const params = JSON.parse(paramsJson);
+    const articles = params.articles;
+    const maxTokens = params.maxTokens || 800;
+    const temperature = params.temperature || 0.2;
+    const checkedItems = params.checkedItems || [];
+    const englishMode = params.englishMode || false;
+    const customPrompt = params.customPrompt || "";
 
-            {/* Visual Arrow */}
-            <div className="flex justify-center -my-2 relative z-10">
-              <div className="bg-[#0d1117] border border-[#30363d] p-1.5 rounded-full text-gray-400">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
-              </div>
-            </div>
+    let prompt = getConfig('SYSTEM_PERSONA') + "\n" + getConfig('VOICE_PROMPT') + "\n\n";
 
-            {/* 2. Source (収集元) */}
-            <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 flex flex-col gap-4 relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-1 h-full bg-amber-500/50"></div>
-              <div>
-                <h4 className="text-xs font-bold text-gray-200 mb-1 flex items-center gap-1.5">
-                  <UploadCloud className="w-3.5 h-3.5 text-amber-400" />
-                  ステップ1: データ収集元 (Source) & 自動取り込み
-                </h4>
-                <p className="text-[10px] text-gray-400">Google DriveやRaindropから取得した外部データを、一旦溜めておくためのスプレッドシートです。</p>
-              </div>
+    if (englishMode) {
+      prompt += "【重要】この要約はすべて【英語 (English)】で作成してください。日本語は一切含めないでください。\n\n";
+    }
 
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[11px] font-bold text-gray-300">収集用スプレッドシート URL (または ID)</label>
-                  <input
-                    type="text"
-                    className="w-full font-mono text-[11px] p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-amber-500 transition-all"
-                    value={extractSheetUrl}
-                    onChange={(e) => {
-                      setExtractSheetUrl(e.target.value);
-                      localStorage.setItem("cn_extract_sheet_url", e.target.value.trim());
-                    }}
-                    placeholder="https://docs.google.com/spreadsheets/d/..."
-                  />
-                </div>
-                
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[11px] font-bold text-gray-300">収集用シート(タブ)名</label>
-                  <input
-                    type="text"
-                    className="w-full font-mono text-[11px] p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-amber-500 transition-all"
-                    value={externalSyncSheetName}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setExternalSyncSheetName(val);
-                      setExtractSheetName(val);
-                      saveAllSettings(gasUrl, val);
-                      localStorage.setItem("cn_extract_sheet_name", val.trim());
-                    }}
-                    placeholder="未処理データ"
-                  />
-                  <span className="text-[9px] text-gray-500">※外部データの自動保存と、アプリへの読み取りの両方で共通して使用されるタブです</span>
-                </div>
-              </div>
-                
-              <div className="bg-[#0d1117] border border-[#30363d] rounded-lg p-2.5 flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">収集対象ソース</span>
-                  <span className="text-[10px] text-purple-300">※未処理のMHTファイルのみを抽出</span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={syncRaindrop}
-                      onChange={(e) => {
-                        setSyncRaindrop(e.target.checked);
-                        localStorage.setItem("cn_sync_raindrop", String(e.target.checked));
-                      }}
-                      className="w-3.5 h-3.5 accent-purple-500 cursor-pointer"
-                    />
-                    <span className="text-xs text-gray-200">Raindrop (Web記事・ブックマーク)</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={syncDrive}
-                      onChange={(e) => {
-                        setSyncDrive(e.target.checked);
-                        localStorage.setItem("cn_sync_drive", String(e.target.checked));
-                      }}
-                      className="w-3.5 h-3.5 accent-purple-500 cursor-pointer"
-                    />
-                    <span className="text-xs text-gray-200 font-medium text-purple-200">Googleドライブ (未処理MHTファイル解析)</span>
-                  </label>
-                </div>
-                <p className="text-[10px] text-gray-400 leading-relaxed mt-0.5">
-                  💡 Googleドライブのルートに自動作成される「Connected Notes 取り込み」フォルダ内の未処理MHT・PDFファイルを検出し、スプレッドシートへ追記します（処理済みファイルは「_processed」フォルダに退避されるため二重取り込みされません）。
-                </p>
-              </div>
+    if (customPrompt.trim() !== "") {
+      prompt += `【特別指示】\n${customPrompt}\n\n`;
+      prompt += "※上記の特別指示を最優先で反映してください。\n";
+    }
 
-              {/* GAS Connection Info for Step 1 */}
-              <div className="bg-amber-950/20 border border-amber-500/30 rounded-lg px-3 py-2 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 text-[11px] text-amber-300">
-                  <Settings2 className="w-3 h-3 shrink-0" />
-                  <span>接続先GAS URL：<span className="font-medium text-gray-300">【共通】システム接続設定欄で入力済み</span></span>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleCopyAiSyncCode}
-                  className="flex items-center gap-1 px-2.5 py-1 text-[10.5px] rounded font-medium bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition cursor-pointer shrink-0"
-                  title="このボタンを動かすためのGASスクリプトコードをコピー"
-                >
-                  {isCopiedSyncSave ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
-                  <span>{isCopiedSyncSave ? "コピー完了" : "📋 GASコードをコピー"}</span>
-                </button>
-              </div>
-                
-              <button
-                type="button"
-                onClick={handleExecuteExternalSync}
-                disabled={isSyncingExternal}
-                className="w-full py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-lg transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-              >
-                {isSyncingExternal ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>{externalSyncStatus || "収集中・解析中（最大3.5分）..."}</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4 text-purple-200" />
-                    <span>⚡ スプレッドシートへ自動取り込みを実行</span>
-                  </>
-                )}
-              </button>
+    prompt += "【絶対厳守の出力ルール】\n";
+    if (englishMode) {
+      prompt += "1. No greetings or intros. Start directly with the main content.\n";
+      prompt += "2. No markdown symbols (#, *, -, =) or list symbols. Use plain text only.\n";
+      prompt += "3. Use smooth transitions and a professional news-anchor style with continuous paragraphs.\n";
+      prompt += "4. Follow the structure of the checked items below:\n";
+    } else {
+      prompt += "1. 挨拶、前置き、了承の返事（「わかりました」「〜を作成しました」「まずは〜です」等）は一切書かず、いきなり本文の1行目から話し始めてください。\n";
+      prompt += "2. 音声読み上げソフトが誤読するため、マークダウン記号（#、*、-、=）や、箇条書きの記号（・、数字リスト）は【絶対に使用不可】です。\n";
+      prompt += "3. 接続詞を滑らかに使い、ラジオニュースのような「です・ます調」の連続したパラグラフ（段落）のみで構成してください。\n";
+      prompt += "4. 以下の構成要素の順に、文章を自然に繋げて展開してください：\n";
+    }
+    checkedItems.forEach(item => prompt += `  [${item}]\n`);
 
-              {/* Execution Result */}
-              {externalSyncResult && (
-                <div className="p-3 bg-purple-950/40 border border-purple-500/40 rounded-lg text-xs text-purple-200 flex items-start gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <div className="flex-1 space-y-1">
-                    <p className="font-semibold">{externalSyncResult.message}</p>
-                    {externalSyncResult.isTimeOut && (
-                      <p className="text-[10px] text-amber-300">
-                        ※GASの実行制限（3.5分）に達したため一時停止しました。再度ボタンを押すと残りのデータを取り込みます。
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
+    prompt += "\n【対象データ】\n";
+    articles.forEach(a => prompt += `タイトル: ${a.title}\n要約: ${a.highlights}\n\n`);
 
-            {/* Visual Arrow */}
-            <div className="flex justify-center -my-2 relative z-10">
-              <div className="bg-[#0d1117] border border-[#30363d] p-1.5 rounded-full text-gray-400">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
-              </div>
-            </div>
+    const summaryText = callGeminiAPI(prompt, maxTokens, temperature);
 
-            {/* 3. Target (アプリ表示先 & 抽出登録) */}
-            <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 flex flex-col gap-4 relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-1 h-full bg-sky-500/50"></div>
-              
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-xs font-bold text-gray-200 flex items-center gap-1.5">
-                    <Database className="w-3.5 h-3.5 text-sky-400" />
-                    ステップ2: アプリ表示先 (Target) & 未処理データの抽出・登録
-                  </h4>
-                  <p className="text-[10px] text-gray-400">取り込み元シートから未処理データを抽出し、本アプリの画面（表示先シート）へ登録・反映します。</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowExtractHelp(!showExtractHelp)}
-                    className="text-[10.5px] text-gray-400 hover:text-sky-300 flex items-center gap-1 cursor-pointer"
-                  >
-                    <HelpCircle className="w-3 h-3" />
-                    <span>使い方</span>
-                  </button>
-                </div>
-              </div>
+    // Notionへの保存をコメントアウト
+    // saveGeneratedTextToNotion("音声要約", checkedItems, summaryText);
 
-              {showExtractHelp && (
-                <div className="p-3 bg-sky-950/30 border border-sky-500/30 rounded-lg text-[11px] text-sky-200 leading-relaxed space-y-1.5">
-                  <p className="font-semibold text-sky-300">💡 アプリへのデータ抽出・登録手順：</p>
-                  <p>1. <strong>取り込み元</strong>（ステップ1の収集用シート、またはハイライト保存シート）のURLとシート名を指定します。</p>
-                  <p>2. <strong>アプリ表示先</strong>（本アプリで閲覧・保存するシート）のURLとシート名（例: <code>Notes</code>）を指定します。</p>
-                  <p>3. <strong>「未処理データ一覧を取得」</strong>ボタンを押すと、まだ登録されていない行を自動抽出し、選択した行を本アプリへ一括取り込みます。</p>
-                </div>
-              )}
+    return summaryText;
 
-              <div className="flex flex-col gap-3">
-                {/* Source & Target Sheets Configuration */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-[#0d1117] p-3 rounded-lg border border-[#30363d]">
-                  <div className="flex flex-col gap-2">
-                    <span className="text-[10.5px] font-bold text-amber-400 flex items-center gap-1">
-                      <UploadCloud className="w-3 h-3" /> 【取り込み元】データ収集シート
-                    </span>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] text-gray-400">取り込み元 スプレッドシートURL / ID:</label>
-                      <input
-                        type="text"
-                        className="w-full font-mono text-[11px] p-2 bg-[#161b22] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-amber-500 transition-all"
-                        value={extractSheetUrl}
-                        onChange={(e) => {
-                          setExtractSheetUrl(e.target.value);
-                          localStorage.setItem("cn_extract_sheet_url", e.target.value.trim());
-                        }}
-                        placeholder="https://docs.google.com/spreadsheets/d/..."
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] text-gray-400">取り込み元 シート（タブ）名:</label>
-                      <input
-                        type="text"
-                        className="w-full font-mono text-[11px] p-2 bg-[#161b22] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-amber-500 transition-all"
-                        value={extractSheetName}
-                        onChange={(e) => {
-                          setExtractSheetName(e.target.value);
-                          localStorage.setItem("cn_extract_sheet_name", e.target.value.trim());
-                        }}
-                        placeholder="未処理データ"
-                      />
-                    </div>
-                  </div>
+  } catch (error) {
+    throw new Error("音声要約の生成に失敗しました: " + error.message);
+  }
+}
 
-                  <div className="flex flex-col gap-2">
-                    <span className="text-[10.5px] font-bold text-sky-400 flex items-center gap-1">
-                      <Database className="w-3 h-3" /> 【取り込み先】アプリ表示シート
-                    </span>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] text-gray-400">取り込み先 スプレッドシートURL / ID (任意):</label>
-                      <input
-                        type="text"
-                        className="w-full font-mono text-[11px] p-2 bg-[#161b22] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-sky-500 transition-all"
-                        value={targetSsUrl}
-                        onChange={(e) => {
-                          setTargetSsUrl(e.target.value);
-                          localStorage.setItem("cn_target_ss_url", e.target.value.trim());
-                        }}
-                        placeholder="未入力時はGAS紐づきシートを使用"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] text-gray-400">取り込み先 シート（タブ）名:</label>
-                      <input
-                        type="text"
-                        className="w-full font-mono text-[11px] p-2 bg-[#161b22] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-sky-500 transition-all"
-                        value={gasSheetName}
-                        onChange={(e) => {
-                          setGasSheetName(e.target.value);
-                          localStorage.setItem("cn_gas_sheet_name", e.target.value.trim());
-                        }}
-                        placeholder="Notes"
-                      />
-                    </div>
-                  </div>
-                </div>
+/**
+ * HTMLから呼ばれる：英語学習用テキストの生成
+ */
+function generateEnglishLearningText(paramsJson) {
+  try {
+    const params = JSON.parse(paramsJson);
+    const articles = params.articles;
+    const maxTokens = params.maxTokens || 1500;
+    const temperature = params.temperature || 0.3;
+    const basePrompt = getConfig('ENGLISH_PROMPT');
+    const cefrLevel = params.cefrLevel;
+    
+    // プロンプト内のレベル指定を置換
+    let prompt = basePrompt.replace("{{LEVEL}}", cefrLevel);
+    
+    prompt += "\n\n【対象データ】\n";
+    articles.forEach(a => prompt += `タイトル: ${a.title}\n内容: ${a.highlights}\n\n`);
 
-                {/* GAS Web App URL - shared with common setting */}
-                <div className="bg-sky-950/20 border border-sky-500/30 rounded-lg px-3 py-2 flex items-center gap-1.5 text-[11px] text-sky-300">
-                  <Settings2 className="w-3 h-3 shrink-0 text-emerald-400" />
-                  <span>GAS Webアプリ URL：</span>
-                  <span className="font-medium text-gray-300">【共通】システム接続設定欄で入力済み</span>
-                </div>
+    const resultText = callGeminiAPI(prompt, maxTokens, temperature);
+    
+    // Spreadsheetの履歴に保存
+    try {
+      saveVoiceSummaryToSheet("英語学習", articles, resultText);
+    } catch (e) {
+      console.error("Spreadsheet保存エラー:", e.message);
+    }
+    
+    // Notionへの保存をコメントアウト
+    // saveGeneratedTextToNotion("英語学習", [], resultText);
+    return resultText;
+  } catch (error) {
+    throw new Error("英語学習テキストの生成に失敗しました: " + error.message);
+  }
+}
 
-                {/* Fetch Unprocessed Button */}
-                <button
-                  type="button"
-                  className="w-full py-2.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-bold text-xs rounded-lg transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                  onClick={fetchSheetData}
-                  disabled={isProcessing}
-                >
-                  {isProcessing && processingText === "取得中..." ? (
-                    <RefreshCw className="w-4 h-4 text-white animate-spin" />
-                  ) : (
-                    <FileSpreadsheet className="w-4 h-4 text-white" />
-                  )}
-                  <span>{isProcessing && processingText === "取得中..." ? "未処理データを取得中..." : "未処理データ一覧を取得"}</span>
-                </button>
+/**
+ * Gemini API 汎用呼び出しヘルパー
+ */
+function callGeminiAPI(promptText, maxTokens, temp) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+  const payload = {
+    "contents": [{ "parts": [{ "text": promptText }] }],
+    "generationConfig": {
+      "maxOutputTokens": maxTokens,
+      "temperature": temp
+    }
+  };
+  const options = {
+    "method": "post",
+    "contentType": "application/json",
+    "payload": JSON.stringify(payload),
+    "muteHttpExceptions": true
+  };
 
-                {/* Pending Items Table & Import Execution */}
-                {pendingSheetItems.length > 0 && (
-                  <div className="flex flex-col gap-2.5 bg-[#0d1117] p-3 rounded-lg border border-[#30363d]">
-                    <div className="flex items-center justify-between text-xs text-gray-300">
-                      <span>取得件数: <strong className="text-sky-400">{pendingSheetItems.length}件</strong> (選択中: {selectedIndices.length}件)</span>
-                      <button
-                        type="button"
-                        className="text-[10px] text-sky-400 hover:underline cursor-pointer"
-                        onClick={() => {
-                          if (selectedIndices.length === pendingSheetItems.length) setSelectedIndices([]);
-                          else setSelectedIndices(pendingSheetItems.map((_, i) => i));
-                        }}
-                      >
-                        {selectedIndices.length === pendingSheetItems.length ? "全解除" : "全選択"}
-                      </button>
-                    </div>
+  const response = UrlFetchApp.fetch(url, options);
+  const result = JSON.parse(response.getContentText());
 
-                    <div className="max-h-48 overflow-y-auto border border-[#30363d] rounded-md divide-y divide-[#30363d]">
-                      {pendingSheetItems.map((item, idx) => (
-                        <label
-                          key={idx}
-                          className="flex items-start gap-2 p-2 hover:bg-[#161b22] cursor-pointer text-xs transition"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedIndices.includes(idx)}
-                            onChange={() => handleCheckboxChange(idx)}
-                            className="mt-0.5 accent-sky-500"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <p className="font-semibold text-gray-200 truncate">{item.title || "無題"}</p>
-                            <p className="text-[10px] text-gray-400 truncate">{item.highlights || item.url || "内容なし"}</p>
-                          </div>
-                        </label>
-                      ))}
-                    </div>
+  if (response.getResponseCode() !== 200) {
+    throw new Error(result.error ? result.error.message : "Gemini API エラー");
+  }
+  return result.candidates[0].content.parts[0].text;
+}
 
-                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#30363d]">
-                      <div className="flex items-center gap-3">
-                        <label className="flex items-center gap-1.5 text-[11px] text-gray-300 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={optimizeTitle}
-                            onChange={(e) => setOptimizeTitle(e.target.checked)}
-                            className="accent-sky-500"
-                          />
-                          <span>AIでタイトルを自動最適化</span>
-                        </label>
-                        <label className="flex items-center gap-1.5 text-[11px] text-gray-300 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={overwriteBatch}
-                            onChange={(e) => setOverwriteBatch(e.target.checked)}
-                            className="accent-sky-500"
-                          />
-                          <span>既存IDと重複時は上書き</span>
-                        </label>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={importSelectedItems}
-                        disabled={isProcessing || selectedIndices.length === 0}
-                        className="px-4 py-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-bold text-xs rounded-lg transition-all shadow flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                      >
-                        {isProcessing && (
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        )}
-                        <span>{isProcessing ? processingText : `選択した ${selectedIndices.length} 件をアプリへ取り込む`}</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
+/**
+ * HTMLから呼ばれる：ドキュメント出力用のレポート生成関数
+ */
+function generateReport(paramsJson) {
+  try {
+    const params = JSON.parse(paramsJson);
+    const targetArticles = params.articles;
 
-        {/* Footer */}
-        <div className="flex justify-end pt-3 border-t border-[#30363d]">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-lg text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium transition cursor-pointer"
-          >
-            閉じる
-          </button>
-        </div>
+    const maxTokens = params.maxTokens ? Number(params.maxTokens) : GEMINI_MAX_TOKENS;
+    const temperature = params.temperature !== undefined ? Number(params.temperature) : GEMINI_TEMPERATURE;
 
-      </div>
-    </div>
-  );
+    const checkedItems = params.checkedItems || [];
+    const customPrompt = params.customPrompt || "";
+
+    const reportText = analyzeWithGemini(targetArticles, maxTokens, temperature, checkedItems, customPrompt);
+
+    const today = Utilities.formatDate(new Date(), "JST", "MM/dd");
+    // Notionへの保存をコメントアウト
+    // saveToNotion(reportText, targetArticles.length, `都度出力_${today}`);
+    // saveGeneratedTextToNotion("ドキュメント出力", checkedItems, reportText);
+
+    return "生成完了";
+
+  } catch (error) {
+    throw new Error("レポート生成に失敗しました: " + error.message);
+  }
+}
+
+/**
+ * 生成されたテキストを新しいNotionデータベースに保存
+ */
+function saveGeneratedTextToNotion(type, checkedItems, summary) {
+  const dsNotionDbId = PropertiesService.getScriptProperties().getProperty('DS_NOTION_DB_ID');
+  const dsNotionToken = PropertiesService.getScriptProperties().getProperty('DS_NOTION_TOKEN');
+
+  if (!dsNotionToken || !dsNotionDbId) {
+    console.error("Notion Save Error: DS_NOTION_TOKEN or DS_NOTION_DB_ID is not set in Script Properties.");
+    return;
+  }
+
+  const url = "https://api.notion.com/v1/pages";
+
+  const nowStr = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm");
+  const titleStr = nowStr + " " + type;
+  const itemsStr = (checkedItems && checkedItems.length > 0) ? checkedItems.join(", ") : "指定なし";
+
+  const payload = {
+    "parent": { "database_id": dsNotionDbId },
+    "properties": {
+      "Name": { "title": [ { "text": { "content": titleStr } } ] },
+      "Type": { "rich_text": [ { "text": { "content": type } } ] },
+      "CheckedItems": { "rich_text": [ { "text": { "content": itemsStr } } ] }
+    }
+  };
+
+  const textChunks = [];
+  let str = summary;
+  while(str.length > 0) {
+    textChunks.push({ "text": { "content": str.substring(0, 2000) } });
+    str = str.substring(2000);
+  }
+  payload.properties["Summary"] = { "rich_text": textChunks };
+
+  const options = {
+    "method": "post",
+    "headers": {
+      "Authorization": "Bearer " + dsNotionToken,
+      "Notion-Version": "2022-06-28",
+      "Content-Type": "application/json"
+    },
+    "payload": JSON.stringify(payload),
+    "muteHttpExceptions": true
+  };
+
+  try {
+    const res = UrlFetchApp.fetch(url, options);
+    if (res.getResponseCode() !== 200) {
+      const errText = res.getContentText();
+      let errMsg = errText;
+      try {
+        const errObj = JSON.parse(errText);
+        errMsg = errObj.message || errText;
+      } catch(e) {}
+      throw new Error("Notionの設定エラーです: " + errMsg);
+    }
+  } catch (e) {
+    console.error("Notion Save Error: " + e.message);
+    throw e;
+  }
+}
+
+// ============================================================
+// MHTファイル処理エンジン
+// ============================================================
+
+/**
+ * MHTファイルを解析し、記事ごとの分割・要約・PDF紐付け・年表データ抽出を行う
+ *
+ * @param {GoogleAppsScript.Drive.File} file              - 処理対象のMHTファイル
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet      - 書き込み先シート
+ * @param {Set} existingIds                               - 処理済みIDの集合（重複チェック用）
+ * @param {string} persona                                - Geminiへのシステム指示
+ * @param {string} syncPrompt                             - Geminiへのユーザー指示
+ * @param {string} driveFolderId                          - PDFが格納されているフォルダID
+ * @param {GoogleAppsScript.Drive.Folder} processedFolder - 処理済み移動先フォルダ
+ * @return {{addedCount: number, isTimeOut: boolean}}
+ */
+function processMhtFile_Advanced(file, sheet, existingIds, persona, syncPrompt, driveFolderId, processedFolder) {
+  const startTime = Date.now();
+  const TIME_LIMIT = 4.0 * 60 * 1000;
+  let addedCount = 0;
+  let isTimeOut = false;
+
+  // 1. 生データの取得とQP（Quoted-Printable）ソフト改行を除去
+  let rawData = file.getBlob().getDataAsString();
+  rawData = rawData.replace(/=\r?\n/g, "");
+
+  // 2. HTMLパートのみを抽出（後半のバイナリ画像データを切り捨て）
+  let htmlContent = rawData;
+  const htmlMatch = rawData.match(/<html[\s\S]*?<\/html>/i);
+  if (htmlMatch) {
+    htmlContent = htmlMatch[0];
+  }
+
+  // 3. 記事ブロックの分割（<form タグで区切る）
+  const formBlocks = htmlContent.split(/<form /gi);
+  const articles = [];
+  for (let i = 1; i < formBlocks.length; i++) {
+    const block = "<form " + formBlocks[i];
+    if (block.includes('hdgLv2')) {
+      articles.push(block);
+    }
+  }
+
+  const folder = DriveApp.getFolderById(driveFolderId);
+
+  // 4. 記事ごとのループ処理
+  for (let i = 0; i < articles.length; i++) {
+    if (Date.now() - startTime > TIME_LIMIT) {
+      isTimeOut = true;
+      break;
+    }
+
+    const articleHtml = articles[i];
+
+    // ① タイトルとメタ情報（J列用）を先に取得（疑似ID生成に必要なため順序を変更）
+    const rawTitleTag = articleHtml.match(/<div[^>]*class="[^"]*hdgLv2 val02[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+    let fullTitleText = rawTitleTag ? rawTitleTag[1].replace(/<[^>]+>/g, ' ').trim() : "タイトル不明";
+    fullTitleText = cleanMhtNoise(fullTitleText);
+
+    let titleOnly = fullTitleText;
+    let metaInfo = "";
+
+    const splitMatch = fullTitleText.match(/(\d{4}[\/\d].*)$/);
+    if (splitMatch) {
+      titleOnly = fullTitleText.substring(0, splitMatch.index).trim();
+      let rawMeta = splitMatch[0].trim();
+      metaInfo = rawMeta
+        .replace(/PDF有/g, "")
+        .replace(/書誌情報印刷/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    // ② ID特定と2重取得防止（ガードA・B）
+    const idMatch = articleHtml.match(/keyShoshi(?:=|3D)NIRKDB\s*([a-zA-Z0-9]+)/i);
+    const hasHonbun = articleHtml.includes('text Honbun');
+    let articleId = "";
+
+    if (idMatch) {
+      // 正規IDがある場合はそれを使用（大文字統一）
+      articleId = idMatch[1].trim().toUpperCase();
+    } else {
+      // ガードA: 正規IDがなく、本文エリア（text Honbun）もないブロックは
+      // 一覧のスニペットと判断してスキップ（2重取得の主因を排除）
+      if (!hasHonbun) {
+        console.log(`スニペットスキップ（本文なし・ID不明）: ${titleOnly.substring(0, 30)}`);
+        continue;
+      }
+      // ガードB: 本文はあるが正規IDがない記事（速報等）の疑似ID生成
+      // 時刻の有無によるID不一致を防ぐため「日付」部分のみ抽出して正規化
+      const dateOnlyMatch = metaInfo.match(/\d{4}[\/\-]\d{2}[\/\-]\d{2}/);
+      const stableMeta = dateOnlyMatch ? dateOnlyMatch[0] : metaInfo.substring(0, 10);
+      const rawIdStr = titleOnly + stableMeta;
+      const safeId = Utilities.base64EncodeWebSafe(Utilities.newBlob(rawIdStr).getBytes());
+      articleId = "NKN_" + safeId.replace(/[^a-zA-Z0-9]/g, "").substring(0, 15);
+      console.log(`疑似ID生成: ${articleId} (${titleOnly.substring(0, 20)})`);
+    }
+
+    // ③ 重複チェック（同一ファイル内の重複も防ぐ）
+    if (existingIds.has(articleId)) {
+      console.log(`重複スキップ: ${articleId}`);
+      continue;
+    }
+    existingIds.add(articleId);
+
+    // ④ 対応するPDFファイルの検索と紐付け
+    let pdfUrl = "";
+    const pdfName = articleId + ".pdf";
+    const pdfFiles = folder.getFilesByName(pdfName);
+    if (pdfFiles.hasNext()) {
+      const pdfFile = pdfFiles.next();
+      pdfUrl = pdfFile.getUrl();
+      pdfFile.moveTo(processedFolder);
+      console.log(`PDF紐付け成功: ${pdfName}`);
+    }
+
+    // ⑤ 本文抽出（I列用）
+    let rawContent = "";
+    const textMatch = articleHtml.match(/<div[^>]*class="[^"]*text Honbun[^"]*"[^>]*>([\s\S]*?)(?:<\/form>|<\/section>|$)/i);
+    if (textMatch) {
+      rawContent = textMatch[1].replace(/<[^>]+>/g, '\n').trim();
+    } else {
+      rawContent = articleHtml.replace(/<[^>]+>/g, '\n').trim();
+    }
+    rawContent = cleanMhtNoise(rawContent);
+    rawContent = rawContent.replace(/\s+PDF\s*$/i, '').replace(/\n\s*\n/g, '\n\n').trim();
+
+    // スプレッドシートの5万文字制限対策
+    const safeContent = rawContent.length > 49000
+      ? rawContent.substring(0, 49000) + "\n...（文字数上限により省略）"
+      : rawContent;
+
+    // ⑥ Gemini APIによる要約および年表データ抽出
+    const geminiInputContent = rawContent.substring(0, 10000);
+    const geminiResultJson = callGeminiForSingleArticle(geminiInputContent, persona, syncPrompt);
+
+    // MHTのメタ情報から日付部分を抽出
+    const dateOnlyMatch = metaInfo.match(/\d{4}[\/\-]\d{2}[\/\-]\d{2}/);
+    const pubDateStr = dateOnlyMatch ? dateOnlyMatch[0] : Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
+
+    // ⑦ スプレッドシートへの書き込み（12列に拡張）
+    sheet.appendRow([
+      articleId,                   // A: id
+      titleOnly,                   // B: title
+      pdfUrl,                      // C: url（紐付いたPDFのURL）
+      geminiResultJson.tags || geminiResultJson.keyword || "未分類", // D: tags
+      geminiResultJson.highlights || geminiResultJson.summary || "", // E: highlights（要約）
+      new Date(),                  // F: saved_at
+      false,                       // G: processed
+      "",                          // H: 予備
+      safeContent,                 // I: 本文原文
+      metaInfo,                    // J: 日付・紙面・文字数
+      pubDateStr,                  // K: 発行日または取り込み日
+      geminiResultJson.timeline || "" // L: 年表用データ（[日付] 出来事）★追加箇所
+    ]);
+    SpreadsheetApp.flush();
+
+    addedCount++;
+    Utilities.sleep(1000); // APIレートリミット対策
+  }
+
+  return { addedCount: addedCount, isTimeOut: isTimeOut };
+}
+
+/**
+ * MHT特有のノイズ（Quoted-Printableの残骸・HTMLエンティティ等）を除去
+ * ★修正: QP =XX 形式のASCII文字デコードを追加
+ */
+function cleanMhtNoise(str) {
+  if (!str) return "";
+  return str
+    .replace(/=\r?\n/g, "")       // QPソフト改行の残骸を除去
+    .replace(/=([0-9A-Fa-f]{2})/g, (match, hex) => { // QP =XX 形式のデコード
+      const code = parseInt(hex, 16);
+      if (code === 0x3D) return '=';                   // = 自身 (=3D)
+      if (code < 0x20 || code === 0x7F) return ' ';   // 制御文字はスペースに置換
+      if (code < 0x80) return String.fromCharCode(code); // 通常ASCIIをデコード
+      return match;                                    // マルチバイト(0x80以上)はそのまま
+    })
+    .replace(/&nbsp;/gi, " ")     // ノーブレークスペース
+    .replace(/&amp;/gi, "&")      // アンパサンド
+    .replace(/&lt;/gi, "<")       // 不等号（左）
+    .replace(/&gt;/gi, ">")       // 不等号（右）
+    .replace(/\s+/g, " ")         // 連続空白の正規化
+    .trim();
+}
+
+/**
+ * JSONパース前に文字列値内のリテラル制御文字をエスケープするヘルパー
+ * 「Bad control character in string literal」エラーへの対策
+ */
+function robustJsonParse(text) {
+  // まず通常のパースを試みる
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    // 失敗した場合、JSON文字列値内のリテラル制御文字をエスケープして再試行
+    try {
+      let result = '';
+      let inString = false;
+      let escape = false;
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (escape) {
+          result += ch;
+          escape = false;
+          continue;
+        }
+        if (ch === '\\') {
+          escape = true;
+          result += ch;
+          continue;
+        }
+        if (ch === '"') {
+          inString = !inString;
+          result += ch;
+          continue;
+        }
+        if (inString) {
+          if (ch === '\n') { result += '\\n'; continue; }  // リテラル改行をエスケープ
+          if (ch === '\r') { result += '\\r'; continue; }  // リテラルCRをエスケープ
+          if (ch === '\t') { result += '\\t'; continue; }  // リテラルタブをエスケープ
+          if (ch.charCodeAt(0) < 0x20) { continue; }        // その他制御文字は除去
+        }
+        result += ch;
+      }
+      return JSON.parse(result);
+    } catch (e2) {
+      throw new Error(e.message); // 元のエラーメッセージを保持して再スロー
+    }
+  }
+}
+
+/**
+ * 1記事分のGemini要約・年表抽出を実行し、JSONで返す
+ */
+function callGeminiForSingleArticle(textContent, persona, userPrompt) {
+  // 本文が実質空の場合はGemini呼び出しをスキップ（スニペット等の空記事対策）
+  if (!textContent || textContent.trim().length < 30) {
+    return { tags: "手動要", highlights: "本文が取得できませんでした。", timeline: "" };
+  }
+
+  const apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  const modelName = typeof GEMINI_MODEL !== 'undefined' ? GEMINI_MODEL : 'gemini-1.5-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
+  // ★修正: userPrompt を JSON スキーマの外に出し、プロンプト構造の崩壊を防止
+  // （旧コードでは "highlights": "${userPrompt}" と埋め込んでいたため、
+  //   userPrompt 内の改行がJSONを壊し、Geminiの出力JSONも改行入りになってパース失敗していた）
+  const fullPrompt = `${persona}
+以下の記事本文を分析し、必ず下記のJSON形式のみで出力してください。マークダウンや余分なテキストは一切含めないでください。
+また、JSON文字列値の中では、リテラルな改行文字を使わず、必ず \\n という2文字で改行を表現してください。
+
+【highlights フィールドへの要約指示】
+${userPrompt}
+
+【出力JSON形式（厳守）】
+{
+  "tags": "分野を示す1単語のキーワード",
+  "highlights": "上記の要約指示に従ったテキスト",
+  "timeline": "記事中の最も主要な出来事とその日付。形式：[日付] 出来事（50文字程度）。日付はYYYY/MM/DD・YYYY/MM・YYYYのいずれかに正規化。該当なければ空文字列。"
+}
+
+【記事本文】
+${textContent}`;
+
+  const payload = {
+    contents: [{ parts: [{ text: fullPrompt }] }],
+    generationConfig: {
+      temperature: 0.1,
+      responseMimeType: "application/json",
+      maxOutputTokens: 3000  // ★修正: highlights + timeline を確実に収めるため増量
+    }
+  };
+
+  const options = {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+
+  try {
+    const response = UrlFetchApp.fetch(url, options);
+
+    // レスポンスコードを確認
+    if (response.getResponseCode() !== 200) {
+      Logger.log("Gemini APIエラー: " + response.getResponseCode() + " / " + response.getContentText().substring(0, 200));
+      return { 
+        tags: "🚨手動要", 
+        highlights: "Gemini APIエラー (Status: " + response.getResponseCode() + ")", 
+        timeline: "" 
+      };
+    }
+
+    const json = JSON.parse(response.getContentText());
+    if (json.candidates && json.candidates.length > 0) {
+      // マークダウン記法のJSONフェンスを除去
+      let responseText = json.candidates[0].content.parts[0].text;
+      responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+      
+      // ★修正: 制御文字を含む場合に備えた robustJsonParse を使用
+      const parsed = robustJsonParse(responseText);
+      
+      return {
+        tags: parsed.tags || parsed.keyword || "未分類",
+        highlights: parsed.highlights || parsed.summary || "",
+        timeline: parsed.timeline || ""
+      };
+    }
+    Logger.log("Gemini: candidatesが空のレスポンス");
+    return { tags: "手動要", highlights: "Geminiのレスポンスが空でした。", timeline: "" };
+
+  } catch (e) {
+    Logger.log("Single Article API Error: " + e.message);
+    return { tags: "🚨手動要", highlights: "要約処理に失敗しました: " + e.message, timeline: "" };
+  }
+}
+
+/**
+ * HTMLから不要なタグ（script, style等）を除去し、テキストのみを抽出する（トークン節約用）
+ */
+function cleanHtml(html) {
+  if (!html) return "";
+  return html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+             .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+             .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
+             .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
+             .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
+             .replace(/<aside[^>]*>[\s\S]*?<\/aside>/gi, '')
+             .replace(/<[^>]+>/g, ' ')
+             .replace(/&nbsp;/gi, ' ')
+             .replace(/&amp;/gi, '&')
+             .replace(/&lt;/gi, '<')
+             .replace(/&gt;/gi, '>')
+             .replace(/\s+/g, ' ')
+             .trim();
 }
