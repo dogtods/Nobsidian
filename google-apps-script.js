@@ -99,7 +99,7 @@ const DEFAULT_CONFIG = {
 ### 【記事タイトルまたはテーマ】
 
 【カテゴリ・タグ】
-※この記事の分野や分類を表すタグ・カテゴリ情報をカンマ区切りで記載してください（例：環境技術, 政策・規制）。
+※この記事の分野や分類を表すカテゴリ名を一言で簡潔に記載してください（例：太陽光発電、半導体、EV充電、金融政策 など短く1〜2語）。
 
 【要約】
 ※記事の内容をわかりやすく要約して200文字程度にしてください。
@@ -118,7 +118,7 @@ const DEFAULT_CONFIG = {
 - [[用語]]: 意味や定義
 
 【年表】
-※本文中の日付や年号、出来事の記述があれば「[YYYY年M月] 出来事」の形式で箇条書き（改行区切り）で抽出してください。該当なしなら記載不要です。`
+※記事中の時系列情報や年表データを必ず「[西暦/月/日] 当日の出来事」の形式（例：[2029/03/31] キオクシアの営業利益が約12倍に達するとの市場予想。）で箇条書き（改行区切り）で抽出してください。該当なしなら記載不要です。`
 };
 
 function getConfig(key) {
@@ -228,25 +228,35 @@ function callGeminiFreeFile(file, apiKey, model, persona, syncPrompt) {
 function buildSheetFieldsFromFreeText(rawText, fallbackContent) {
   const text = (rawText && rawText.trim()) ? rawText : (fallbackContent || "");
 
-  // 【カテゴリ・タグ】セクションからタグ・カテゴリを取得する
+  // 【カテゴリ・タグ】セクションからカテゴリを簡潔に取得する
   const categoryMatch = text.match(/【\s*カテゴリ[・\/]タグ\s*】\s*\n?([^\n【]+)/);
   let tags = categoryMatch ? categoryMatch[1].trim() : "";
-  if (!tags) {
-    // フォールバック: [[用語]] から取得
-    const keywordMatches = [...text.matchAll(/\[\[([^\]]+)\]\]:\s*([^\n]+)/g)];
-    tags = keywordMatches.length > 0
-      ? keywordMatches.map(m => m[1].trim()).join(", ")
-      : "未分類";
+  if (!tags || tags.length > 30) {
+    tags = "一般";
+  } else {
+    tags = tags.split(/[,、\n]/)[0].trim();
   }
 
-  // 【年表】セクションを確実に抽出する
+  // 【年表】セクションを抽出する
   const timelineSectionMatch = text.match(/【\s*年表\s*】\s*\n?([\s\S]*?)(?:\n【|$)/);
   let timeline = timelineSectionMatch ? timelineSectionMatch[1].trim() : "";
   if (!timeline) {
     const lines = text.split(/\n/);
     const dateLines = lines.filter(l => /(?:\d{4}年|\d{4}年度|\d{4}\/\d{1,2}|\d{4}年\d{1,2}月)/.test(l));
     if (dateLines.length > 0) {
-      timeline = dateLines.slice(0, 5).map(l => l.replace(/^[#\-\*•]\s*/, '')).join("\n");
+      timeline = dateLines.slice(0, 5).map(l => {
+        let clean = l.replace(/^[#\-\*•]\s*/, '').trim();
+        if (!/^\[\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}\]/.test(clean)) {
+          // Normalize date formats like 2026年3月 -> [2026/03/01] or similar
+          clean = clean.replace(/(\d{4})年(\d{1,2})月(\d{1,2})日/, "[$1/$2/$3]")
+                       .replace(/(\d{4})年(\d{1,2})月/, "[$1/$2/01]")
+                       .replace(/(\d{4})年/, "[$1/01/01]");
+          if (!/^\[\d{4}/.test(clean)) {
+            clean = "[YYYY/MM/DD] " + clean;
+          }
+        }
+        return clean;
+      }).join("\n");
     }
   }
 
@@ -1130,7 +1140,7 @@ function processMhtFile_Advanced(
     }
 
     const dateOnlyMatch = metaInfo.match(/\d{4}[\/\-]\d{2}[\/\-]\d{2}/);
-    const pubDateStr = dateOnlyMatch ? dateOnlyMatch[0] : Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
+    const pubDateStr = dateOnlyMatch ? dateOnlyMatch[0] : Utilities.formatDate(file.getDateCreated(), "JST", "yyyy/MM/dd");
 
     sheet.appendRow([
       articleId,
