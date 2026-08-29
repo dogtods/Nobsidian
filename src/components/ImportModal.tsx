@@ -34,7 +34,8 @@ import {
   Layers,
   UploadCloud,
   Settings2,
-  ExternalLink
+  ExternalLink,
+  Link
 } from "lucide-react";
 
 interface ImportModalProps {
@@ -74,7 +75,7 @@ export default function ImportModal({
   syncLabel,
   notesCount = 0
 }: ImportModalProps) {
-  const [activeTab, setActiveTab] = useState<"step_1" | "step_2" | "prompts" | "folders">("step_1");
+  const [activeTab, setActiveTab] = useState<"hub_config" | "step_2" | "prompts">("hub_config");
   const [driveSourceFolderInput, setDriveSourceFolderInput] = useState("");
   const [driveProcessedFolderInput, setDriveProcessedFolderInput] = useState("");
 
@@ -306,16 +307,24 @@ export default function ImportModal({
       }
 
       const added = res?.addedCount || 0;
+      const processed = res?.processedCount || 0;
+      let msg = "";
+      if (added > 0) {
+        msg = `${added} 件の新規データをスプレッドシート（シート: ${targetExtSheet}）へ追加しました（処理ファイル数: ${processed}件） ✦`;
+      } else if (processed > 0) {
+        msg = `Googleドライブから ${processed} 件のファイルを検出し処理（処理済みフォルダへ移動）しました（新規追加は0件、または既に登録済みです）。`;
+      } else {
+        msg = `Googleドライブ（指定フォルダ）に対象の未処理データはありませんでした。`;
+      }
+
       setExternalSyncResult({
         addedCount: added,
         isTimeOut: res?.isTimeOut,
         problematicItem: res?.problematicItem,
-        message: added > 0 
-          ? `${added} 件の新規MHTデータをスプレッドシート（シート: ${targetExtSheet}）へ追加しました ✦`
-          : `Googleドライブ（フォルダ名: Connected Notes 取り込み）に対象の未処理データはありませんでした。`
+        message: msg
       });
 
-      onSaveToast(added > 0 ? `外部データの自動取り込み完了: ${added} 件追加 (シート: ${targetExtSheet})` : `「Connected Notes 取り込み」フォルダに未処理ファイルはありませんでした`);
+      onSaveToast(added > 0 ? `外部データの自動取り込み完了: ${added} 件追加 (シート: ${targetExtSheet})` : (processed > 0 ? `ファイル ${processed}件を処理・移動しました` : `指定フォルダに未処理ファイルはありませんでした`));
 
     } catch (e: any) {
       setExternalSyncResult({
@@ -614,15 +623,15 @@ export default function ImportModal({
         <div className="flex border-b border-[#30363d] gap-2">
           <button
             type="button"
-            onClick={() => setActiveTab("step_1")}
+            onClick={() => setActiveTab("hub_config")}
             className={`pb-2.5 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border-b-2 ${
-              activeTab === "step_1"
-                ? "border-purple-500 text-purple-300 shadow-sm"
+              activeTab === "hub_config"
+                ? "border-sky-500 text-sky-300"
                 : "border-transparent text-gray-400 hover:text-gray-200"
             }`}
           >
-            <Globe className="w-3.5 h-3.5" />
-            <span>⚙ 1. 外部データ取り込み</span>
+            <Link className="w-3.5 h-3.5" />
+            <span>🔗 1. リンク・シート一元管理 & 外部収集</span>
           </button>
 
           <button
@@ -635,7 +644,7 @@ export default function ImportModal({
             }`}
           >
             <FileSpreadsheet className="w-3.5 h-3.5" />
-            <span>⚙ 2. アプリへ登録</span>
+            <span>⚙ 2. アプリへ登録 (未処理抽出/ファイル)</span>
           </button>
 
           <button
@@ -650,280 +659,9 @@ export default function ImportModal({
             <Sliders className="w-3.5 h-3.5" />
             <span>⚙ 3. AIプロンプト設定</span>
           </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("folders")}
-            className={`pb-2.5 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border-b-2 ${
-              activeTab === "folders"
-                ? "border-blue-500 text-blue-300"
-                : "border-transparent text-gray-400 hover:text-gray-200"
-            }`}
-          >
-            <Database className="w-3.5 h-3.5" />
-            <span>⚙ 4. フォルダ設定</span>
-          </button>
         </div>
 
-        {/* TAB 1: External Sync */}
-        {activeTab === "step_1" && (
-          <div className="flex flex-col gap-4">
-
-            {/* ========================================================================= */}
-            {/* STEP 1: External Source Data Collection Config */}
-            {/* ========================================================================= */}
-            <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 flex flex-col gap-3 relative overflow-hidden">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-full bg-purple-600 text-white font-bold text-[11px] flex items-center justify-center shrink-0">
-                    1
-                  </span>
-                  <span className="text-xs font-bold text-gray-100">
-                    Googleドライブからの外部データ（MHT等）の自動収集
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={handleCopyAiSyncCode}
-                    className="flex items-center gap-1 px-2 py-0.5 text-[10px] rounded font-medium bg-sky-500/20 text-sky-300 border border-sky-500/40 hover:bg-sky-500/30 transition cursor-pointer"
-                    title="GASエディタに貼り付ける最新スクリプトコードをコピー"
-                  >
-                    {isCopiedSyncSave ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
-                    <span>{isCopiedSyncSave ? "コピー完了" : "📋 GASコピー"}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowGasUrlHelp(!showGasUrlHelp)}
-                    className="text-[10px] text-gray-400 hover:text-purple-300 flex items-center gap-0.5 cursor-pointer ml-1"
-                  >
-                    <HelpCircle className="w-3 h-3" />
-                    <span>ヘルプ</span>
-                  </button>
-                </div>
-              </div>
-
-              {showGasUrlHelp && (
-                <div className="p-3 bg-purple-950/30 border border-purple-500/30 rounded-lg text-[11px] text-purple-200 leading-relaxed space-y-1.5">
-                  <p className="font-bold text-purple-300">💡 外部データ自動取り込みの流れ:</p>
-                  <p>1. スプレッドシートの「拡張機能」＞「Apps Script」に上記「📋 最新GASコード」を貼り付けて保存します。</p>
-                  <p>2. 「デプロイ」＞「新しいデプロイ」で「アクセスできるユーザー：<strong>全員 (Anyone)</strong>」にして発行されたWebアプリURLを下記に入力します。</p>
-                  <p>3. 指定した「取り込み先シート」へ、RaindropやドライブMHTの解析データ（A〜M列）が自動追記されます。</p>
-                </div>
-              )}
-
-              {/* 1-1. GAS Web App URL */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-bold text-gray-300 flex items-center justify-between">
-                  <span>① GAS WebアプリURL</span>
-                  <span className="text-[10px] text-gray-500 font-normal">末尾: /exec</span>
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    className="flex-1 font-mono text-xs p-2.5 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-purple-500 transition-all"
-                    placeholder="https://script.google.com/macros/s/.../exec"
-                    value={gasUrl}
-                    onChange={(e) => {
-                      setGasUrl(e.target.value);
-                      setTestStatus("idle");
-                      saveAllSettings(e.target.value);
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={handleTestConnection}
-                    disabled={testStatus === "testing"}
-                    className="px-3 py-2 text-xs font-semibold rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/40 hover:bg-purple-500/30 disabled:opacity-50 transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
-                  >
-                    {testStatus === "testing" ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        確認中...
-                      </>
-                    ) : (
-                      <>
-                        <Activity className="w-3.5 h-3.5" />
-                        接続テスト
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {/* Test Status Alert */}
-              {testStatus !== "idle" && (
-                <div className={`p-3 rounded-lg text-xs flex flex-col gap-2 border leading-relaxed ${
-                  testStatus === "success" 
-                    ? "bg-emerald-950/40 border-emerald-500/40 text-emerald-300"
-                    : testStatus === "error"
-                    ? "bg-red-950/40 border-red-500/40 text-red-300"
-                    : "bg-blue-950/40 border-blue-500/40 text-blue-300"
-                }`}>
-                  <div className="flex items-start gap-2">
-                    {testStatus === "success" && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />}
-                    {testStatus === "error" && <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />}
-                    {testStatus === "testing" && <Loader2 className="w-4 h-4 animate-spin text-blue-400 shrink-0 mt-0.5" />}
-                    <div className="flex-1">
-                      <p className="font-semibold text-sm">{testMessage}</p>
-                    </div>
-                  </div>
-
-                  {testStatus === "error" && (
-                    <div className="mt-1 pt-2 border-t border-red-500/30 text-[11px] text-red-200/90 space-y-2">
-                      <div className="p-2 bg-black/40 rounded border border-red-500/20 space-y-1">
-                        <p className="font-bold text-amber-300">🔍 なぜブラウザで見えるのに接続テストが失敗するのか？</p>
-                        <p className="text-gray-300 text-[10.5px]">
-                          ブラウザの通常タブはGoogleにログイン済みのため表示されますが、アプリは未ログイン状態でアクセスするため、GASの公開権限が「全員」でないとGoogleがブロックします。
-                        </p>
-                      </div>
-
-                      <div className="space-y-1.5 text-[11px]">
-                        <p className="font-bold text-white">🛠️ 解決のための3点チェックリスト：</p>
-                        <div className="bg-[#161b22] p-2.5 rounded border border-[#30363d] space-y-1.5 text-gray-200">
-                          <div className="flex items-start gap-1.5">
-                            <span className="text-purple-400 font-bold">1.</span>
-                            <span>
-                              <strong>「新しいデプロイ」を作成</strong>（※「デプロイを管理」の更新では反映されないGASの不具合があります）
-                            </span>
-                          </div>
-                          <div className="flex items-start gap-1.5">
-                            <span className="text-purple-400 font-bold">2.</span>
-                            <span>
-                              次のユーザーとして実行: <strong className="text-emerald-300">「自分 (Me)」</strong>
-                            </span>
-                          </div>
-                          <div className="flex items-start gap-1.5">
-                            <span className="text-purple-400 font-bold">3.</span>
-                            <span>
-                              アクセスできるユーザー: <strong className="text-emerald-300">「全員 (Anyone)」</strong><br/>
-                              <span className="text-[10px] text-gray-400">※「自分のみ」や「組織内のユーザー」は外部アクセス不可</span>
-                            </span>
-                          </div>
-                          <div className="flex items-start gap-1.5">
-                            <span className="text-purple-400 font-bold">4.</span>
-                            <span>
-                              新しく発行されたURL（末尾 <code>/exec</code>）を再コピーして貼り付け
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 pt-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (gasUrl.trim()) {
-                              navigator.clipboard.writeText(gasUrl.trim());
-                              onSaveToast("URLをコピーしました！シークレットウィンドウで開いてみてください");
-                            }
-                          }}
-                          className="px-2.5 py-1 text-[10.5px] bg-red-900/40 hover:bg-red-900/60 border border-red-400/40 rounded text-red-200 transition flex items-center gap-1 cursor-pointer"
-                        >
-                          📋 URLをコピーして「シークレットウィンドウ」でテストする
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* 1-2. Target Sheet Name */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-bold text-gray-300 flex items-center justify-between">
-                  <span>② 📥 データ収集先シート名（取り込み先シート）</span>
-                  <span className="text-[10px] text-gray-500 font-mono">書き込み先タブ</span>
-                </label>
-                <input
-                  type="text"
-                  className="w-full font-mono text-xs p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-purple-500 transition-all"
-                  placeholder="Notes (例: 未処理データ, Notes, Raindrop_MHT)"
-                  value={externalSyncSheetName}
-                  onChange={(e) => {
-                    setExternalSyncSheetName(e.target.value);
-                    saveAllSettings(gasUrl, e.target.value);
-                  }}
-                />
-                <p className="text-[10px] text-gray-400 leading-normal">
-                  MHTやRaindropから収集・AI要約したデータ（A〜M列）を書き込むシート名です。（※直接アプリで表示したい場合は <code>Notes</code>、一旦未処理プールに貯めたい場合は <code>未処理データ</code> 等を指定）
-                </p>
-              </div>
-
-              {/* 1-3. Source checkboxes */}
-              <div className="bg-[#0d1117] border border-[#30363d] rounded-lg p-2.5 flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">収集対象ソース</span>
-                  <span className="text-[10px] text-purple-300">※未処理のMHTファイルのみを抽出</span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={syncRaindrop}
-                      onChange={(e) => {
-                        setSyncRaindrop(e.target.checked);
-                        localStorage.setItem("cn_sync_raindrop", String(e.target.checked));
-                      }}
-                      className="w-3.5 h-3.5 accent-purple-500 cursor-pointer"
-                    />
-                    <span className="text-xs text-gray-200">Raindrop (Web記事・ブックマーク)</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={syncDrive}
-                      onChange={(e) => {
-                        setSyncDrive(e.target.checked);
-                        localStorage.setItem("cn_sync_drive", String(e.target.checked));
-                      }}
-                      className="w-3.5 h-3.5 accent-purple-500 cursor-pointer"
-                    />
-                    <span className="text-xs text-gray-200 font-medium text-purple-200">Googleドライブ (未処理MHTファイル解析)</span>
-                  </label>
-                </div>
-                <p className="text-[10px] text-gray-400 leading-relaxed mt-0.5">
-                  💡 Googleドライブのルートに自動作成される「Connected Notes 取り込み」フォルダ内の未処理MHT・PDFファイルを検出し、スプレッドシートへ追記します（処理済みファイルは「_processed」フォルダに退避されるため二重取り込みされません）。
-                </p>
-              </div>
-
-              {/* 1-4. Execution Button */}
-              <button
-                type="button"
-                onClick={handleExecuteExternalSync}
-                disabled={isSyncingExternal}
-                className="w-full py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-lg transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-              >
-                {isSyncingExternal ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>{externalSyncStatus || "収集中・解析中（最大3.5分）..."}</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4 text-purple-200" />
-                    <span>⚡ スプレッドシートへ自動取り込みを実行</span>
-                  </>
-                )}
-              </button>
-
-              {/* Execution Result */}
-              {externalSyncResult && (
-                <div className="p-3 bg-purple-950/40 border border-purple-500/40 rounded-lg text-xs text-purple-200 flex items-start gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <div className="flex-1 space-y-1">
-                    <p className="font-semibold">{externalSyncResult.message}</p>
-                    {externalSyncResult.isTimeOut && (
-                      <p className="text-[10px] text-amber-300">
-                        ※GASの実行制限（3.5分）に達したため一時停止しました。再度ボタンを押すと残りのデータを取り込みます。
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 2: Direct Sheet Extraction / File Import */}
+                {/* TAB 2: Direct Sheet Extraction / File Import */}
         {activeTab === "step_2" && (
           <div className="flex flex-col gap-4">
             
@@ -969,7 +707,7 @@ export default function ImportModal({
                     <span className="text-[10px] text-gray-400 mb-0.5 block">取り込み元 スプレッドシートURL / ID:</span>
                     <input
                       type="text"
-                      className="w-full text-xs p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
+                      className="flex-1 text-xs p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
                       placeholder="https://docs.google.com/spreadsheets/d/.../edit"
                       defaultValue={extractSheetUrl}
                       onBlur={(e) => setExtractSheetUrl(e.target.value)}
@@ -979,7 +717,7 @@ export default function ImportModal({
                     <span className="text-[10px] text-gray-400 mb-0.5 block">取り込み元 シート名（タブ名）:</span>
                     <input
                       type="text"
-                      className="w-full text-xs p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
+                      className="flex-1 text-xs p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
                       placeholder="未処理データ (例: シート1, 未処理データ)"
                       defaultValue={extractSheetName}
                       onBlur={(e) => setExtractSheetName(e.target.value)}
@@ -994,7 +732,7 @@ export default function ImportModal({
                     </span>
                     <input
                       type="text"
-                      className="w-full text-xs p-2 bg-[#0d1117] border border-emerald-500/50 rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
+                      className="flex-1 text-xs p-2 bg-[#0d1117] border border-emerald-500/50 rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
                       placeholder="https://script.google.com/macros/s/.../exec"
                       defaultValue={gasUrl}
                       onBlur={(e) => {
@@ -1013,7 +751,7 @@ export default function ImportModal({
                     </span>
                     <input
                       type="text"
-                      className="w-full text-xs p-2 bg-[#0d1117] border border-emerald-500/50 rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
+                      className="flex-1 text-xs p-2 bg-[#0d1117] border border-emerald-500/50 rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
                       placeholder="未入力の場合は GAS初期設定のシートIDを使用"
                       defaultValue={targetSsUrl}
                       onBlur={(e) => {
@@ -1030,7 +768,7 @@ export default function ImportModal({
                   </span>
                   <input
                     type="text"
-                    className="w-full text-xs p-2 bg-[#0d1117] border border-emerald-500/50 rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
+                    className="flex-1 text-xs p-2 bg-[#0d1117] border border-emerald-500/50 rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
                     placeholder="Notes"
                     defaultValue={gasSheetName}
                     onBlur={(e) => {
@@ -1046,7 +784,7 @@ export default function ImportModal({
 
               <button
                 type="button"
-                className="w-full py-2.5 bg-[#21262d] hover:bg-[#30363d] text-xs border border-[#30363d] rounded-lg text-gray-100 font-semibold cursor-pointer transition flex items-center justify-center gap-2 disabled:opacity-50"
+                className="flex-1 py-2.5 bg-[#21262d] hover:bg-[#30363d] text-xs border border-[#30363d] rounded-lg text-gray-100 font-semibold cursor-pointer transition flex items-center justify-center gap-2 disabled:opacity-50"
                 onClick={fetchSheetData}
                 disabled={isProcessing}
               >
@@ -1150,7 +888,7 @@ export default function ImportModal({
                   placeholder="または Web記事のURL (https://...)"
                   value={importUrl}
                   onChange={(e) => setImportUrl(e.target.value)}
-                  className="w-full text-xs p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-blue-500"
+                  className="flex-1 text-xs p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-blue-500"
                 />
 
                 <div className="flex items-center gap-3 text-xs text-gray-300">
@@ -1193,7 +931,7 @@ export default function ImportModal({
                   type="button"
                   onClick={handleExecuteDirectImport}
                   disabled={isProcessing || (!selectedFile && !importUrl.trim())}
-                  className="w-full py-2 bg-[#21262d] hover:bg-[#30363d] text-xs border border-[#30363d] rounded-lg text-gray-100 font-semibold cursor-pointer transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  className="flex-1 py-2 bg-[#21262d] hover:bg-[#30363d] text-xs border border-[#30363d] rounded-lg text-gray-100 font-semibold cursor-pointer transition flex items-center justify-center gap-1.5 disabled:opacity-50"
                 >
                   <UploadCloud className="w-3.5 h-3.5 text-blue-400" />
                   <span>{isProcessing ? processingText : "ファイル / URLを取り込む"}</span>
@@ -1275,7 +1013,7 @@ export default function ImportModal({
                   <span className="text-[10px] text-gray-400">Gemini AIの分析ペルソナ・基本方針:</span>
                   <textarea
                     rows={8}
-                    className="w-full text-xs font-mono p-2.5 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-200 outline-none focus:border-purple-500"
+                    className="flex-1 text-xs font-mono p-2.5 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-200 outline-none focus:border-purple-500"
                     value={syncPersonaInput}
                     onChange={(e) => setSyncPersonaInput(e.target.value)}
                   />
@@ -1287,7 +1025,7 @@ export default function ImportModal({
                   <span className="text-[10px] text-gray-400">Raindrop / MHT データ解析・要約プロンプト:</span>
                   <textarea
                     rows={8}
-                    className="w-full text-xs font-mono p-2.5 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-200 outline-none focus:border-purple-500"
+                    className="flex-1 text-xs font-mono p-2.5 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-200 outline-none focus:border-purple-500"
                     value={syncPromptInput}
                     onChange={(e) => setSyncPromptInput(e.target.value)}
                   />
@@ -1299,7 +1037,7 @@ export default function ImportModal({
                   <span className="text-[10px] text-gray-400">週次レポート生成プロンプト:</span>
                   <textarea
                     rows={8}
-                    className="w-full text-xs font-mono p-2.5 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-200 outline-none focus:border-purple-500"
+                    className="flex-1 text-xs font-mono p-2.5 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-200 outline-none focus:border-purple-500"
                     value={weeklyReportPromptInput}
                     onChange={(e) => setWeeklyReportPromptInput(e.target.value)}
                   />
@@ -1310,45 +1048,404 @@ export default function ImportModal({
         )}
 
         
-        {/* TAB 4: Folders Configuration */}
-        {activeTab === "folders" && (
-          <div className="flex flex-col gap-3">
-            <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 flex flex-col gap-3">
-              <div className="flex items-center gap-2 mb-2">
-                <Database className="w-4 h-4 text-blue-400" />
-                <span className="text-xs font-bold text-gray-100">Googleドライブ フォルダ設定</span>
+        {/* TAB 1: Hub Link & Sheet Management (Centralized Dashboard & Source Sync) */}
+        {activeTab === "hub_config" && (
+          <div className="flex flex-col gap-5 pb-4">
+            <div className="flex items-center justify-between border-b border-[#30363d] pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-sky-500/20 border border-sky-500/40 flex items-center justify-center text-sky-300">
+                  <Link className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-gray-100">リンク・シート 一元管理 & 外部収集</h3>
+                  <p className="text-[10px] text-gray-400">外部データの収集からアプリ表示先へのデータの流れを一画面で設定・実行できます。</p>
+                </div>
               </div>
-              
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] text-gray-400 font-bold">取り込み前（未処理）データフォルダ (URL または ID):</span>
-                <input
-                  type="text"
-                  placeholder="未指定の場合は自動で「Connected Notes 取り込み」が作成・参照されます"
-                  className="w-full text-xs p-2.5 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-200 outline-none focus:border-blue-500 transition"
-                  value={driveSourceFolderInput}
-                  onChange={(e) => {
-                    setDriveSourceFolderInput(e.target.value);
-                    saveAllSettings();
-                  }}
-                />
+              <button
+                type="button"
+                onClick={() => {
+                  saveAllSettings();
+                  onSaveToast("すべてのリンク・シート設定を一括保存しました ✦");
+                }}
+                className="px-3 py-1.5 text-xs bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-lg transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>一括保存する</span>
+              </button>
+            </div>
+
+            {/* 1. 共通: GAS接続 */}
+            <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 flex flex-col gap-3 relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500/50"></div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-gray-200 flex items-center gap-1.5">
+                    <Settings2 className="w-3.5 h-3.5 text-emerald-400" />
+                    【共通】システム接続設定 (GAS API)
+                  </h4>
+                  <p className="text-[10px] text-gray-400">アプリ全体とスプレッドシート・Driveを繋ぐためのAPIエンドポイント（GAS）です。</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCopyAiSyncCode}
+                    className="flex items-center gap-1 px-2.5 py-1 text-[10.5px] rounded font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition cursor-pointer"
+                    title="GASエディタに貼り付ける最新スクリプトコードをコピー"
+                  >
+                    {isCopiedSyncSave ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                    <span>{isCopiedSyncSave ? "コピー完了" : "📋 GASコピー"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowGasUrlHelp(!showGasUrlHelp)}
+                    className="text-[10.5px] text-gray-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer"
+                  >
+                    <HelpCircle className="w-3 h-3" />
+                    <span>使い方</span>
+                  </button>
+                </div>
               </div>
 
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] text-gray-400 font-bold">取り込み後（処理済み）データフォルダ (URL または ID):</span>
-                <input
-                  type="text"
-                  placeholder="未指定の場合は対象フォルダ内に自動で「_processed」が作成・参照されます"
-                  className="w-full text-xs p-2.5 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-200 outline-none focus:border-blue-500 transition"
-                  value={driveProcessedFolderInput}
-                  onChange={(e) => {
-                    setDriveProcessedFolderInput(e.target.value);
-                    saveAllSettings();
-                  }}
-                />
+              {showGasUrlHelp && (
+                <div className="p-3 bg-emerald-950/30 border border-emerald-500/30 rounded-lg text-[11px] text-emerald-200 leading-relaxed space-y-1.5">
+                  <p className="font-semibold text-emerald-300">💡 GAS (Google Apps Script) の導入手順：</p>
+                  <p>1. 上の「📋 GASコピー」ボタンを押して最新のスクリプトコードをクリップボードにコピーします。</p>
+                  <p>2. Googleスプレッドシートの「拡張機能」→「Apps Script」を開き、コードを貼り付けて保存します。</p>
+                  <p>3. 画面右上の「デプロイ」→「新しいデプロイ」を選択し、種類の選択で「ウェブアプリ」を指定します。</p>
+                  <p>4. <strong>次のユーザーとして実行: 自分</strong>、<strong>アクセスできるユーザー: 全員</strong> に設定してデプロイします。</p>
+                  <p>5. 発行された「ウェブアプリ URL（末尾 <code>/exec</code>）」を下の入力欄に貼り付け、「接続テスト」を押してください。</p>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-bold text-gray-300">GAS Webアプリ URL</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    className="flex-1 font-mono text-[11px] p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-emerald-500 transition-all"
+                    value={gasUrl}
+                    onChange={(e) => {
+                      setGasUrl(e.target.value);
+                      saveAllSettings(e.target.value);
+                    }}
+                    placeholder="https://script.google.com/macros/s/.../exec"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleTestConnection}
+                    disabled={testStatus === "testing"}
+                    className="px-3 py-2 text-xs font-semibold rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/40 hover:bg-purple-500/30 disabled:opacity-50 transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                  >
+                    {testStatus === "testing" ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        確認中...
+                      </>
+                    ) : (
+                      <>
+                        <Activity className="w-3.5 h-3.5" />
+                        接続テスト
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
-              
-              <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg text-blue-200 text-xs leading-relaxed">
-                <p>💡 <b>フォルダIDの指定方法:</b> Googleドライブのフォルダを開いた時のURL (<code>https://drive.google.com/drive/folders/〇〇〇</code>) の 〇〇〇 の部分、またはURL全体を貼り付けてください。</p>
+
+              {/* Test Status Alert */}
+              {testStatus !== "idle" && (
+                <div className={`p-3 rounded-lg text-xs flex flex-col gap-2 border leading-relaxed ${
+                  testStatus === "success" 
+                    ? "bg-emerald-950/40 border-emerald-500/40 text-emerald-300"
+                    : testStatus === "error"
+                    ? "bg-red-950/40 border-red-500/40 text-red-300"
+                    : "bg-blue-950/40 border-blue-500/40 text-blue-300"
+                }`}>
+                  <div className="flex items-start gap-2">
+                    {testStatus === "success" && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />}
+                    {testStatus === "error" && <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />}
+                    {testStatus === "testing" && <Loader2 className="w-4 h-4 animate-spin text-blue-400 shrink-0 mt-0.5" />}
+                    <div className="flex-1">
+                      <p className="font-semibold text-sm">{testMessage}</p>
+                    </div>
+                  </div>
+
+                  {testStatus === "error" && (
+                    <div className="mt-1 pt-2 border-t border-red-500/30 text-[11px] text-red-200/90 space-y-2">
+                      <div className="p-2 bg-black/40 rounded border border-red-500/20 space-y-1">
+                        <p className="font-bold text-amber-300">🔍 なぜブラウザで見えるのに接続テストが失敗するのか？</p>
+                        <p className="text-gray-300 text-[10.5px]">
+                          ブラウザの通常タブはGoogleにログイン済みのため表示されますが、アプリは未ログイン状態でアクセスするため、GASの公開権限が「全員」でないとGoogleがブロックします。
+                        </p>
+                      </div>
+
+                      <div className="space-y-1.5 text-[11px]">
+                        <p className="font-bold text-white">🛠️ 解決のための3点チェックリスト：</p>
+                        <div className="bg-[#161b22] p-2.5 rounded border border-[#30363d] space-y-1.5 text-gray-200">
+                          <div className="flex items-start gap-1.5">
+                            <span className="text-purple-400 font-bold">1.</span>
+                            <span>
+                              <strong>「新しいデプロイ」を作成</strong>（※「デプロイを管理」の更新では反映されないGASの不具合があります）
+                            </span>
+                          </div>
+                          <div className="flex items-start gap-1.5">
+                            <span className="text-purple-400 font-bold">2.</span>
+                            <span>
+                              次のユーザーとして実行: <strong className="text-emerald-300">「自分 (Me)」</strong>
+                            </span>
+                          </div>
+                          <div className="flex items-start gap-1.5">
+                            <span className="text-purple-400 font-bold">3.</span>
+                            <span>
+                              アクセスできるユーザー: <strong className="text-emerald-300">「全員 (Anyone)」</strong><br/>
+                              <span className="text-[10px] text-gray-400">※「自分のみ」や「組織内のユーザー」は外部アクセス不可</span>
+                            </span>
+                          </div>
+                          <div className="flex items-start gap-1.5">
+                            <span className="text-purple-400 font-bold">4.</span>
+                            <span>
+                              新しく発行されたURL（末尾 <code>/exec</code>）を再コピーして貼り付け
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (gasUrl.trim()) {
+                              navigator.clipboard.writeText(gasUrl.trim());
+                              onSaveToast("URLをコピーしました！シークレットウィンドウで開いてみてください");
+                            }
+                          }}
+                          className="px-2.5 py-1 text-[10.5px] bg-red-900/40 hover:bg-red-900/60 border border-red-400/40 rounded text-red-200 transition flex items-center gap-1 cursor-pointer"
+                        >
+                          📋 URLをコピーして「シークレットウィンドウ」でテストする
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Visual Arrow */}
+            <div className="flex justify-center -my-2 relative z-10">
+              <div className="bg-[#0d1117] border border-[#30363d] p-1.5 rounded-full text-gray-400">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+              </div>
+            </div>
+
+            {/* 0. Drive Folders (ドライブ連携) */}
+            <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 flex flex-col gap-4 relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/50"></div>
+              <div>
+                <h4 className="text-xs font-bold text-gray-200 mb-1 flex items-center gap-1.5">
+                  <Database className="w-3.5 h-3.5 text-blue-400" />
+                  ステップ0: ドライブ連携 (フォルダ設定)
+                </h4>
+                <p className="text-[10px] text-gray-400 mb-3">Google Drive上にあるMHTファイルなどを読み込むためのフォルダ設定です。</p>
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[11px] font-bold text-gray-300">取り込み前（未処理）データフォルダ (URL または ID)</label>
+                    <input
+                      type="text"
+                      className="flex-1 font-mono text-[11px] p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-blue-500 transition-all"
+                      value={driveSourceFolderInput}
+                      onChange={(e) => {
+                        setDriveSourceFolderInput(e.target.value);
+                        saveAllSettings();
+                      }}
+                      placeholder="未指定時は自動で「Connected Notes 取り込み」が参照されます"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[11px] font-bold text-gray-300">取り込み後（処理済み）データフォルダ (URL または ID)</label>
+                    <input
+                      type="text"
+                      className="flex-1 font-mono text-[11px] p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-blue-500 transition-all"
+                      value={driveProcessedFolderInput}
+                      onChange={(e) => {
+                        setDriveProcessedFolderInput(e.target.value);
+                        saveAllSettings();
+                      }}
+                      placeholder="未指定時は対象フォルダ内に自動で「_processed」が参照されます"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Visual Arrow */}
+            <div className="flex justify-center -my-2 relative z-10">
+              <div className="bg-[#0d1117] border border-[#30363d] p-1.5 rounded-full text-gray-400">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+              </div>
+            </div>
+
+            {/* 2. Source (収集元) */}
+            <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 flex flex-col gap-4 relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-1 h-full bg-amber-500/50"></div>
+              <div>
+                <h4 className="text-xs font-bold text-gray-200 mb-1 flex items-center gap-1.5">
+                  <UploadCloud className="w-3.5 h-3.5 text-amber-400" />
+                  ステップ1: データ収集元 (Source) & 自動取り込み
+                </h4>
+                <p className="text-[10px] text-gray-400">Google DriveやRaindropから取得した外部データを、一旦溜めておくためのスプレッドシートです。</p>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] font-bold text-gray-300">収集用スプレッドシート URL (または ID)</label>
+                  <input
+                    type="text"
+                    className="w-full font-mono text-[11px] p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-amber-500 transition-all"
+                    value={extractSheetUrl}
+                    onChange={(e) => {
+                      setExtractSheetUrl(e.target.value);
+                      localStorage.setItem("cn_extract_sheet_url", e.target.value.trim());
+                    }}
+                    placeholder="https://docs.google.com/spreadsheets/d/..."
+                  />
+                </div>
+                
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] font-bold text-gray-300">収集用シート(タブ)名</label>
+                  <input
+                    type="text"
+                    className="w-full font-mono text-[11px] p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-amber-500 transition-all"
+                    value={externalSyncSheetName}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setExternalSyncSheetName(val);
+                      setExtractSheetName(val);
+                      saveAllSettings(gasUrl, val);
+                      localStorage.setItem("cn_extract_sheet_name", val.trim());
+                    }}
+                    placeholder="未処理データ"
+                  />
+                  <span className="text-[9px] text-gray-500">※外部データの自動保存と、アプリへの読み取りの両方で共通して使用されるタブです</span>
+                </div>
+              </div>
+                
+              <div className="bg-[#0d1117] border border-[#30363d] rounded-lg p-2.5 flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">収集対象ソース</span>
+                  <span className="text-[10px] text-purple-300">※未処理のMHTファイルのみを抽出</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={syncRaindrop}
+                      onChange={(e) => {
+                        setSyncRaindrop(e.target.checked);
+                        localStorage.setItem("cn_sync_raindrop", String(e.target.checked));
+                      }}
+                      className="w-3.5 h-3.5 accent-purple-500 cursor-pointer"
+                    />
+                    <span className="text-xs text-gray-200">Raindrop (Web記事・ブックマーク)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={syncDrive}
+                      onChange={(e) => {
+                        setSyncDrive(e.target.checked);
+                        localStorage.setItem("cn_sync_drive", String(e.target.checked));
+                      }}
+                      className="w-3.5 h-3.5 accent-purple-500 cursor-pointer"
+                    />
+                    <span className="text-xs text-gray-200 font-medium text-purple-200">Googleドライブ (未処理MHTファイル解析)</span>
+                  </label>
+                </div>
+                <p className="text-[10px] text-gray-400 leading-relaxed mt-0.5">
+                  💡 Googleドライブのルートに自動作成される「Connected Notes 取り込み」フォルダ内の未処理MHT・PDFファイルを検出し、スプレッドシートへ追記します（処理済みファイルは「_processed」フォルダに退避されるため二重取り込みされません）。
+                </p>
+              </div>
+                
+              <button
+                type="button"
+                onClick={handleExecuteExternalSync}
+                disabled={isSyncingExternal}
+                className="w-full py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-lg transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {isSyncingExternal ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>{externalSyncStatus || "収集中・解析中（最大3.5分）..."}</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 text-purple-200" />
+                    <span>⚡ スプレッドシートへ自動取り込みを実行</span>
+                  </>
+                )}
+              </button>
+
+              {/* Execution Result */}
+              {externalSyncResult && (
+                <div className="p-3 bg-purple-950/40 border border-purple-500/40 rounded-lg text-xs text-purple-200 flex items-start gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <div className="flex-1 space-y-1">
+                    <p className="font-semibold">{externalSyncResult.message}</p>
+                    {externalSyncResult.isTimeOut && (
+                      <p className="text-[10px] text-amber-300">
+                        ※GASの実行制限（3.5分）に達したため一時停止しました。再度ボタンを押すと残りのデータを取り込みます。
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Visual Arrow */}
+            <div className="flex justify-center -my-2 relative z-10">
+              <div className="bg-[#0d1117] border border-[#30363d] p-1.5 rounded-full text-gray-400">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+              </div>
+            </div>
+
+            {/* 3. Target (アプリ表示先) */}
+            <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 flex flex-col gap-4 relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-1 h-full bg-sky-500/50"></div>
+              <div>
+                <h4 className="text-xs font-bold text-gray-200 mb-1 flex items-center gap-1.5">
+                  <Database className="w-3.5 h-3.5 text-sky-400" />
+                  ステップ2: アプリ表示先 (Target)
+                </h4>
+                <p className="text-[10px] text-gray-400">収集用シートからデータを取り込み、このアプリの画面上に実際に表示・保存するためのスプレッドシートです。</p>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] font-bold text-gray-300">アプリ表示用スプレッドシート URL (または ID)</label>
+                  <input
+                    type="text"
+                    className="w-full font-mono text-[11px] p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-sky-500 transition-all"
+                    value={targetSsUrl}
+                    onChange={(e) => {
+                      setTargetSsUrl(e.target.value);
+                      localStorage.setItem("cn_target_ss_url", e.target.value.trim());
+                    }}
+                    placeholder="未入力の場合はGASが紐づくスプレッドシートを使用します"
+                  />
+                </div>
+                
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] font-bold text-gray-300">アプリに表示するシート(タブ)名</label>
+                  <input
+                    type="text"
+                    className="w-full font-mono text-[11px] p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-sky-500 transition-all"
+                    value={gasSheetName}
+                    onChange={(e) => {
+                      setGasSheetName(e.target.value);
+                      localStorage.setItem("cn_gas_sheet_name", e.target.value.trim());
+                    }}
+                    placeholder="Notes"
+                  />
+                  <span className="text-[9px] text-gray-500">※アプリのメイン画面に読み込まれるデータです</span>
+                </div>
               </div>
             </div>
           </div>

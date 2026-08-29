@@ -1,0 +1,98 @@
+--- src/components/ImportModal.tsx
++++ src/components/ImportModal.tsx
+@@ -1333,45 +1333,2 @@
+ 
+-        {/* TAB 4: Folders Configuration */}
+-        {activeTab === "folders" && (
+-          <div className="flex flex-col gap-3">
+-            <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 flex flex-col gap-3">
+-              <div className="flex items-center gap-2 mb-2">
+-                <Database className="w-4 h-4 text-blue-400" />
+-                <span className="text-xs font-bold text-gray-100">Googleドライブ フォルダ設定</span>
+-              </div>
+-              
+-              <div className="flex flex-col gap-1">
+-                <span className="text-[10px] text-gray-400 font-bold">取り込み前（未処理）データフォルダ (URL または ID):</span>
+-                <input
+-                  type="text"
+-                  placeholder="未指定の場合は自動で「Connected Notes 取り込み」が作成・参照されます"
+-                  className="w-full text-xs p-2.5 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-200 outline-none focus:border-blue-500 transition"
+-                  value={driveSourceFolderInput}
+-                  onChange={(e) => {
+-                    setDriveSourceFolderInput(e.target.value);
+-                    saveAllSettings();
+-                  }}
+-                />
+-              </div>
+-              <div className="flex flex-col gap-1">
+-                <span className="text-[10px] text-gray-400 font-bold">取り込み後（処理済み）データフォルダ (URL または ID):</span>
+-                <input
+-                  type="text"
+-                  placeholder="未指定の場合は対象フォルダ内に自動で「_processed」が作成・参照されます"
+-                  className="w-full text-xs p-2.5 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-200 outline-none focus:border-blue-500 transition"
+-                  value={driveProcessedFolderInput}
+-                  onChange={(e) => {
+-                    setDriveProcessedFolderInput(e.target.value);
+-                    saveAllSettings();
+-                  }}
+-                />
+-              </div>
+-              
+-              <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg text-blue-200 text-xs leading-relaxed">
+-                <p>💡 <b>フォルダIDの指定方法:</b> Googleドライブのフォルダを開いた時のURL (<code>https://drive.google.com/drive/folders/〇〇〇</code>) の 〇〇〇 の部分、またはURL全体を貼り付けてください。</p>
+-              </div>
+-            </div>
+-          </div>
+-        )}
+-
+         {/* TAB 5: Hub Link & Sheet Management (Centralized Dashboard) */}
+@@ -1398,2 +1355,42 @@
+ 
++            {/* 0. Drive Folders (ドライブ連携) */}
++            <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 flex flex-col gap-4 relative overflow-hidden">
++              <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/50"></div>
++              <div>
++                <h4 className="text-xs font-bold text-gray-200 mb-1 flex items-center gap-1.5">
++                  <Database className="w-3.5 h-3.5 text-blue-400" />
++                  ステップ0: ドライブ連携 (フォルダ設定)
++                </h4>
++                <p className="text-[10px] text-gray-400 mb-3">Google Drive上にあるMHTファイルなどを読み込むためのフォルダ設定です。</p>
++                <div className="flex flex-col gap-3">
++                  <div className="flex flex-col gap-1.5">
++                    <label className="text-[11px] font-bold text-gray-300">取り込み前（未処理）データフォルダ (URL または ID)</label>
++                    <input
++                      type="text"
++                      className="w-full font-mono text-[11px] p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-blue-500 transition-all"
++                      value={driveSourceFolderInput}
++                      onChange={(e) => {
++                        setDriveSourceFolderInput(e.target.value);
++                        saveAllSettings();
++                      }}
++                      placeholder="未指定時は自動で「Connected Notes 取り込み」が参照されます"
++                    />
++                  </div>
++                  <div className="flex flex-col gap-1.5">
++                    <label className="text-[11px] font-bold text-gray-300">取り込み後（処理済み）データフォルダ (URL または ID)</label>
++                    <input
++                      type="text"
++                      className="w-full font-mono text-[11px] p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-blue-500 transition-all"
++                      value={driveProcessedFolderInput}
++                      onChange={(e) => {
++                        setDriveProcessedFolderInput(e.target.value);
++                        saveAllSettings();
++                      }}
++                      placeholder="未指定時は対象フォルダ内に自動で「_processed」が参照されます"
++                    />
++                  </div>
++                </div>
++              </div>
++            </div>
++
++            {/* Visual Arrow */}
++            <div className="flex justify-center -my-2 relative z-10">
++              <div className="bg-[#0d1117] border border-[#30363d] p-1.5 rounded-full text-gray-400">
++                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
++              </div>
++            </div>
++
+             {/* 1. 共通: GAS接続 */}

@@ -427,6 +427,7 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
 
   let currentProcessing = "同期処理の準備中";
   let addedCount = 0;
+  let processedCount = 0;
   let isTimeOut = false;
   let problematicItem = null;
 
@@ -442,7 +443,7 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
     const raindropToken = props.getProperty('RAINDROP_TOKEN') || "";
     function extractFolderId(input) {
       if (!input) return "";
-      const match = input.match(/folders\/([a-zA-Z0-9-_]+)/);
+      const match = input.match(/folders\\/([a-zA-Z0-9-_]+)/);
       return match ? match[1] : input.trim();
     }
     let driveFolderId = extractFolderId(config.driveSourceFolder) || props.getProperty('SCREENSHOT_FOLDER_ID') || "";
@@ -594,7 +595,7 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
             try {
               mhtResult = processMhtFile_Advanced(file, sheet, existingIds, persona, syncPrompt, driveFolderId, processedFolder, geminiApiKey, geminiModel);
             } finally {
-              file.moveTo(processedFolder);
+              try { file.moveTo(processedFolder); processedCount++; } catch(e) {}
             }
             addedCount += mhtResult.addedCount;
             if (mhtResult.isTimeOut) { isTimeOut = true; break; }
@@ -635,7 +636,8 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
 
     return { 
       success: true, 
-      addedCount: addedCount, 
+      addedCount: addedCount,
+      processedCount: processedCount, 
       isTimeOut: isTimeOut, 
       problematicItem: problematicItem,
       sheetName: sheet.getName()
@@ -1639,7 +1641,7 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
     const raindropToken = props.getProperty('RAINDROP_TOKEN') || "";
     function extractFolderId(input) {
       if (!input) return "";
-      const match = input.match(/folders\/([a-zA-Z0-9-_]+)/);
+      const match = input.match(/folders\\/([a-zA-Z0-9-_]+)/);
       return match ? match[1] : input.trim();
     }
     let driveFolderId = extractFolderId(config.driveSourceFolder) || props.getProperty('SCREENSHOT_FOLDER_ID') || "";
