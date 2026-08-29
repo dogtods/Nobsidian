@@ -1173,6 +1173,23 @@ export default function ImportModal({
                   💡 Googleドライブのルートに自動作成される「Connected Notes 取り込み」フォルダ内の未処理MHT・PDFファイルを検出し、スプレッドシートへ追記します（処理済みファイルは「_processed」フォルダに退避されるため二重取り込みされません）。
                 </p>
               </div>
+
+              {/* GAS Connection Info for Step 1 */}
+              <div className="bg-amber-950/20 border border-amber-500/30 rounded-lg px-3 py-2 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-[11px] text-amber-300">
+                  <Settings2 className="w-3 h-3 shrink-0" />
+                  <span>接続先GAS URL：<span className="font-medium text-gray-300">【共通】システム接続設定欄で入力済み</span></span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopyAiSyncCode}
+                  className="flex items-center gap-1 px-2.5 py-1 text-[10.5px] rounded font-medium bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition cursor-pointer shrink-0"
+                  title="このボタンを動かすためのGASスクリプトコードをコピー"
+                >
+                  {isCopiedSyncSave ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                  <span>{isCopiedSyncSave ? "コピー完了" : "📋 GASコードをコピー"}</span>
+                </button>
+              </div>
                 
               <button
                 type="button"
@@ -1317,26 +1334,11 @@ export default function ImportModal({
                   </div>
                 </div>
 
-                {/* GAS Web App URL */}
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[11px] font-bold text-gray-300 flex items-center justify-between">
-                    <span className="flex items-center gap-1">
-                      <Settings2 className="w-3 h-3 text-emerald-400" /> GAS Webアプリ URL (APIエンドポイント)
-                    </span>
-                    <span className="text-[10px] text-emerald-400 font-normal">※共通設定と自動同期</span>
-                  </label>
-                  <input
-                    type="text"
-                    className="w-full font-mono text-[11px] p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-emerald-500 transition-all"
-                    value={gasUrl}
-                    onChange={(e) => {
-                      setGasUrl(e.target.value);
-                      if (e.target.value.trim()) {
-                        localStorage.setItem("cn_gas_api_url", e.target.value.trim());
-                      }
-                    }}
-                    placeholder="https://script.google.com/macros/s/.../exec"
-                  />
+                {/* GAS Web App URL - shared with common setting */}
+                <div className="bg-sky-950/20 border border-sky-500/30 rounded-lg px-3 py-2 flex items-center gap-1.5 text-[11px] text-sky-300">
+                  <Settings2 className="w-3 h-3 shrink-0 text-emerald-400" />
+                  <span>GAS Webアプリ URL：</span>
+                  <span className="font-medium text-gray-300">【共通】システム接続設定欄で入力済み</span>
                 </div>
 
                 {/* Fetch Unprocessed Button */}
