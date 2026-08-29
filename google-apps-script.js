@@ -493,7 +493,24 @@ function syncExternalSources(options, targetSheetName) {
     const geminiApiKey = props.getProperty('GEMINI_API_KEY') || "";
     const geminiModel = getConfig('GEMINI_MODEL');
     const raindropToken = props.getProperty('RAINDROP_TOKEN') || "";
-    const driveFolderId = props.getProperty('SCREENSHOT_FOLDER_ID') || "";
+    const driveFolderId = (() => {
+      function extractFolderId(input) {
+        if (!input) return "";
+        const match = input.match(/folders\/([a-zA-Z0-9-_]+)/);
+        return match ? match[1] : input.trim();
+      }
+      let id = extractFolderId(config && config.driveSourceFolder) || props.getProperty('SCREENSHOT_FOLDER_ID') || "";
+      if (!id) {
+        const folders = DriveApp.getFoldersByName("Connected Notes 取り込み");
+        if (folders.hasNext()) {
+          id = folders.next().getId();
+        } else {
+          const newFolder = DriveApp.createFolder("Connected Notes 取り込み");
+          id = newFolder.getId();
+        }
+      }
+      return id;
+    })();
     const persona = getConfig('SYSTEM_PERSONA');
     const syncPrompt = getConfig('SYNC_PROMPT');
 

@@ -443,10 +443,19 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
     const raindropToken = props.getProperty('RAINDROP_TOKEN') || "";
     function extractFolderId(input) {
       if (!input) return "";
-      const match = input.match(/folders\\/([a-zA-Z0-9-_]+)/);
+      const match = input.match(/folders\/([a-zA-Z0-9-_]+)/);
       return match ? match[1] : input.trim();
     }
     let driveFolderId = extractFolderId(config.driveSourceFolder) || props.getProperty('SCREENSHOT_FOLDER_ID') || "";
+    if (!driveFolderId) {
+      const folders = DriveApp.getFoldersByName("Connected Notes 取り込み");
+      if (folders.hasNext()) {
+        driveFolderId = folders.next().getId();
+      } else {
+        const newFolder = DriveApp.createFolder("Connected Notes 取り込み");
+        driveFolderId = newFolder.getId();
+      }
+    }
     let driveProcessedFolderId = extractFolderId(config.driveProcessedFolder) || "";
     let driveFolderName = "Connected Notes 取り込み";
     const persona = config.persona || getConfig('SYSTEM_PERSONA');
@@ -1648,10 +1657,19 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
     const raindropToken = props.getProperty('RAINDROP_TOKEN') || "";
     function extractFolderId(input) {
       if (!input) return "";
-      const match = input.match(/folders\\/([a-zA-Z0-9-_]+)/);
+      const match = input.match(/folders\/([a-zA-Z0-9-_]+)/);
       return match ? match[1] : input.trim();
     }
     let driveFolderId = extractFolderId(config.driveSourceFolder) || props.getProperty('SCREENSHOT_FOLDER_ID') || "";
+    if (!driveFolderId) {
+      const folders = DriveApp.getFoldersByName("Connected Notes 取り込み");
+      if (folders.hasNext()) {
+        driveFolderId = folders.next().getId();
+      } else {
+        const newFolder = DriveApp.createFolder("Connected Notes 取り込み");
+        driveFolderId = newFolder.getId();
+      }
+    }
     let driveProcessedFolderId = extractFolderId(config.driveProcessedFolder) || "";
     let driveFolderName = "Connected Notes 取り込み";
     const persona = config.persona || getConfig('SYSTEM_PERSONA');

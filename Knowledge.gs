@@ -218,7 +218,19 @@ function syncAllExternalSources(options) {
     // --- B. Googleドライブからの取得 ---
     if (config.drive === true && isTimeOut === false) {
       console.log("Googleドライブの同期を開始します...");
-      const driveFolderId = props.getProperty('SCREENSHOT_FOLDER_ID');
+      const driveFolderId = (() => {
+        let id = props.getProperty('SCREENSHOT_FOLDER_ID') || "";
+        if (!id) {
+          const folders = DriveApp.getFoldersByName("Connected Notes 取り込み");
+          if (folders.hasNext()) {
+            id = folders.next().getId();
+          } else {
+            const newFolder = DriveApp.createFolder("Connected Notes 取り込み");
+            id = newFolder.getId();
+          }
+        }
+        return id;
+      })();
       const persona = config.persona || getConfig('SYSTEM_PERSONA');
       const syncPrompt = config.syncPrompt || getConfig('SYNC_PROMPT');
 
