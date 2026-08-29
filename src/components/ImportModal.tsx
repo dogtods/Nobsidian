@@ -631,7 +631,7 @@ export default function ImportModal({
             }`}
           >
             <Link className="w-3.5 h-3.5" />
-            <span>🔗 1. リンク・シート一元管理 & 外部収集</span>
+            <span>🔗 1. リンク・シート一元管理 & 外部収集・登録</span>
           </button>
 
           <button
@@ -643,8 +643,8 @@ export default function ImportModal({
                 : "border-transparent text-gray-400 hover:text-gray-200"
             }`}
           >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            <span>⚙ 2. アプリへ登録 (未処理抽出/ファイル)</span>
+            <UploadCloud className="w-3.5 h-3.5" />
+            <span>📁 2. ファイル / Web URL 直接登録</span>
           </button>
 
           <button
@@ -661,221 +661,20 @@ export default function ImportModal({
           </button>
         </div>
 
-                {/* TAB 2: Direct Sheet Extraction / File Import */}
+        {/* TAB 2: Direct File / URL Import */}
         {activeTab === "step_2" && (
           <div className="flex flex-col gap-4">
-            
-            {/* Section A: Extract Unprocessed Rows from Specific Sheet */}
-            <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-gray-100 flex items-center gap-1.5">
-                  <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-                  <span>A. 取り込み元シート（未処理ハイライト）から抽出・コピペ</span>
-                </label>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleCopyAiSyncCode}
-                    className="flex items-center gap-1 px-2 py-0.5 text-[10px] rounded font-medium bg-sky-500/20 text-sky-300 border border-sky-500/40 hover:bg-sky-500/30 transition cursor-pointer"
-                    title="GASエディタに貼り付ける最新スクリプトコードをコピー"
-                  >
-                    {isCopiedSyncSave ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
-                    <span>{isCopiedSyncSave ? "コピー完了" : "📋 GASコピー"}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowExtractHelp(!showExtractHelp)}
-                    className="text-[10px] text-gray-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer"
-                  >
-                    <HelpCircle className="w-3 h-3" />
-                    <span>使い方</span>
-                  </button>
-                </div>
-              </div>
-
-              {showExtractHelp && (
-                <div className="p-3 bg-emerald-950/30 border border-emerald-500/30 rounded-lg text-[11px] text-emerald-200 leading-relaxed space-y-1">
-                  <p>1. ハイライトや外部収集データが入っているスプレッドシートのURLを入力します。</p>
-                  <p>2. その中の対象シート名（例: <code>未処理データ</code> や <code>シート1</code>）を指定します。</p>
-                  <p>3. 「未処理データ一覧を取得」を押すと、まだ処理されていない行（<code>nobsidian</code> 列が空欄の行）を抽出し、選択した項目を本アプリ（取り込み先）へインポートします。</p>
-                </div>
-              )}
-
-              <div className="flex flex-col gap-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <div>
-                    <span className="text-[10px] text-gray-400 mb-0.5 block">取り込み元 スプレッドシートURL / ID:</span>
-                    <input
-                      type="text"
-                      className="flex-1 text-xs p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
-                      placeholder="https://docs.google.com/spreadsheets/d/.../edit"
-                      defaultValue={extractSheetUrl}
-                      onBlur={(e) => setExtractSheetUrl(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-gray-400 mb-0.5 block">取り込み元 シート名（タブ名）:</span>
-                    <input
-                      type="text"
-                      className="flex-1 text-xs p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
-                      placeholder="未処理データ (例: シート1, 未処理データ)"
-                      defaultValue={extractSheetName}
-                      onBlur={(e) => setExtractSheetName(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
-                  <div>
-                    <span className="text-[10px] text-emerald-400 font-bold mb-0.5 block flex items-center gap-1">
-                      GAS Web App URL:
-                    </span>
-                    <input
-                      type="text"
-                      className="flex-1 text-xs p-2 bg-[#0d1117] border border-emerald-500/50 rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
-                      placeholder="https://script.google.com/macros/s/.../exec"
-                      defaultValue={gasUrl}
-                      onBlur={(e) => {
-                        setGasUrl(e.target.value);
-                        if (e.target.value.trim()) {
-                          localStorage.setItem("cn_gas_api_url", e.target.value.trim());
-                        } else {
-                          localStorage.removeItem("cn_gas_api_url");
-                        }
-                      }}
-                    />
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-emerald-400 font-bold mb-0.5 block flex items-center gap-1">
-                      取り込み先 スプレッドシートURL / ID (任意):
-                    </span>
-                    <input
-                      type="text"
-                      className="flex-1 text-xs p-2 bg-[#0d1117] border border-emerald-500/50 rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
-                      placeholder="未入力の場合は GAS初期設定のシートIDを使用"
-                      defaultValue={targetSsUrl}
-                      onBlur={(e) => {
-                        setTargetSsUrl(e.target.value);
-                        localStorage.setItem("cn_target_ss_url", e.target.value.trim());
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <span className="text-[10px] text-emerald-400 font-bold mb-0.5 block flex items-center gap-1">
-                    取り込み先 アプリ表示用シート名（タブ名）:
-                  </span>
-                  <input
-                    type="text"
-                    className="flex-1 text-xs p-2 bg-[#0d1117] border border-emerald-500/50 rounded-lg text-gray-100 font-mono outline-none focus:border-emerald-500"
-                    placeholder="Notes"
-                    defaultValue={gasSheetName}
-                    onBlur={(e) => {
-                      setGasSheetName(e.target.value);
-                      localStorage.setItem("cn_gas_sheet_name", e.target.value.trim());
-                    }}
-                  />
-                  <p className="text-[10px] text-gray-500 mt-1 leading-relaxed">
-                    ※ここに未処理データがコピペされます。取り込み先スプレッドシートURLを省略した場合は、GAS初期設定時のスプレッドシートが使用されます。
-                  </p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                className="flex-1 py-2.5 bg-[#21262d] hover:bg-[#30363d] text-xs border border-[#30363d] rounded-lg text-gray-100 font-semibold cursor-pointer transition flex items-center justify-center gap-2 disabled:opacity-50"
-                onClick={fetchSheetData}
-                disabled={isProcessing}
-              >
-                {isProcessing && processingText === "取得中..." ? (
-                  <RefreshCw className="w-3.5 h-3.5 text-emerald-400 animate-spin" />
-                ) : (
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
-                )}
-                <span>{isProcessing && processingText === "取得中..." ? "取得中..." : "未処理データ一覧を取得"}</span>
-              </button>
-
-              {/* Pending Items Table */}
-              {pendingSheetItems.length > 0 && (
-                <div className="flex flex-col gap-2 mt-2 bg-[#0d1117] p-3 rounded-lg border border-[#30363d]">
-                  <div className="flex items-center justify-between text-xs text-gray-300">
-                    <span>取得件数: <strong>{pendingSheetItems.length}件</strong> (選択中: {selectedIndices.length}件)</span>
-                    <button
-                      type="button"
-                      className="text-[10px] text-purple-300 hover:underline cursor-pointer"
-                      onClick={() => {
-                        if (selectedIndices.length === pendingSheetItems.length) setSelectedIndices([]);
-                        else setSelectedIndices(pendingSheetItems.map((_, i) => i));
-                      }}
-                    >
-                      {selectedIndices.length === pendingSheetItems.length ? "全解除" : "全選択"}
-                    </button>
-                  </div>
-
-                  <div className="max-h-48 overflow-y-auto border border-[#30363d] rounded-md divide-y divide-[#30363d]">
-                    {pendingSheetItems.map((item, idx) => (
-                      <label
-                        key={idx}
-                        className="flex items-start gap-2 p-2 hover:bg-[#161b22] cursor-pointer text-xs transition"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedIndices.includes(idx)}
-                          onChange={() => handleCheckboxChange(idx)}
-                          className="mt-0.5 accent-purple-500"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-gray-200 truncate">{item.title || "無題"}</p>
-                          <p className="text-[10px] text-gray-400 truncate">{item.highlights || item.url || "内容なし"}</p>
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-
-                  <div className="flex items-center justify-between pt-2 border-t border-[#30363d]">
-                    <label className="flex items-center gap-1.5 text-[11px] text-gray-300 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={optimizeTitle}
-                        onChange={(e) => setOptimizeTitle(e.target.checked)}
-                        className="accent-purple-500"
-                      />
-                      <span>AIでタイトルを自動最適化</span>
-                    </label>
-                    <label className="flex items-center gap-1.5 text-[11px] text-gray-300 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={overwriteBatch}
-                        onChange={(e) => setOverwriteBatch(e.target.checked)}
-                        className="accent-purple-500"
-                      />
-                      <span>既存IDと重複時は上書きする</span>
-                    </label>
-                    <button
-                      type="button"
-                      onClick={importSelectedItems}
-                      disabled={isProcessing || selectedIndices.length === 0}
-                      className="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                    >
-                      {isProcessing && (
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      )}
-                      <span>{isProcessing ? processingText : `選択した ${selectedIndices.length} 件をアプリへ取り込む`}</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Section B: Direct File / URL Import */}
+            {/* Direct File / URL Import */}
             <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 flex flex-col gap-3">
               <label className="text-xs font-bold text-gray-100 flex items-center gap-1.5">
                 <UploadCloud className="w-4 h-4 text-blue-400" />
-                <span>B. ローカルファイル / Web URL からの直接取り込み</span>
+                <span>ローカルファイル / Web URL からの直接取り込み</span>
               </label>
+              <p className="text-[11px] text-gray-400 leading-relaxed">
+                PC内のMHT / Markdownファイルや、Web記事のURLを指定して直接アプリへ取り込みます。
+              </p>
 
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2.5 mt-1">
                 <input
                   type="file"
                   accept=".mht,.mhtml,.md,.markdown,.txt,.json"
@@ -939,6 +738,17 @@ export default function ImportModal({
               </div>
             </div>
 
+            {/* Notice to Hub Config */}
+            <div className="p-3 bg-[#161b22] border border-[#30363d] rounded-xl text-xs text-gray-400 flex items-center justify-between">
+              <span>💡 スプレッドシートからの未処理データ抽出・登録は、「1. リンク・シート一元管理」のステップ2から一元的に行えます。</span>
+              <button
+                type="button"
+                onClick={() => setActiveTab("hub_config")}
+                className="text-sky-400 hover:underline shrink-0 ml-2 font-medium cursor-pointer"
+              >
+                一元管理を開く →
+              </button>
+            </div>
           </div>
         )}
 
@@ -1406,46 +1216,216 @@ export default function ImportModal({
               </div>
             </div>
 
-            {/* 3. Target (アプリ表示先) */}
+            {/* 3. Target (アプリ表示先 & 抽出登録) */}
             <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 flex flex-col gap-4 relative overflow-hidden">
               <div className="absolute top-0 left-0 w-1 h-full bg-sky-500/50"></div>
-              <div>
-                <h4 className="text-xs font-bold text-gray-200 mb-1 flex items-center gap-1.5">
-                  <Database className="w-3.5 h-3.5 text-sky-400" />
-                  ステップ2: アプリ表示先 (Target)
-                </h4>
-                <p className="text-[10px] text-gray-400">収集用シートからデータを取り込み、このアプリの画面上に実際に表示・保存するためのスプレッドシートです。</p>
+              
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-gray-200 flex items-center gap-1.5">
+                    <Database className="w-3.5 h-3.5 text-sky-400" />
+                    ステップ2: アプリ表示先 (Target) & 未処理データの抽出・登録
+                  </h4>
+                  <p className="text-[10px] text-gray-400">取り込み元シートから未処理データを抽出し、本アプリの画面（表示先シート）へ登録・反映します。</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowExtractHelp(!showExtractHelp)}
+                    className="text-[10.5px] text-gray-400 hover:text-sky-300 flex items-center gap-1 cursor-pointer"
+                  >
+                    <HelpCircle className="w-3 h-3" />
+                    <span>使い方</span>
+                  </button>
+                </div>
               </div>
 
+              {showExtractHelp && (
+                <div className="p-3 bg-sky-950/30 border border-sky-500/30 rounded-lg text-[11px] text-sky-200 leading-relaxed space-y-1.5">
+                  <p className="font-semibold text-sky-300">💡 アプリへのデータ抽出・登録手順：</p>
+                  <p>1. <strong>取り込み元</strong>（ステップ1の収集用シート、またはハイライト保存シート）のURLとシート名を指定します。</p>
+                  <p>2. <strong>アプリ表示先</strong>（本アプリで閲覧・保存するシート）のURLとシート名（例: <code>Notes</code>）を指定します。</p>
+                  <p>3. <strong>「未処理データ一覧を取得」</strong>ボタンを押すと、まだ登録されていない行を自動抽出し、選択した行を本アプリへ一括取り込みます。</p>
+                </div>
+              )}
+
               <div className="flex flex-col gap-3">
+                {/* Source & Target Sheets Configuration */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-[#0d1117] p-3 rounded-lg border border-[#30363d]">
+                  <div className="flex flex-col gap-2">
+                    <span className="text-[10.5px] font-bold text-amber-400 flex items-center gap-1">
+                      <UploadCloud className="w-3 h-3" /> 【取り込み元】データ収集シート
+                    </span>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] text-gray-400">取り込み元 スプレッドシートURL / ID:</label>
+                      <input
+                        type="text"
+                        className="w-full font-mono text-[11px] p-2 bg-[#161b22] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-amber-500 transition-all"
+                        value={extractSheetUrl}
+                        onChange={(e) => {
+                          setExtractSheetUrl(e.target.value);
+                          localStorage.setItem("cn_extract_sheet_url", e.target.value.trim());
+                        }}
+                        placeholder="https://docs.google.com/spreadsheets/d/..."
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] text-gray-400">取り込み元 シート（タブ）名:</label>
+                      <input
+                        type="text"
+                        className="w-full font-mono text-[11px] p-2 bg-[#161b22] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-amber-500 transition-all"
+                        value={extractSheetName}
+                        onChange={(e) => {
+                          setExtractSheetName(e.target.value);
+                          localStorage.setItem("cn_extract_sheet_name", e.target.value.trim());
+                        }}
+                        placeholder="未処理データ"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <span className="text-[10.5px] font-bold text-sky-400 flex items-center gap-1">
+                      <Database className="w-3 h-3" /> 【取り込み先】アプリ表示シート
+                    </span>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] text-gray-400">取り込み先 スプレッドシートURL / ID (任意):</label>
+                      <input
+                        type="text"
+                        className="w-full font-mono text-[11px] p-2 bg-[#161b22] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-sky-500 transition-all"
+                        value={targetSsUrl}
+                        onChange={(e) => {
+                          setTargetSsUrl(e.target.value);
+                          localStorage.setItem("cn_target_ss_url", e.target.value.trim());
+                        }}
+                        placeholder="未入力時はGAS紐づきシートを使用"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] text-gray-400">取り込み先 シート（タブ）名:</label>
+                      <input
+                        type="text"
+                        className="w-full font-mono text-[11px] p-2 bg-[#161b22] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-sky-500 transition-all"
+                        value={gasSheetName}
+                        onChange={(e) => {
+                          setGasSheetName(e.target.value);
+                          localStorage.setItem("cn_gas_sheet_name", e.target.value.trim());
+                        }}
+                        placeholder="Notes"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* GAS Web App URL */}
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-[11px] font-bold text-gray-300">アプリ表示用スプレッドシート URL (または ID)</label>
+                  <label className="text-[11px] font-bold text-gray-300 flex items-center justify-between">
+                    <span className="flex items-center gap-1">
+                      <Settings2 className="w-3 h-3 text-emerald-400" /> GAS Webアプリ URL (APIエンドポイント)
+                    </span>
+                    <span className="text-[10px] text-emerald-400 font-normal">※共通設定と自動同期</span>
+                  </label>
                   <input
                     type="text"
-                    className="w-full font-mono text-[11px] p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-sky-500 transition-all"
-                    value={targetSsUrl}
+                    className="w-full font-mono text-[11px] p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-emerald-500 transition-all"
+                    value={gasUrl}
                     onChange={(e) => {
-                      setTargetSsUrl(e.target.value);
-                      localStorage.setItem("cn_target_ss_url", e.target.value.trim());
+                      setGasUrl(e.target.value);
+                      if (e.target.value.trim()) {
+                        localStorage.setItem("cn_gas_api_url", e.target.value.trim());
+                      }
                     }}
-                    placeholder="未入力の場合はGASが紐づくスプレッドシートを使用します"
+                    placeholder="https://script.google.com/macros/s/.../exec"
                   />
                 </div>
-                
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[11px] font-bold text-gray-300">アプリに表示するシート(タブ)名</label>
-                  <input
-                    type="text"
-                    className="w-full font-mono text-[11px] p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-sky-500 transition-all"
-                    value={gasSheetName}
-                    onChange={(e) => {
-                      setGasSheetName(e.target.value);
-                      localStorage.setItem("cn_gas_sheet_name", e.target.value.trim());
-                    }}
-                    placeholder="Notes"
-                  />
-                  <span className="text-[9px] text-gray-500">※アプリのメイン画面に読み込まれるデータです</span>
-                </div>
+
+                {/* Fetch Unprocessed Button */}
+                <button
+                  type="button"
+                  className="w-full py-2.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-bold text-xs rounded-lg transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  onClick={fetchSheetData}
+                  disabled={isProcessing}
+                >
+                  {isProcessing && processingText === "取得中..." ? (
+                    <RefreshCw className="w-4 h-4 text-white animate-spin" />
+                  ) : (
+                    <FileSpreadsheet className="w-4 h-4 text-white" />
+                  )}
+                  <span>{isProcessing && processingText === "取得中..." ? "未処理データを取得中..." : "未処理データ一覧を取得"}</span>
+                </button>
+
+                {/* Pending Items Table & Import Execution */}
+                {pendingSheetItems.length > 0 && (
+                  <div className="flex flex-col gap-2.5 bg-[#0d1117] p-3 rounded-lg border border-[#30363d]">
+                    <div className="flex items-center justify-between text-xs text-gray-300">
+                      <span>取得件数: <strong className="text-sky-400">{pendingSheetItems.length}件</strong> (選択中: {selectedIndices.length}件)</span>
+                      <button
+                        type="button"
+                        className="text-[10px] text-sky-400 hover:underline cursor-pointer"
+                        onClick={() => {
+                          if (selectedIndices.length === pendingSheetItems.length) setSelectedIndices([]);
+                          else setSelectedIndices(pendingSheetItems.map((_, i) => i));
+                        }}
+                      >
+                        {selectedIndices.length === pendingSheetItems.length ? "全解除" : "全選択"}
+                      </button>
+                    </div>
+
+                    <div className="max-h-48 overflow-y-auto border border-[#30363d] rounded-md divide-y divide-[#30363d]">
+                      {pendingSheetItems.map((item, idx) => (
+                        <label
+                          key={idx}
+                          className="flex items-start gap-2 p-2 hover:bg-[#161b22] cursor-pointer text-xs transition"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedIndices.includes(idx)}
+                            onChange={() => handleCheckboxChange(idx)}
+                            className="mt-0.5 accent-sky-500"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-gray-200 truncate">{item.title || "無題"}</p>
+                            <p className="text-[10px] text-gray-400 truncate">{item.highlights || item.url || "内容なし"}</p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#30363d]">
+                      <div className="flex items-center gap-3">
+                        <label className="flex items-center gap-1.5 text-[11px] text-gray-300 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={optimizeTitle}
+                            onChange={(e) => setOptimizeTitle(e.target.checked)}
+                            className="accent-sky-500"
+                          />
+                          <span>AIでタイトルを自動最適化</span>
+                        </label>
+                        <label className="flex items-center gap-1.5 text-[11px] text-gray-300 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={overwriteBatch}
+                            onChange={(e) => setOverwriteBatch(e.target.checked)}
+                            className="accent-sky-500"
+                          />
+                          <span>既存IDと重複時は上書き</span>
+                        </label>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={importSelectedItems}
+                        disabled={isProcessing || selectedIndices.length === 0}
+                        className="px-4 py-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-bold text-xs rounded-lg transition-all shadow flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        {isProcessing && (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        )}
+                        <span>{isProcessing ? processingText : `選択した ${selectedIndices.length} 件をアプリへ取り込む`}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
