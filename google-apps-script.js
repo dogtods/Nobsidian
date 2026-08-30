@@ -173,8 +173,7 @@ const GEMINI_SAFETY_SETTINGS = [
   { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
   { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
   { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-  { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
-  { category: "HARM_CATEGORY_CIVIC_INTEGRITY", threshold: "BLOCK_NONE" }
+  { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
 ];
 
 function extractGeminiResponseText(resJson) {
@@ -210,7 +209,7 @@ function callGeminiFree(content, persona, syncPrompt, apiKey, model) {
 
   const cleanPersona = persona || getConfig('SYSTEM_PERSONA');
   const cleanPrompt = syncPrompt || getConfig('SYNC_PROMPT');
-  const prompt = (cleanPersona ? cleanPersona + "\n\n" : "") + cleanPrompt + "\n\n【データ】\n" + content;
+  const prompt = (cleanPersona ? cleanPersona + "\n\n" : "") + cleanPrompt + "\n\n---\n【対象記事データ】\n" + content;
   
   const targetModel = model || getConfig('GEMINI_MODEL') || "gemini-2.5-flash";
   const candidateModels = getCandidateModels(targetModel);
@@ -287,7 +286,7 @@ function callGeminiFreeFile(file, apiKey, model, persona, syncPrompt) {
   const cleanPersona = persona || getConfig('SYSTEM_PERSONA');
   const cleanPrompt = syncPrompt || getConfig('SYNC_PROMPT');
   const prompt = (cleanPersona ? cleanPersona + "\n\n" : "") + cleanPrompt +
-    "\n\n【データ】\n(添付されたファイル（PDF等の記事・資料）の内容を詳細に読み取り、指定の出力構成（【カテゴリ】、【要約】、【具体的数値・事実】、【市場・実務への影響】、【キーワード】、【年表】）に従って、必ずすべてのセクションを過不足なく日本語で出力してください。ファイル名: " + fileName + ")";
+    "\n\n---\n(添付されたファイル（PDF等の記事・資料）の内容を詳細に読み取り、指定の出力構成（【カテゴリ】、【要約】、【具体的数値・事実】、【市場・実務への影響】、【キーワード】、【年表】）に従って、必ず指定の見出しのみを過不足なく日本語で出力してください。ファイル名: " + fileName + ")";
 
   const base64Data = Utilities.base64Encode(file.getBlob().getBytes());
   const targetModel = model || getConfig('GEMINI_MODEL') || "gemini-2.5-flash";
@@ -595,6 +594,55 @@ function extractTimelineFromText(text, fallbackContent, fallbackDate, fallbackTi
   return `[${cleanTargetDate}] ${summarizeText(safeTitle, 100)}`;
 }
 
+// E列（highlights）専用のクリーンアップ抽出関数
+// 【要約】・【具体的数値・事実】・【市場・実務への影響】・【キーワード】のみを抽出し、
+// D列（【カテゴリ】）やL列（【年表】）、入力マーカー（【データ】等）、プロンプト指示の混入を完全排除する
+function extractHighlightsFromFreeText(rawText, fallbackContent, fallbackTitle, fallbackDate, tags) {
+  if (!rawText || !rawText.trim()) {
+    const cleanFallback = (fallbackContent || "").replace(/\s+/g, ' ').trim();
+    const summaryExcerpt = cleanFallback ? cleanFallback.substring(0, 300) + (cleanFallback.length > 300 ? "..." : "") : (fallbackTitle || "記事概要");
+    let safeDate = fallbackDate || Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
+    safeDate = safeDate.replace(/[-_]/g, '/');
+
+    return (
+      `【要約】\n${summaryExcerpt}\n\n` +
+      `【具体的数値・事実】\n・${fallbackTitle || "記事公表"}（公表日: ${safeDate}）\n\n` +
+      `【市場・実務への影響】\n・関連市場・動向の進展に留意。\n\n` +
+      `【キーワード】\n- [[${tags || "一般"}]]: 関連分野`
+    );
+  }
+
+  let text = rawText;
+
+  // 1. プロンプトの役割・厳守事項・出力構成などの指示復唱を除去
+  text = text.replace(/^(?:#+\s*(?:役割|厳守事項|出力構成|プロンプト|指示|出力フォーマット)[\s\S]*?(?=\n\s*【|\n\s*#+|$))/gmi, '');
+
+  // 2. 【データ】、【入力データ】、【対象データ】などの入力用見出しや添付指示の混入を除去
+  text = text.replace(/【\s*(?:データ|対象データ|入力データ|対象記事|記事データ|添付ファイルデータ|対象記事・入力データ|対象記事データ)\s*】[\s\S]*?(?=\n\s*【(?:\s*(?:要約|カテゴリ|具体的数値|市場|キーワード|年表)))/gi, '');
+  text = text.replace(/【\s*(?:データ|対象データ|入力データ|対象記事|記事データ|添付ファイルデータ|対象記事・入力データ|対象記事データ)\s*】[^\n]*/gi, '');
+
+  // 3. 【カテゴリ】セクションを除去（D列に格納するため、E列からは除外）
+  text = text.replace(/【\s*(?:カテゴリ(?:[・\/]タグ)?|タグ|分野|分類)\s*】[\s\S]*?(?=\n\s*【|\n\s*###|\n\s*---|$)/gi, '');
+
+  // 4. 【年表】セクションを除去（L列に格納するため、E列からは除外）
+  text = text.replace(/(?:【\s*(?:年表|時系列|経緯|スケジュール|歴史|タイムライン|重要日程|日程)\s*】|(?:^|\n)\s*(?:#+\s*)?(?:年表|時系列|経緯|スケジュール|タイムライン)\s*[:：]?)\s*\n?[\s\S]*?(?=\n\s*(?:【|#+|---|===)|$)/gi, '');
+
+  // 5. 先頭・末尾のマークダウンコードブロック、水平線、余計な空白をトリミング
+  text = text
+    .replace(/^```\w*\n?/, '')
+    .replace(/\n?```$/, '')
+    .replace(/^(?:---|===|\s+)+/, '')
+    .replace(/(?:---|===|\s+)+$/, '')
+    .trim();
+
+  // 6. もし上記処理で空になった場合（またはセクション見出しが一切ない自由文の場合）
+  if (!text) {
+    text = rawText.trim();
+  }
+
+  return text;
+}
+
 // 解析テキストからスプレッドシート用フィールド（D列・E列・L列）を構築
 function buildSheetFieldsFromFreeText(rawText, fallbackContent, fallbackTitle, fallbackDate) {
   const hasAiResult = !!(rawText && rawText.trim());
@@ -603,31 +651,8 @@ function buildSheetFieldsFromFreeText(rawText, fallbackContent, fallbackTitle, f
   // 1. D列: カテゴリ/タグ
   const tags = extractCategoryFromText(text, fallbackTitle);
 
-  // 2. E列: highlights（要約・具体的数値事実・市場影響・キーワード・年表）
-  let highlights = "";
-  if (hasAiResult) {
-    // 【カテゴリ】ブロックのみを排除（D列に格納するため）、要約・事実・影響・キーワード・年表はすべて完全保持
-    let cleanHighlights = rawText
-      .replace(/【\s*(?:カテゴリ(?:[・\/]タグ)?|タグ|分野|分類)\s*】[\s\S]*?(?=\n\s*【|\n\s*###|\n\s*---|$)/gi, '')
-      .trim();
-
-    // 先頭・末尾の余分な改行や水平線をクリーンアップ
-    cleanHighlights = cleanHighlights.replace(/^(?:---|===|\s+)+/, '').replace(/(?:---|===|\s+)+$/, '').trim();
-    highlights = cleanHighlights || rawText;
-  } else {
-    // Geminiが一時的に未実行またはキー未設定時の構造化フォールバック
-    const cleanFallback = (fallbackContent || "").replace(/\s+/g, ' ').trim();
-    const summaryExcerpt = cleanFallback ? cleanFallback.substring(0, 300) + (cleanFallback.length > 300 ? "..." : "") : (fallbackTitle || "記事概要");
-    let safeDate = fallbackDate || Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
-    safeDate = safeDate.replace(/[-_]/g, '/');
-
-    highlights = 
-      `【要約】\n${summaryExcerpt}\n\n` +
-      `【具体的数値・事実】\n・${fallbackTitle || "記事公表"}（公表日: ${safeDate}）\n\n` +
-      `【市場・実務への影響】\n・関連市場・動向の進展に留意。\n\n` +
-      `【キーワード】\n- [[${tags}]]: 関連分野\n\n` +
-      `【年表】\n[${safeDate}] ${fallbackTitle || "記事公表"}`;
-  }
+  // 2. E列: highlights（要約・具体的数値事実・市場影響・キーワード ※カテゴリはD列、年表はL列に完全分離）
+  const highlights = extractHighlightsFromFreeText(rawText, fallbackContent, fallbackTitle, fallbackDate, tags);
 
   // 3. L列: timeline（年表）
   const timeline = extractTimelineFromText(rawText, fallbackContent, fallbackDate, fallbackTitle);
@@ -785,9 +810,7 @@ function buildSheetFieldsFromGeminiResult(parsed, rawContent, fallbackTitle, fal
     if (parsed.keywords && parsed.keywords.length > 0) {
       parts.push("【キーワード】\n" + parsed.keywords.map(k => `- [[${k.term}]]: ${k.definition}`).join("\n"));
     }
-    if (parsed.timeline) {
-      parts.push("【年表】\n" + parsed.timeline);
-    }
+    // 注意: 【年表】はL列に独立して格納するため、E列（highlightsText）には含めない
     highlightsText = parts.join("\n\n");
   }
 
