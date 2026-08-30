@@ -169,18 +169,34 @@ function normalizeGeminiModelName(modelName) {
 }
 
 function getCandidateModels(targetModel) {
-  const norm = normalizeGeminiModelName(targetModel);
-  const list = [
-    norm,
-    "gemini-2.5-flash-lite",
-    "gemini-2.0-flash-lite",
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-8b",
-    "gemini-1.5-pro"
-  ];
-  return Array.from(new Set(list));
+  const raw = targetModel ? String(targetModel).trim().replace(/^models\//i, '') : "gemini-2.5-flash";
+  const norm = normalizeGeminiModelName(raw);
+  const isLite = raw.toLowerCase().includes("lite") || norm.toLowerCase().includes("lite");
+
+  let list = [];
+  if (isLite) {
+    list = [
+      raw,
+      norm,
+      "gemini-2.5-flash-lite",
+      "gemini-2.0-flash-lite",
+      "gemini-2.5-flash",
+      "gemini-2.0-flash",
+      "gemini-1.5-flash"
+    ];
+  } else {
+    list = [
+      raw,
+      norm,
+      "gemini-2.5-flash",
+      "gemini-2.0-flash",
+      "gemini-2.5-flash-lite",
+      "gemini-2.0-flash-lite",
+      "gemini-1.5-flash",
+      "gemini-2.5-pro"
+    ];
+  }
+  return Array.from(new Set(list.filter(Boolean)));
 }
 
 const GEMINI_SAFETY_SETTINGS = [
@@ -217,7 +233,7 @@ function extractGeminiResponseText(resJson) {
 function callGeminiFree(content, persona, syncPrompt, apiKey, model) {
   const resolvedApiKey = getGeminiApiKey(apiKey);
   if (!resolvedApiKey) {
-    Logger.log("[Gemini] ⚠️ APIキーが未設定です。スクリプトプロパティ「GEMINI_API_KEY」またはアプリの「Gemini API キー」を設定してください。");
+    Logger.log("[Gemini] ⚠️ APIキーが未設定です。アプリの「Gemini AI 設定」またはGASスクリプトプロパティ「GEMINI_API_KEY」を設定してください。");
     return "";
   }
 
@@ -274,6 +290,7 @@ function callGeminiFree(content, persona, syncPrompt, apiKey, model) {
     }
   }
 
+  Logger.log("[Gemini] ⚠️ 全ての候補モデルでの生成に失敗しました。フォールバック処理を実行します。");
   return "";
 }
 
@@ -745,7 +762,8 @@ function buildSheetFieldsFromFreeText(rawText, fallbackContent, fallbackTitle, f
   return {
     tags: tags,
     highlights: highlights,
-    timeline: timeline
+    timeline: timeline,
+    hasAiResult: hasAiResult
   };
 }
 
@@ -812,10 +830,18 @@ function callGeminiAnalyzeText(content, persona, syncPrompt, apiKey, model) {
         safetySettings: GEMINI_SAFETY_SETTINGS,
         generationConfig: { temperature: 0.1, responseMimeType: "application/json", responseSchema: UNIFIED_RESPONSE_SCHEMA }
       };
-      const response = UrlFetchApp.fetch(
+      let response = UrlFetchApp.fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${resolvedApiKey}`,
         { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true }
       );
+      if (response.getResponseCode() === 429) {
+        Logger.log(`[Gemini JSON] Model ${m} レートリミット (429)。2秒待機後再試行します...`);
+        Utilities.sleep(2000);
+        response = UrlFetchApp.fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${resolvedApiKey}`,
+          { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true }
+        );
+      }
       if (response.getResponseCode() === 200) {
         const resJson = JSON.parse(response.getContentText());
         const rawText = extractGeminiResponseText(resJson);
@@ -857,10 +883,18 @@ function callGeminiAnalyzeFile(file, apiKey, model, persona, syncPrompt) {
         safetySettings: GEMINI_SAFETY_SETTINGS,
         generationConfig: { temperature: 0.1, responseMimeType: "application/json", responseSchema: UNIFIED_RESPONSE_SCHEMA, maxOutputTokens: 8000 }
       };
-      const response = UrlFetchApp.fetch(
+      let response = UrlFetchApp.fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${resolvedApiKey}`,
         { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true }
       );
+      if (response.getResponseCode() === 429) {
+        Logger.log(`[Gemini JSON File] Model ${m} レートリミット (429)。2秒待機後再試行します...`);
+        Utilities.sleep(2000);
+        response = UrlFetchApp.fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${resolvedApiKey}`,
+          { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true }
+        );
+      }
       if (response.getResponseCode() === 200) {
         const resJson = JSON.parse(response.getContentText());
         const rawText = extractGeminiResponseText(resJson);
@@ -900,8 +934,9 @@ function buildSheetFieldsFromGeminiResult(parsed, rawContent, fallbackTitle, fal
   }
 
   const timeline = parsed.timeline || extractTimelineFromText("", rawContent, fallbackDate, fallbackTitle);
+  const hasAi = !!(parsed.summary || (parsed.key_facts && parsed.key_facts.length > 0) || parsed.market_impact);
 
-  return { tags: tagsWikilinks, highlights: highlightsText, timeline: timeline };
+  return { tags: tagsWikilinks, highlights: highlightsText, timeline: timeline, hasAiResult: hasAi };
 }
 
 // 共通ディスパッチャ
@@ -1305,6 +1340,8 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
   let processedFileCount = 0;
   let isTimeOut = false;
   let problematicItem = null;
+  let aiSuccessCount = 0;
+  let fallbackCount = 0;
 
   try {
     const sheet = getSheet(targetSheetName, targetSsUrl);
@@ -1420,6 +1457,7 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
                 keyword = fallbackFields.tags;
                 summary = fallbackFields.highlights;
                 timelineForRow = fallbackFields.timeline;
+                fallbackCount++;
               } else {
                 const structuredRaindropText = 
                   `【記事タイトル】\n${item.title}\n\n` +
@@ -1431,12 +1469,19 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
                 keyword = fields.tags;
                 summary = fields.highlights;
                 timelineForRow = fields.timeline;
+                if (fields.hasAiResult) {
+                  aiSuccessCount++;
+                } else {
+                  fallbackCount++;
+                }
               }
             } else {
               summary = "【記事本文の取得に失敗 (HTTP " + response.getResponseCode() + ")】" + (item.excerpt || "");
+              fallbackCount++;
             }
           } catch (e) {
             summary = "【取得エラー】" + e.message + " / " + (item.excerpt || "");
+            fallbackCount++;
           }
 
           if (manualHighlights) {
@@ -1546,7 +1591,7 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
 
         try {
           if (fileNameLower.endsWith('.mht') || fileNameLower.endsWith('.mhtml')) {
-            let mhtResult = { addedCount: 0, isTimeOut: false };
+            let mhtResult = { addedCount: 0, isTimeOut: false, aiSuccessCount: 0, fallbackCount: 0 };
             try {
               mhtResult = processMhtFile_Advanced(
                 file, sheet, existingIds, existingUrls, existingTitles, processedFileIds, processedFileNames,
@@ -1559,6 +1604,8 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
               file.moveTo(processedFolder);
             }
             addedCount += mhtResult.addedCount;
+            if (mhtResult.aiSuccessCount) aiSuccessCount += mhtResult.aiSuccessCount;
+            if (mhtResult.fallbackCount) fallbackCount += mhtResult.fallbackCount;
             if (mhtResult.isTimeOut) { isTimeOut = true; break; }
 
           } else if (fileNameLower.endsWith('.pdf')) {
@@ -1580,6 +1627,11 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
             }
 
             const fields = analyzeFile(file, geminiApiKey, geminiModel, persona, syncPrompt, outputMode);
+            if (fields.hasAiResult) {
+              aiSuccessCount++;
+            } else {
+              fallbackCount++;
+            }
             sheet.appendRow([
               fileBaseName,
               fileBaseName,
@@ -1619,6 +1671,11 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
               }
 
               const fields = analyzeFile(file, geminiApiKey, geminiModel, persona, syncPrompt, outputMode);
+              if (fields.hasAiResult) {
+                aiSuccessCount++;
+              } else {
+                fallbackCount++;
+              }
               sheet.appendRow([
                 ssId,
                 fileName,
@@ -1651,6 +1708,17 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
       }
     }
 
+    let message = "";
+    if (addedCount === 0) {
+      message = "新しい未処理データはありませんでした（すべて登録済みです）";
+    } else if (!geminiApiKey) {
+      message = `⚠️ Gemini APIキー未設定のため、${addedCount}件を【簡易テキスト（AI未解析）】として追加しました。高度なAI要約・分析を行うには、アプリ設定でGemini APIキーを設定してください。`;
+    } else if (fallbackCount > 0 && aiSuccessCount === 0) {
+      message = `⚠️ Gemini API通信エラー等のため、${addedCount}件を【フォールバック（簡易テキスト）】として追加しました。APIキーまたは通信状態を確認してください。`;
+    } else {
+      message = `✦ ${addedCount}件のデータをスプレッドシートに追加しました（Gemini AI要約・解析: ${aiSuccessCount}件${fallbackCount > 0 ? `、フォールバック: ${fallbackCount}件` : ''}）`;
+    }
+
     return {
       success: true,
       addedCount: addedCount,
@@ -1658,7 +1726,11 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
       isTimeOut: isTimeOut,
       problematicItem: problematicItem,
       sheetName: sheet.getName(),
-      outputMode: outputMode
+      outputMode: outputMode,
+      aiSuccessCount: aiSuccessCount,
+      fallbackCount: fallbackCount,
+      hasApiKey: !!geminiApiKey,
+      message: message
     };
 
   } catch (e) {
@@ -1855,6 +1927,8 @@ function processMhtFile_Advanced(
   const TIME_LIMIT = 3.5 * 60 * 1000;
   let addedCount = 0;
   let isTimeOut = false;
+  let aiSuccessCount = 0;
+  let fallbackCount = 0;
 
   let rawData = file.getBlob().getDataAsString();
   rawData = rawData.replace(/=\r?\n/g, "");
@@ -1963,6 +2037,7 @@ function processMhtFile_Advanced(
       tagsForRow = fallbackFields.tags;
       highlightsForRow = fallbackFields.highlights;
       timelineForRow = fallbackFields.timeline;
+      fallbackCount++;
     } else {
       const structuredArticleText = 
         `【記事タイトル】\n${titleOnly}\n\n` +
@@ -1973,6 +2048,11 @@ function processMhtFile_Advanced(
       tagsForRow = fields.tags;
       highlightsForRow = fields.highlights;
       timelineForRow = fields.timeline;
+      if (fields.hasAiResult) {
+        aiSuccessCount++;
+      } else {
+        fallbackCount++;
+      }
     }
 
     sheet.appendRow([
@@ -1998,7 +2078,7 @@ function processMhtFile_Advanced(
     Utilities.sleep(500);
   }
 
-  return { addedCount: addedCount, isTimeOut: isTimeOut };
+  return { addedCount: addedCount, isTimeOut: isTimeOut, aiSuccessCount: aiSuccessCount, fallbackCount: fallbackCount };
 }
 
 function fetchRaindropData(token) {

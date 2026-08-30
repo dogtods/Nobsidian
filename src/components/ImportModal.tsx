@@ -24,18 +24,22 @@ import {
   ChevronDown, 
   ChevronUp, 
   FileSpreadsheet,
-  Copy,
-  Check,
-  Loader2,
-  Activity,
-  ArrowDown,
-  ArrowRight,
-  Database,
-  Layers,
-  UploadCloud,
-  Settings2,
-  ExternalLink,
-  Link
+  Copy, 
+  Check, 
+  Loader2, 
+  Activity, 
+  ArrowDown, 
+  ArrowRight, 
+  Database, 
+  Layers, 
+  UploadCloud, 
+  Settings2, 
+  ExternalLink, 
+  Link,
+  Key,
+  Bot,
+  Eye,
+  EyeOff
 } from "lucide-react";
 
 interface ImportModalProps {
@@ -80,6 +84,11 @@ export default function ImportModal({
   const [driveSourceFolderInput, setDriveSourceFolderInput] = useState("");
   const [driveProcessedFolderInput, setDriveProcessedFolderInput] = useState("");
 
+  // Gemini AI configuration
+  const [geminiApiKeyInput, setGeminiApiKeyInput] = useState(() => localStorage.getItem("cn_gemini_key") || "");
+  const [geminiModelInput, setGeminiModelInput] = useState(() => localStorage.getItem("cn_gemini_model") || "gemini-2.5-flash");
+  const [showApiKey, setShowApiKey] = useState(false);
+
   // ==========================================
   // STEP 1: External Source Data Collection Config
   // ==========================================
@@ -99,6 +108,8 @@ export default function ImportModal({
   const [externalSyncStatus, setExternalSyncStatus] = useState<string | null>(null);
   const [externalSyncResult, setExternalSyncResult] = useState<{
     addedCount?: number;
+    aiSuccessCount?: number;
+    fallbackCount?: number;
     isTimeOut?: boolean;
     problematicItem?: any;
     message?: string;
@@ -137,7 +148,7 @@ export default function ImportModal({
     if (isOpen) {
       const storedGasUrl = localStorage.getItem("cn_gas_api_url") || "";
       const storedExtSheet = localStorage.getItem("cn_external_sync_sheet_name") || "Notes";
-            const storedAppSheet = localStorage.getItem("cn_gas_sheet_name") || "Notes";
+      const storedAppSheet = localStorage.getItem("cn_gas_sheet_name") || "Notes";
       setGasSheetName(storedAppSheet);
       setTargetSsUrl(localStorage.getItem("cn_target_ss_url") || "");
 
@@ -145,6 +156,9 @@ export default function ImportModal({
       setExternalSyncSheetName(storedExtSheet);
       setDriveSourceFolderInput(localStorage.getItem("cn_drive_source_folder") || "");
       setDriveProcessedFolderInput(localStorage.getItem("cn_drive_processed_folder") || "");
+
+      setGeminiApiKeyInput(localStorage.getItem("cn_gemini_key") || "");
+      setGeminiModelInput(localStorage.getItem("cn_gemini_model") || "gemini-2.5-flash");
 
       const storedRaindrop = localStorage.getItem("cn_sync_raindrop");
       setSyncRaindrop(storedRaindrop !== null ? storedRaindrop === "true" : false);
@@ -188,6 +202,16 @@ export default function ImportModal({
 
     if (driveProcessedFolderInput) localStorage.setItem("cn_drive_processed_folder", driveProcessedFolderInput.trim());
     else localStorage.removeItem("cn_drive_processed_folder");
+
+    if (geminiApiKeyInput.trim()) {
+      localStorage.setItem("cn_gemini_key", geminiApiKeyInput.trim());
+    } else {
+      localStorage.removeItem("cn_gemini_key");
+    }
+
+    if (geminiModelInput.trim()) {
+      localStorage.setItem("cn_gemini_model", geminiModelInput.trim());
+    }
 
     if (finalExtSheet) {
       localStorage.setItem("cn_external_sync_sheet_name", finalExtSheet);
@@ -284,13 +308,16 @@ export default function ImportModal({
     setExternalSyncStatus("スプレッドシートへ外部データを収集中・AI解析中...（最大3.5分）");
     setExternalSyncResult(null);
 
+    const currentApiKey = (geminiApiKeyInput.trim() || localStorage.getItem("cn_gemini_key") || "").trim();
+    const currentModel = (geminiModelInput.trim() || localStorage.getItem("cn_gemini_model") || "gemini-2.5-flash").trim();
+
     const syncOptions = {
       raindrop: syncRaindrop,
       drive: syncDrive,
       driveSourceFolder: driveSourceFolderInput.trim(),
       driveProcessedFolder: driveProcessedFolderInput.trim(),
-      geminiApiKey: localStorage.getItem("cn_gemini_key") || "",
-      geminiModel: localStorage.getItem("cn_gemini_model") || "gemini-2.5-flash",
+      geminiApiKey: currentApiKey,
+      geminiModel: currentModel,
       geminiTemperature: localStorage.getItem("cn_gemini_temp") || "0.1",
       persona: syncPersonaInput || getStoredPrompt("SYSTEM_PERSONA"),
       syncPrompt: syncPromptInput || getStoredPrompt("SYNC_PROMPT"),
@@ -314,9 +341,13 @@ export default function ImportModal({
 
       const added = res?.addedCount || 0;
       const processed = res?.processedCount || 0;
+      const aiCount = res?.aiSuccessCount || 0;
+      const fallback = res?.fallbackCount || 0;
       let msg = "";
-      if (added > 0) {
-        msg = `${added} 件の新規データをスプレッドシート（シート: ${targetExtSheet}）へ追加しました（処理ファイル数: ${processed}件） ✦`;
+      if (res?.message) {
+        msg = res.message;
+      } else if (added > 0) {
+        msg = `✦ ${added}件の新規データをスプレッドシート（シート: ${targetExtSheet}）へ追加しました（AI要約・解析: ${aiCount}件${fallback > 0 ? `、フォールバック: ${fallback}件` : ''}）`;
       } else if (processed > 0) {
         msg = `Googleドライブから ${processed} 件のファイルを検出し処理（処理済みフォルダへ移動）しました（新規追加は0件、または既に登録済みです）。`;
       } else {
@@ -325,12 +356,14 @@ export default function ImportModal({
 
       setExternalSyncResult({
         addedCount: added,
+        aiSuccessCount: aiCount,
+        fallbackCount: fallback,
         isTimeOut: res?.isTimeOut,
         problematicItem: res?.problematicItem,
         message: msg
       });
 
-      onSaveToast(added > 0 ? `外部データの自動取り込み完了: ${added} 件追加 (シート: ${targetExtSheet})` : (processed > 0 ? `ファイル ${processed}件を処理・移動しました` : `指定フォルダに未処理ファイルはありませんでした`));
+      onSaveToast(added > 0 ? `外部データの取り込み完了: ${added}件追加 (AI解析: ${aiCount}件)` : (processed > 0 ? `ファイル ${processed}件を処理・移動しました` : `指定フォルダに未処理ファイルはありませんでした`));
 
     } catch (e: any) {
       setExternalSyncResult({
@@ -583,7 +616,18 @@ export default function ImportModal({
     localStorage.setItem(PROMPT_KEYS.SYSTEM_PERSONA, syncPersonaInput);
     localStorage.setItem(PROMPT_KEYS.SYNC_PROMPT, syncPromptInput);
     localStorage.setItem(PROMPT_KEYS.WEEKLY_REPORT_PROMPT, weeklyReportPromptInput);
-    onSaveToast("プロンプト設定を保存しました ✦");
+    
+    if (geminiApiKeyInput.trim()) {
+      localStorage.setItem("cn_gemini_key", geminiApiKeyInput.trim());
+    } else {
+      localStorage.removeItem("cn_gemini_key");
+    }
+
+    if (geminiModelInput.trim()) {
+      localStorage.setItem("cn_gemini_model", geminiModelInput.trim());
+    }
+    
+    onSaveToast("Gemini AI設定およびプロンプト設定を保存しました ✦");
   };
 
   const handleResetPrompts = () => {
@@ -761,11 +805,101 @@ export default function ImportModal({
         {/* TAB 3: Prompts Configuration */}
         {activeTab === "prompts" && (
           <div className="flex flex-col gap-3">
+            {/* Gemini AI Settings & Status */}
+            <div className="bg-[#161b22] border border-purple-500/30 rounded-xl p-4 flex flex-col gap-3 shadow-lg">
+              <div className="flex items-center justify-between border-b border-[#30363d] pb-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-md bg-purple-500/20 text-purple-300 flex items-center justify-center">
+                    <Sparkles className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-gray-100 flex items-center gap-2">
+                      <span>Gemini AI 連携設定 ＆ 稼働ステータス</span>
+                      {geminiApiKeyInput.trim() ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                          Gemini AI 有効 ({geminiModelInput})
+                        </span>
+                      ) : (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-semibold border border-amber-500/30">
+                          APIキー未設定（簡易抽出モードで動作）
+                        </span>
+                      )}
+                    </h4>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-bold text-gray-300 flex items-center gap-1">
+                    <Key className="w-3 h-3 text-purple-400" />
+                    <span>Gemini API Key</span>
+                  </label>
+                  <div className="relative flex items-center">
+                    <input
+                      type={showApiKey ? "text" : "password"}
+                      className="w-full font-mono text-xs p-2 pr-8 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-purple-500 transition-all"
+                      value={geminiApiKeyInput}
+                      onChange={(e) => {
+                        setGeminiApiKeyInput(e.target.value);
+                      }}
+                      onBlur={() => {
+                        if (geminiApiKeyInput.trim()) {
+                          localStorage.setItem("cn_gemini_key", geminiApiKeyInput.trim());
+                        } else {
+                          localStorage.removeItem("cn_gemini_key");
+                        }
+                      }}
+                      placeholder="AIzaSy..."
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="absolute right-2 text-gray-400 hover:text-gray-200 cursor-pointer"
+                      title={showApiKey ? "キーを隠す" : "キーを表示"}
+                    >
+                      {showApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-bold text-gray-300 flex items-center gap-1">
+                    <Bot className="w-3 h-3 text-purple-400" />
+                    <span>Gemini モデル</span>
+                  </label>
+                  <select
+                    className="w-full text-xs p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-purple-500 cursor-pointer"
+                    value={geminiModelInput}
+                    onChange={(e) => {
+                      setGeminiModelInput(e.target.value);
+                      localStorage.setItem("cn_gemini_model", e.target.value);
+                    }}
+                  >
+                    <option value="gemini-flash-lite-latest">gemini-flash-lite-latest (超軽量・最高速・省コスト)</option>
+                    <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (軽量最新)</option>
+                    <option value="gemini-2.5-flash">gemini-2.5-flash (推奨・高速かつ高精度)</option>
+                    <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite (高速軽量)</option>
+                    <option value="gemini-2.5-pro">gemini-2.5-pro (最高精度・深い多角的分析)</option>
+                    <option value="gemini-1.5-flash">gemini-1.5-flash (標準)</option>
+                    <option value="gemini-1.5-pro">gemini-1.5-pro (高度分析)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="text-[10px] text-gray-400 leading-relaxed bg-[#0d1117] p-2.5 rounded-lg border border-[#30363d]/60">
+                💡 <strong className="text-purple-300">外部データ取り込み・要約の仕組み:</strong><br />
+                GoogleドライブのMHTファイル等の外部データを取り込む際、ここで設定した【<strong className="text-gray-200">システムペルソナ</strong>】と【<strong className="text-gray-200">SYNC_PROMPT</strong>】がGemini AIに渡され、記事本文を解析して<strong>タイトル・要約・数値事実・市場影響・キーワード</strong>をE列に書き込みます。
+              </div>
+            </div>
+
+            {/* Prompt Editors */}
             <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 flex flex-col gap-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-gray-100 flex items-center gap-1.5">
                   <Sliders className="w-4 h-4 text-purple-400" />
-                  <span>AIプロンプトのカスタマイズ</span>
+                  <span>プロンプト詳細編集</span>
                 </span>
                 <div className="flex items-center gap-2">
                   <button
@@ -782,7 +916,7 @@ export default function ImportModal({
                     className="px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-lg transition cursor-pointer flex items-center gap-1"
                   >
                     <Save className="w-3 h-3" />
-                    <span>保存</span>
+                    <span>設定を保存</span>
                   </button>
                 </div>
               </div>
@@ -825,8 +959,11 @@ export default function ImportModal({
               </div>
 
               {activePromptSubTab === "persona" && (
-                <div className="flex flex-col gap-1">
-                  <span className="text-[10px] text-gray-400">Gemini AIの分析ペルソナ・基本方針:</span>
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between text-[10px] text-gray-400">
+                    <span>Gemini AIの分析ペルソナ・基本方針 (AI全体に適用):</span>
+                    <span className="text-purple-300">※全Gemini呼び出しの最上位に注入されます</span>
+                  </div>
                   <textarea
                     rows={8}
                     className="flex-1 text-xs font-mono p-2.5 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-200 outline-none focus:border-purple-500"
@@ -837,10 +974,13 @@ export default function ImportModal({
               )}
 
               {activePromptSubTab === "sync" && (
-                <div className="flex flex-col gap-1">
-                  <span className="text-[10px] text-gray-400">Raindrop / MHT データ解析・要約プロンプト:</span>
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between text-[10px] text-gray-400">
+                    <span>MHT・Raindrop 外部取り込み時のAI解析指示 (E列フォーマット指定):</span>
+                    <span className="text-purple-300">※E列のタイトル・要約・数値事実・市場影響を生成</span>
+                  </div>
                   <textarea
-                    rows={8}
+                    rows={10}
                     className="flex-1 text-xs font-mono p-2.5 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-200 outline-none focus:border-purple-500"
                     value={syncPromptInput}
                     onChange={(e) => setSyncPromptInput(e.target.value)}
@@ -849,8 +989,11 @@ export default function ImportModal({
               )}
 
               {activePromptSubTab === "weekly" && (
-                <div className="flex flex-col gap-1">
-                  <span className="text-[10px] text-gray-400">週次レポート生成プロンプト:</span>
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between text-[10px] text-gray-400">
+                    <span>週次レポート生成プロンプト:</span>
+                    <span className="text-purple-300">※複数ノートの横断レポート作成に使用</span>
+                  </div>
                   <textarea
                     rows={8}
                     className="flex-1 text-xs font-mono p-2.5 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-200 outline-none focus:border-purple-500"
@@ -1147,7 +1290,18 @@ export default function ImportModal({
               <div className="bg-[#0d1117] border border-[#30363d] rounded-lg p-2.5 flex flex-col gap-2">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">収集対象ソース</span>
-                  <span className="text-[10px] text-purple-300">※未処理のMHTファイルのみを抽出</span>
+                  <div className="flex items-center gap-1.5">
+                    {geminiApiKeyInput.trim() ? (
+                      <span className="text-[10px] text-emerald-300 font-medium flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                        <Sparkles className="w-3 h-3 text-emerald-400" />
+                        Gemini AI 解析: ON ({geminiModelInput})
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-amber-300 font-medium flex items-center gap-1 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                        Gemini AI: 未設定 (簡易テキスト抽出)
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -1176,7 +1330,7 @@ export default function ImportModal({
                   </label>
                 </div>
                 <p className="text-[10px] text-gray-400 leading-relaxed mt-0.5">
-                  💡 Googleドライブのルートに自動作成される「Connected Notes 取り込み」フォルダ内の未処理MHT・PDFファイルを検出し、スプレッドシートへ追記します（処理済みファイルは「_processed」フォルダに退避されるため二重取り込みされません）。
+                  💡 Googleドライブの「Connected Notes 取り込み」フォルダ内の未処理MHT・PDFファイルを検出し、Gemini AIでE列（要約・事実・影響）を解析してスプレッドシートへ追記します（処理後は「_processed」へ移動）。
                 </p>
               </div>
 
