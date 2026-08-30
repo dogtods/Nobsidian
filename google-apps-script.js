@@ -49,41 +49,47 @@ const DEFAULT_CONFIG = {
 
   SYNC_PROMPT: `# 役割
 あなたは客観的かつ論理的な「ビジネスリサーチ・アナリスト」です。
-提供された記事（タイトル、掲載情報、本文）から、事実と構造を正確に抽出し、以下の出力構成で整理してください。
+提供された記事から、事実と構造を正確に抽出し、以下の出力構成で整理してください。
 
 # 厳守事項
 - 資料外の知識で勝手に補完しないこと。
 - 事実（客観）と示唆（主観）を分離すること。
 - 内容を端折らず、十分な情報量と具体性（数値・固有名詞・背景）を担保して出力すること。
-- 記事の長短に関わらず、必ず以下のすべてのセクション（カテゴリ、タイトル、要約、具体的数値・事実、市場・実務への影響、キーワード、年表）を過不足なく出力すること。
+- 「【掲載情報・日付】」「【本文】」「【対象記事データ】」などの入力用メタ見出しは出力に一切含めないこと。
+- 記事の長短に関わらず、必ず以下のすべてのセクションを過不足なく出力すること。
 
 ---
 
 # 出力構成
 
 【カテゴリ】
-（この記事の主題分野・分類を表す単語を1つだけ出力。例：太陽光発電、半導体、環境、EV充電、脱炭素、蓄電池、水質、金融、公募 など）
+（この記事の主題分野・分類を表す単語を1つだけ出力。例：気候変動、脱炭素、太陽光発電、半導体、環境、EV充電、蓄電池、水質、金融、公募 など）
 
-【タイトル】
-（記事の本質と要点を端的に表す、具体的で分かりやすいタイトル。30文字前後）
+### タイトル
+（記事の本質と要点を端的に表す、具体的で分かりやすいタイトル。30文字前後。必ず「### 」で始めること）
 
 【要約】
-※記事の全体像、背景、決定事項、主要なポイントを論理的かつ分かりやすく要約（約250〜400文字程度で充実させて記述）。
+※記事の全体像、背景、決定事項、主要な論点・ポイントを論理的かつ分かりやすく要約（約250〜400文字程度で充実させて記述）。
 
 【具体的数値・事実】
-※記事中の数値（金額・容量・目標値等）、固有名詞、日付、企業名・組織名、具体的決定事項を箇条書きで具体的に抽出（3〜6点）。
+※記事中の数値（金額・割合・容量・社数・年数・目標値等）、固有名詞、日付、企業名・組織名、具体的決定事項を箇条書きで具体的に抽出（3〜6点）。
+・項目1
+・項目2
+・項目3
 
 【市場・実務への影響】
-※この記事が社会的・経済的・産業界や関連ビジネスにどのような影響や示唆を与えるかを分析（2〜4文）。
+※この記事が社会的・経済的・産業界や関連ビジネス、企業実務にどのような影響や示唆を与えるかを分析（2〜4文）。
 
 【キーワード】
 ※記事中の専門用語・業界用語を抽出し、以下の「ウィキリンク形式」で出力（3〜5単語）。
-- [[用語]]: 意味や背景・定義の解説
+- [[用語1]]: 意味や背景・定義の解説
+- [[用語2]]: 意味や背景・定義の解説
+- [[用語3]]: 意味や背景・定義の解説
 
 【年表】
-※記事中に登場するすべての日程・時期（過去の経緯、発表日、施行予定、将来目標、年度など）を時系列で抽出し、必ず以下の形式で箇条書き（改行区切り）で出力してください。
+※記事中に登場する過去の経緯、発表日、施行予定、将来目標、年度などの「ニュース内の出来事やスケジュール」を時系列で抽出し、必ず以下の形式で箇条書き（改行区切り）で出力してください（単なる記事掲載日ではなく、記事内で言及されている出来事・日程）。
 [YYYY/MM/DD] 出来事（内容がひと目でわかるよう50〜100文字程度で簡潔にまとめる）
-（※月日不明の場合は [YYYY/MM] または [YYYY年] 形式。記事公表日や計画時期を含めて必ず1件以上出力すること）`
+（※月日不明の場合は [YYYY/MM] または [YYYY年] 形式。記事内の決定時期や計画時期を含めて必ず1件以上出力すること）`
 };
 
 function getConfig(key) {
@@ -474,6 +480,14 @@ function extractTimelineFromText(text, fallbackContent, fallbackDate, fallbackTi
         return textPart ? `${datePart} ${textPart}` : `${datePart} ${cleanLine}`;
       }
 
+      // [YYYY年M月] や [YYYY年度] などのブラケット形式
+      const bracketMatchGeneral = cleanLine.match(/^(\[[^\]]+\])\s*(.*)/);
+      if (bracketMatchGeneral && /\d{4}/.test(bracketMatchGeneral[1])) {
+        const datePart = bracketMatchGeneral[1];
+        const textPart = summarizeText(bracketMatchGeneral[2].trim(), 120);
+        return textPart ? `${datePart} ${textPart}` : `${datePart} ${cleanLine}`;
+      }
+
       // YYYY年M月D日
       const ymd = cleanLine.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
       if (ymd) {
@@ -482,18 +496,20 @@ function extractTimelineFromText(text, fallbackContent, fallbackDate, fallbackTi
         return textPart ? `${datePart} ${textPart}` : `${datePart} ${cleanLine}`;
       }
 
-      // YYYY年M月
-      const ym = cleanLine.match(/(\d{4})年(\d{1,2})月/);
+      // YYYY年M月期 または YYYY年M月
+      const ym = cleanLine.match(/(\d{4})年(\d{1,2})月(?:期)?/);
       if (ym) {
-        const datePart = `[${ym[1]}/${String(ym[2]).padStart(2, '0')}]`;
-        const textPart = summarizeText(cleanLine.replace(/(\d{4})年(\d{1,2})月/, '').replace(/^[\s:：\-・]+/, ''), 120);
+        const isPeriod = cleanLine.includes("月期");
+        const datePart = isPeriod ? `[${ym[1]}年${ym[2]}月期]` : `[${ym[1]}/${String(ym[2]).padStart(2, '0')}]`;
+        const textPart = summarizeText(cleanLine.replace(/(\d{4})年(\d{1,2})月(?:期)?/, '').replace(/^[\s:：\-・]+/, ''), 120);
         return textPart ? `${datePart} ${textPart}` : `${datePart} ${cleanLine}`;
       }
 
       // YYYY年 または YYYY年度
       const yearOnly = cleanLine.match(/(\d{4})年(?:度)?/);
       if (yearOnly) {
-        const datePart = `[${yearOnly[1]}年]`;
+        const isNendo = cleanLine.includes("年度");
+        const datePart = isNendo ? `[${yearOnly[1]}年度]` : `[${yearOnly[1]}年]`;
         const textPart = summarizeText(cleanLine.replace(/(\d{4})年(?:度)?/, '').replace(/^[\s:：\-・]+/, ''), 120);
         return textPart ? `${datePart} ${textPart}` : `${datePart} ${cleanLine}`;
       }
@@ -531,58 +547,72 @@ function extractTimelineFromText(text, fallbackContent, fallbackDate, fallbackTi
     }
   }
 
-  // 2. パターンB: セクションがない場合：AI出力テキスト及び本文から日付行を自動抽出
-  const candidateTexts = (primarySource + "\n" + secondarySource).split(/\r?\n/);
+  // 2. パターンB: セクションがない場合：記事本文およびAI出力から出来事・スケジュール行を自動抽出
+  const candidateTexts = (secondarySource + "\n" + primarySource).split(/\r?\n/);
   const extractedList = [];
 
-  for (const line of candidateTexts) {
-    let clean = line.replace(/^[#\-\*•・\d\.\(\)\s]+/, '').trim();
-    if (!clean || clean.length < 6) continue;
-    if (clean.includes("出力構成") || clean.includes("プロンプト") || clean.includes("厳守事項") || clean.includes("本文中に日付") || clean.includes("【カテゴリ】") || clean.includes("【キーワード】") || clean.includes("記事中に登場する")) continue;
+  for (const rawLine of candidateTexts) {
+    let clean = rawLine.replace(/^[#\-\*•・\d\.\(\)\s]+/, '').trim();
+    if (!clean || clean.length < 10) continue;
+    if (clean.includes("出力構成") || clean.includes("プロンプト") || clean.includes("厳守事項") || clean.includes("掲載情報") || clean.includes("書誌情報") || clean.includes("【カテゴリ】") || clean.includes("【キーワード】") || clean.includes("記事中に登場する")) continue;
+
+    // YYYY年M月期 / YYYY年度
+    const nendoMatch = clean.match(/(\d{4})年(\d{1,2})月期/);
+    if (nendoMatch) {
+      const datePrefix = `[${nendoMatch[1]}年${nendoMatch[2]}月期]`;
+      const event = summarizeText(clean.replace(/^.*?(\d{4}年\d{1,2}月期[\s:：から始まる分の開示]*)/, '').trim() || clean, 120);
+      if (event) {
+        extractedList.push(`${datePrefix} ${event}`);
+        if (extractedList.length >= 4) break;
+        continue;
+      }
+    }
+
+    // YYYY年（春・夏・秋・冬）
+    const seasonMatch = clean.match(/(\d{4})年(春|夏|秋|冬)/);
+    if (seasonMatch) {
+      const datePrefix = `[${seasonMatch[1]}年${seasonMatch[2]}]`;
+      const event = summarizeText(clean, 120);
+      if (event) {
+        extractedList.push(`${datePrefix} ${event}`);
+        if (extractedList.length >= 4) break;
+        continue;
+      }
+    }
 
     // YYYY年M月D日
     const ymd = clean.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
     if (ymd) {
       const datePrefix = `[${ymd[1]}/${String(ymd[2]).padStart(2, '0')}/${String(ymd[3]).padStart(2, '0')}]`;
-      const event = summarizeText(clean.replace(/^.*?(\d{4}年\d{1,2}月\d{1,2}日[\s:：に発表・決定された]*)/, '').trim() || clean, 120);
+      const event = summarizeText(clean.replace(/^.*?(\d{4}年\d{1,2}月\d{1,2}日[\s:：に発表・決定・実施された]*)/, '').trim() || clean, 120);
       if (event) {
         extractedList.push(`${datePrefix} ${event}`);
-        if (extractedList.length >= 5) break;
+        if (extractedList.length >= 4) break;
         continue;
       }
     }
 
-    // YYYY/MM/DD
-    const slashMatch = clean.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
-    if (slashMatch) {
-      const datePrefix = `[${slashMatch[1]}/${String(slashMatch[2]).padStart(2, '0')}/${String(slashMatch[3]).padStart(2, '0')}]`;
-      const event = summarizeText(clean.replace(/^.*?(\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}[\s:：]*)/, '').trim() || clean, 120);
-      if (event) {
-        extractedList.push(`${datePrefix} ${event}`);
-        if (extractedList.length >= 5) break;
-        continue;
-      }
-    }
-
-    // YYYY年M月 または YYYY年
+    // YYYY年M月
     const ymMatch = clean.match(/(\d{4})年(\d{1,2})月/);
     if (ymMatch) {
       const datePrefix = `[${ymMatch[1]}/${String(ymMatch[2]).padStart(2, '0')}]`;
       const event = summarizeText(clean.replace(/^.*?(\d{4}年\d{1,2}月[\s:：に]*)/, '').trim() || clean, 120);
       if (event) {
         extractedList.push(`${datePrefix} ${event}`);
-        if (extractedList.length >= 5) break;
+        if (extractedList.length >= 4) break;
         continue;
       }
     }
 
-    const yearMatch = clean.match(/(\d{4})年(?:度)?/);
-    if (yearMatch) {
-      const datePrefix = `[${yearMatch[1]}年]`;
+    // YYYY年度
+    const yearNendoMatch = clean.match(/(\d{4})年度/);
+    if (yearNendoMatch) {
+      const datePrefix = `[${yearNendoMatch[1]}年度]`;
       const event = summarizeText(clean, 120);
       if (event) {
         extractedList.push(`${datePrefix} ${event}`);
-        if (extractedList.length >= 5) break;
+        if (extractedList.length >= 4) break;
+        continue;
       }
     }
   }
@@ -592,7 +622,7 @@ function extractTimelineFromText(text, fallbackContent, fallbackDate, fallbackTi
     return unique.slice(0, 5).join("\n");
   }
 
-  // 3. パターンC: 日付が検出できない場合のフォールバック（公表日・ファイル日付＋タイトル）
+  // 3. パターンC: 日付が検出できない場合のフォールバック（公表日＋タイトル）
   let targetDate = fallbackDate || "";
   if (!targetDate || !/\d{4}/.test(targetDate)) {
     targetDate = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
@@ -603,40 +633,83 @@ function extractTimelineFromText(text, fallbackContent, fallbackDate, fallbackTi
 }
 
 // E列（highlights）専用のクリーンアップ抽出関数
-// 【タイトル】・【要約】・【具体的数値・事実】・【市場・実務への影響】・【キーワード】のみを抽出し、
-// D列（【カテゴリ】）やL列（【年表】）、入力マーカー（【データ】等）、プロンプト指示の混入を完全排除する
+// ### タイトル・【要約】・【具体的数値・事実】・【市場・実務への影響】・【キーワード】を綺麗に配置し、
+// D列（【カテゴリ】）やL列（【年表】）、J列（【掲載情報・日付】）、入力マーカー（【本文】等）を完全排除する
 function extractHighlightsFromFreeText(rawText, fallbackContent, fallbackTitle, fallbackDate, tags) {
+  const cleanTitle = (fallbackTitle || "").replace(/^[#\-\*\s]+/, '').trim();
+
+  // もしAI解析テキストが存在しない（または空）の場合の高品質フォールバック
   if (!rawText || !rawText.trim()) {
-    const cleanFallback = (fallbackContent || "").replace(/\s+/g, ' ').trim();
-    const summaryExcerpt = cleanFallback ? cleanFallback.substring(0, 300) + (cleanFallback.length > 300 ? "..." : "") : (fallbackTitle || "記事概要");
-    let safeDate = fallbackDate || Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
-    safeDate = safeDate.replace(/[-_]/g, '/');
+    let cleanBody = (fallbackContent || "")
+      .replace(/【\s*(?:記事タイトル|掲載情報[・\/]日付|掲載情報|日付|本文|対象記事データ|データ)\s*】[\s\S]*?(?=\n\s*【|\n\s*###|$)/gi, '')
+      .replace(/【\s*(?:記事タイトル|掲載情報[・\/]日付|掲載情報|日付|本文|対象記事データ|データ)\s*】[^\n]*/gi, '')
+      .replace(/\d{4}\/\d{2}\/\d{2}\s+日本経済新聞[^\n]*/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const summaryText = cleanBody.length > 50
+      ? cleanBody.substring(0, 350) + (cleanBody.length > 350 ? "..." : "")
+      : (cleanTitle || "記事概要");
+
+    // 本文から数値や決定事項を含む文を抽出
+    const sentences = cleanBody.split(/(?<=[。！？\n])/);
+    const factSentences = [];
+    for (const s of sentences) {
+      const trimmed = s.trim();
+      if (trimmed.length > 10 && /(\d+|％|割|社|年|月|日|円|トン|kW|MW|決定|公表|方針|開始)/.test(trimmed)) {
+        factSentences.push(`・${summarizeText(trimmed, 100)}`);
+        if (factSentences.length >= 4) break;
+      }
+    }
+    if (factSentences.length === 0) {
+      factSentences.push(`・${cleanTitle || "主要施策の発表"}`);
+      if (fallbackDate) factSentences.push(`・公表時期: ${fallbackDate}`);
+    }
+
+    const keywordList = tags && tags !== "一般" && tags !== "未分類"
+      ? `- [[${tags}]]: 本記事の主要な主題分野\n- [[産業動向]]: 業界および市場における最新の進展\n- [[実務対応]]: 関連基準や制度変更に伴う企業対応`
+      : `- [[産業動向]]: 業界および市場における最新の進展\n- [[サステナビリティ]]: 企業の持続可能性と環境対応\n- [[情報開示]]: 制度変更に伴う実務・経営対応`;
 
     return (
-      `【タイトル】\n${fallbackTitle || "記事概要"}\n\n` +
-      `【要約】\n${summaryExcerpt}\n\n` +
-      `【具体的数値・事実】\n・${fallbackTitle || "記事公表"}（公表日: ${safeDate}）\n\n` +
-      `【市場・実務への影響】\n・関連市場・動向の進展に留意。\n\n` +
-      `【キーワード】\n- [[${tags || "一般"}]]: 関連分野`
+      `### ${cleanTitle || "記事概要"}\n\n` +
+      `【要約】\n${summaryText}\n\n` +
+      `【具体的数値・事実】\n${factSentences.join("\n")}\n\n` +
+      `【市場・実務への影響】\n・関連市場および業界における実務対応や事業機会・リスク動向に留意。\n・今後の規制動向や開示基準の進展に合わせた体制整備が重要。\n\n` +
+      `【キーワード】\n${keywordList}`
     );
   }
 
   let text = rawText;
 
   // 1. プロンプトの役割・厳守事項・出力構成などの指示復唱を除去
-  text = text.replace(/^(?:#+\s*(?:役割|厳守事項|出力構成|プロンプト|指示|出力フォーマット)[\s\S]*?(?=\n\s*【|\n\s*#+|$))/gmi, '');
+  text = text.replace(/^(?:#+\s*(?:役割|厳守事項|出力構成|プロンプト|指示|出力フォーマット)[\s\S]*?(?=\n\s*【|\n\s*###|$))/gmi, '');
 
-  // 2. 【データ】、【入力データ】、【対象データ】などの入力用見出しや添付指示の混入を除去
-  text = text.replace(/【\s*(?:データ|対象データ|入力データ|対象記事|記事データ|添付ファイルデータ|対象記事・入力データ|対象記事データ)\s*】[\s\S]*?(?=\n\s*【(?:\s*(?:要約|カテゴリ|具体的数値|市場|キーワード|年表)))/gi, '');
+  // 2. 【掲載情報・日付】、【掲載情報】、【日付】、【書誌情報】、【本文】の完全除去（J列・K列にあるため）
+  text = text.replace(/【\s*(?:掲載情報[・\/]日付|掲載情報|書誌情報[・\/]日付|日付|掲載日)\s*】[\s\S]*?(?=\n\s*(?:【|###|---|$))/gi, '');
+  text = text.replace(/【\s*(?:掲載情報[・\/]日付|掲載情報|書誌情報[・\/]日付|日付|掲載日)\s*】[^\n]*/gi, '');
+  text = text.replace(/【\s*本文\s*】/gi, '');
+  text = text.replace(/【\s*(?:データ|対象データ|入力データ|対象記事|記事データ|添付ファイルデータ|対象記事・入力データ|対象記事データ)\s*】[\s\S]*?(?=\n\s*(?:【|###))/gi, '');
   text = text.replace(/【\s*(?:データ|対象データ|入力データ|対象記事|記事データ|添付ファイルデータ|対象記事・入力データ|対象記事データ)\s*】[^\n]*/gi, '');
 
   // 3. 【カテゴリ】セクションを除去（D列に格納するため、E列からは除外）
-  text = text.replace(/【\s*(?:カテゴリ(?:[・\/]タグ)?|タグ|分野|分類)\s*】[\s\S]*?(?=\n\s*【|\n\s*###|\n\s*---|$)/gi, '');
+  text = text.replace(/【\s*(?:カテゴリ(?:[・\/]タグ)?|タグ|分野|分類)\s*】[\s\S]*?(?=\n\s*(?:【|###|---|$))/gi, '');
 
   // 4. 【年表】セクションを除去（L列に格納するため、E列からは除外）
-  text = text.replace(/(?:【\s*(?:年表|時系列|経緯|スケジュール|歴史|タイムライン|重要日程|日程)\s*】|(?:^|\n)\s*(?:#+\s*)?(?:年表|時系列|経緯|スケジュール|タイムライン)\s*[:：]?)\s*\n?[\s\S]*?(?=\n\s*(?:【|#+|---|===)|$)/gi, '');
+  text = text.replace(/(?:【\s*(?:年表|時系列|経緯|スケジュール|歴史|タイムライン|重要日程|日程)\s*】|(?:^|\n)\s*(?:#+\s*)?(?:年表|時系列|経緯|スケジュール|タイムライン)\s*[:：]?)\s*\n?[\s\S]*?(?=\n\s*(?:【|###|---|===)|$)/gi, '');
 
-  // 5. 先頭・末尾のマークダウンコードブロック、水平線、余計な空白をトリミング
+  // 5. タイトルの整形（【タイトル】または【記事タイトル】を ### タイトル に変換）
+  let extractedTitle = "";
+  const titleMatch = text.match(/(?:###\s*(.+)|【\s*(?:タイトル|記事タイトル)\s*】\s*([^\n]+))/i);
+  if (titleMatch) {
+    extractedTitle = (titleMatch[1] || titleMatch[2] || "").trim();
+    // 元のタイトル見出し部分を除去して再配置に備える
+    text = text.replace(/(?:###\s*.+|【\s*(?:タイトル|記事タイトル)\s*】\s*[^\n]*)/i, '').trim();
+  }
+  if (!extractedTitle) {
+    extractedTitle = cleanTitle;
+  }
+
+  // 6. 先頭・末尾のマークダウンコードブロック、水平線、余計な空白をトリミング
   text = text
     .replace(/^```\w*\n?/, '')
     .replace(/\n?```$/, '')
@@ -644,10 +717,13 @@ function extractHighlightsFromFreeText(rawText, fallbackContent, fallbackTitle, 
     .replace(/(?:---|===|\s+)+$/, '')
     .trim();
 
-  // 6. もし上記処理で空になった場合（またはセクション見出しが一切ない自由文の場合）
-  if (!text) {
-    text = rawText.trim();
+  // 7. 【要約】の前に ### タイトル を確実に配置する
+  if (extractedTitle) {
+    text = `### ${extractedTitle}\n\n` + text;
   }
+
+  // 8. 連続する改行を綺麗に整流化
+  text = text.replace(/\n{3,}/g, '\n\n').trim();
 
   return text;
 }
