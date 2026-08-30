@@ -103,25 +103,123 @@ const SHEET_HEADERS = [
 ];
 
 // ====================================================================
+// ★ Gemini API共通ユーティリティ & モデル解決
+// ====================================================================
+
+function getGeminiApiKey(explicitKey) {
+  if (explicitKey && String(explicitKey).trim() !== "") {
+    return String(explicitKey).trim();
+  }
+  const propKeys = [
+    'GEMINI_API_KEY',
+    'GEMINI_KEY',
+    'API_KEY',
+    'GEMINI_APIKEY',
+    'GOOGLE_API_KEY',
+    'GEMINI_TOKEN',
+    'GEMINI_SECRET'
+  ];
+  for (const k of propKeys) {
+    const v = props.getProperty(k);
+    if (v && String(v).trim() !== "") {
+      return String(v).trim();
+    }
+  }
+  try {
+    const userProps = PropertiesService.getUserProperties();
+    for (const k of propKeys) {
+      const v = userProps.getProperty(k);
+      if (v && String(v).trim() !== "") {
+        return String(v).trim();
+      }
+    }
+  } catch(e) {}
+  return "";
+}
+
+function normalizeGeminiModelName(modelName) {
+  if (!modelName) return "gemini-2.5-flash";
+  let m = String(modelName).trim().replace(/^models\//i, '');
+  if (m === "gemini-flash-latest" || m === "gemini-flash" || m === "gemini-1.5-flash-latest") {
+    return "gemini-2.5-flash";
+  }
+  if (m === "gemini-pro-latest" || m === "gemini-pro" || m === "gemini-1.5-pro-latest") {
+    return "gemini-2.5-pro";
+  }
+  if (m === "gemini-2.5-flash-latest") {
+    return "gemini-2.5-flash";
+  }
+  if (m === "gemini-2.0-flash-latest") {
+    return "gemini-2.0-flash";
+  }
+  return m;
+}
+
+function getCandidateModels(targetModel) {
+  const norm = normalizeGeminiModelName(targetModel);
+  const list = [
+    norm,
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-8b",
+    "gemini-1.5-pro",
+    "gemini-2.0-flash-lite"
+  ];
+  return Array.from(new Set(list));
+}
+
+const GEMINI_SAFETY_SETTINGS = [
+  { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+  { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+  { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+  { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+  { category: "HARM_CATEGORY_CIVIC_INTEGRITY", threshold: "BLOCK_NONE" }
+];
+
+function extractGeminiResponseText(resJson) {
+  if (!resJson) return "";
+  if (resJson.candidates && resJson.candidates.length > 0) {
+    const cand = resJson.candidates[0];
+    if (cand.content && cand.content.parts && Array.isArray(cand.content.parts)) {
+      const texts = cand.content.parts
+        .map(p => (p && typeof p.text === "string" ? p.text : ""))
+        .filter(Boolean);
+      if (texts.length > 0) {
+        return texts.join("\n").trim();
+      }
+    }
+  }
+  if (resJson.text && typeof resJson.text === "string") {
+    return resJson.text.trim();
+  }
+  return "";
+}
+
+// ====================================================================
 // ★モードA：自由回答モード (free) — デフォルト
 // ====================================================================
 
 // テキスト記事（Raindrop記事・MHT記事）向け：自由回答モード（マルチモデル・フォールバック対応）
 function callGeminiFree(content, persona, syncPrompt, apiKey, model) {
-  if (!apiKey) {
-    Logger.log("[Gemini] APIキーが未設定です。AI解析をスキップします。");
+  const resolvedApiKey = getGeminiApiKey(apiKey);
+  if (!resolvedApiKey) {
+    Logger.log("[Gemini] ⚠️ APIキーが未設定です。スクリプトプロパティ「GEMINI_API_KEY」またはアプリの「Gemini API キー」を設定してください。");
     return "";
   }
 
-  const prompt = (persona ? persona + "\n\n" : "") + syncPrompt + "\n\n【データ】\n" + content;
+  const cleanPersona = persona || getConfig('SYSTEM_PERSONA');
+  const cleanPrompt = syncPrompt || getConfig('SYNC_PROMPT');
+  const prompt = (cleanPersona ? cleanPersona + "\n\n" : "") + cleanPrompt + "\n\n【データ】\n" + content;
+  
   const targetModel = model || getConfig('GEMINI_MODEL') || "gemini-2.5-flash";
-  const candidateModels = [targetModel, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest"];
-  const uniqueModels = Array.from(new Set(candidateModels));
+  const candidateModels = getCandidateModels(targetModel);
 
-  for (const m of uniqueModels) {
+  for (const m of candidateModels) {
     try {
       const payload = {
         contents: [{ parts: [{ text: prompt }] }],
+        safetySettings: GEMINI_SAFETY_SETTINGS,
         generationConfig: {
           temperature: getNumConfig('GEMINI_TEMPERATURE'),
           maxOutputTokens: 8000
@@ -129,32 +227,37 @@ function callGeminiFree(content, persona, syncPrompt, apiKey, model) {
       };
 
       const response = UrlFetchApp.fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${resolvedApiKey}`,
         { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true }
       );
       const responseCode = response.getResponseCode();
       if (responseCode === 200) {
         const resJson = JSON.parse(response.getContentText());
-        const generatedText = (resJson.candidates && resJson.candidates[0].content && resJson.candidates[0].content.parts[0].text) || "";
+        const generatedText = extractGeminiResponseText(resJson);
         if (generatedText) {
+          Logger.log(`[Gemini] Model ${m} でAI解析に成功しました (文字数: ${generatedText.length})`);
           return generatedText;
         }
       } else if (responseCode === 429) {
-        Logger.log(`[Gemini] Model ${m} rate limit (429). Retrying after 2s...`);
+        Logger.log(`[Gemini] Model ${m} レートリミット (429)。2秒待機後再試行します...`);
         Utilities.sleep(2000);
         const retryRes = UrlFetchApp.fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${apiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${resolvedApiKey}`,
           { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true }
         );
         if (retryRes.getResponseCode() === 200) {
           const resJson = JSON.parse(retryRes.getContentText());
-          return (resJson.candidates && resJson.candidates[0].content && resJson.candidates[0].content.parts[0].text) || "";
+          const generatedText = extractGeminiResponseText(resJson);
+          if (generatedText) {
+            Logger.log(`[Gemini] Model ${m} (再試行) でAI解析に成功しました`);
+            return generatedText;
+          }
         }
       } else {
-        Logger.log(`[Gemini] Model ${m} HTTP ${responseCode}: ${response.getContentText()}`);
+        Logger.log(`[Gemini] Model ${m} HTTP ${responseCode}: ${response.getContentText().substring(0, 300)}`);
       }
     } catch (e) {
-      Logger.log(`[Gemini] Error calling model ${m}: ${e.message}`);
+      Logger.log(`[Gemini] Model ${m} エラー: ${e.message}`);
     }
   }
 
@@ -163,28 +266,43 @@ function callGeminiFree(content, persona, syncPrompt, apiKey, model) {
 
 // PDF・画像向け：自由回答モード（マルチモデル・フォールバック対応）
 function callGeminiFreeFile(file, apiKey, model, persona, syncPrompt) {
-  if (!apiKey) {
-    Logger.log("[Gemini] APIキーが未設定です。ファイル解析をスキップします。");
+  const resolvedApiKey = getGeminiApiKey(apiKey);
+  if (!resolvedApiKey) {
+    Logger.log("[Gemini] ⚠️ APIキーが未設定です。ファイル解析をスキップします。");
     return "";
   }
 
+  const fileName = file.getName();
+  let mimeType = file.getMimeType();
+  if (fileName.toLowerCase().endsWith('.pdf')) {
+    mimeType = "application/pdf";
+  } else if (fileName.toLowerCase().endsWith('.png')) {
+    mimeType = "image/png";
+  } else if (fileName.toLowerCase().endsWith('.jpg') || fileName.toLowerCase().endsWith('.jpeg')) {
+    mimeType = "image/jpeg";
+  } else if (fileName.toLowerCase().endsWith('.webp')) {
+    mimeType = "image/webp";
+  }
+
+  const cleanPersona = persona || getConfig('SYSTEM_PERSONA');
+  const cleanPrompt = syncPrompt || getConfig('SYNC_PROMPT');
+  const prompt = (cleanPersona ? cleanPersona + "\n\n" : "") + cleanPrompt +
+    "\n\n【データ】\n(添付されたファイル（PDF等の記事・資料）の内容を詳細に読み取り、指定の出力構成（【カテゴリ】、【要約】、【具体的数値・事実】、【市場・実務への影響】、【キーワード】、【年表】）に従って、必ずすべてのセクションを過不足なく日本語で出力してください。ファイル名: " + fileName + ")";
+
   const base64Data = Utilities.base64Encode(file.getBlob().getBytes());
-  const prompt = (persona ? persona + "\n\n" : "") + syncPrompt +
-    "\n\n【データ】\n(添付されたファイルの内容を読み取り、記載されているテキスト・図表の情報をもとに分析してください。ファイル名: " + file.getName() + ")";
-
   const targetModel = model || getConfig('GEMINI_MODEL') || "gemini-2.5-flash";
-  const candidateModels = [targetModel, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest"];
-  const uniqueModels = Array.from(new Set(candidateModels));
+  const candidateModels = getCandidateModels(targetModel);
 
-  for (const m of uniqueModels) {
+  for (const m of candidateModels) {
     try {
       const payload = {
         contents: [{
           parts: [
             { text: prompt },
-            { inline_data: { mime_type: file.getMimeType(), data: base64Data } }
+            { inline_data: { mime_type: mimeType, data: base64Data } }
           ]
         }],
+        safetySettings: GEMINI_SAFETY_SETTINGS,
         generationConfig: {
           temperature: getNumConfig('GEMINI_TEMPERATURE'),
           maxOutputTokens: 8000
@@ -192,31 +310,37 @@ function callGeminiFreeFile(file, apiKey, model, persona, syncPrompt) {
       };
 
       const response = UrlFetchApp.fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${resolvedApiKey}`,
         { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true }
       );
       const responseCode = response.getResponseCode();
       if (responseCode === 200) {
         const resJson = JSON.parse(response.getContentText());
-        const generatedText = (resJson.candidates && resJson.candidates[0].content && resJson.candidates[0].content.parts[0].text) || "";
+        const generatedText = extractGeminiResponseText(resJson);
         if (generatedText) {
+          Logger.log(`[Gemini File] Model ${m} でファイル解析に成功しました (ファイル: ${fileName}, 文字数: ${generatedText.length})`);
           return generatedText;
         }
       } else if (responseCode === 429) {
+        Logger.log(`[Gemini File] Model ${m} レートリミット (429)。2秒待機後再試行します...`);
         Utilities.sleep(2000);
         const retryRes = UrlFetchApp.fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${apiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${resolvedApiKey}`,
           { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true }
         );
         if (retryRes.getResponseCode() === 200) {
           const resJson = JSON.parse(retryRes.getContentText());
-          return (resJson.candidates && resJson.candidates[0].content && resJson.candidates[0].content.parts[0].text) || "";
+          const generatedText = extractGeminiResponseText(resJson);
+          if (generatedText) {
+            Logger.log(`[Gemini File] Model ${m} (再試行) でファイル解析に成功しました`);
+            return generatedText;
+          }
         }
       } else {
-        Logger.log(`[Gemini Vision] Model ${m} HTTP ${responseCode}: ${response.getContentText()}`);
+        Logger.log(`[Gemini File] Model ${m} HTTP ${responseCode}: ${response.getContentText().substring(0, 300)}`);
       }
     } catch (e) {
-      Logger.log(`[Gemini Vision] Error calling model ${m}: ${e.message}`);
+      Logger.log(`[Gemini File] Model ${m} エラー (${fileName}): ${e.message}`);
     }
   }
 
@@ -317,13 +441,9 @@ function extractCategoryFromText(text, fallbackTitle) {
 }
 
 // 年表（L列）の厳密かつ確実な日付抽出関数
-function extractTimelineFromText(text, fallbackContent, fallbackDate) {
+function extractTimelineFromText(text, fallbackContent, fallbackDate, fallbackTitle) {
   const primarySource = text || "";
   const secondarySource = fallbackContent || "";
-
-  if (!primarySource && !secondarySource) {
-    return fallbackDate ? `[${fallbackDate}] 記事発表・報道` : "";
-  }
 
   // 1. パターンA: 【年表】【時系列】【スケジュール】等セクションの抽出
   const timelineSectionMatch = primarySource.match(/(?:【\s*(?:年表|時系列|経緯|スケジュール|歴史|タイムライン|重要日程|日程)\s*】|(?:^|\n)\s*(?:#+\s*)?(?:年表|時系列|経緯|スケジュール|タイムライン)\s*[:：]?)\s*\n?([\s\S]*?)(?=\n\s*(?:【|#+|---|===)|$)/i);
@@ -335,7 +455,7 @@ function extractTimelineFromText(text, fallbackContent, fallbackDate) {
       cleanLine = cleanLine.replace(/\[\s*(?:YYYY[/\-]MM[/\-]DD|YYYY[/\-]MM|YYYY)\s*\]/gi, '').trim();
 
       // 無効行・インストラクションの排除
-      if (cleanLine.includes("該当なし") || cleanLine.includes("出来事テキスト") || cleanLine.includes("空行にすること") || cleanLine.includes("本文中に日付") || cleanLine.includes("出力構成") || cleanLine.includes("厳守事項")) {
+      if (!cleanLine || cleanLine.includes("該当なし") || cleanLine.includes("出来事テキスト") || cleanLine.includes("空行にすること") || cleanLine.includes("本文中に日付") || cleanLine.includes("出力構成") || cleanLine.includes("厳守事項") || cleanLine.includes("記事中に登場する")) {
         return null;
       }
 
@@ -344,7 +464,7 @@ function extractTimelineFromText(text, fallbackContent, fallbackDate) {
       if (bracketMatch) {
         const datePart = bracketMatch[1].replace(/-/g, '/');
         const textPart = summarizeText(bracketMatch[2].trim(), 120);
-        return textPart ? `${datePart} ${textPart}` : null;
+        return textPart ? `${datePart} ${textPart}` : `${datePart} ${cleanLine}`;
       }
 
       // YYYY年M月D日
@@ -352,7 +472,7 @@ function extractTimelineFromText(text, fallbackContent, fallbackDate) {
       if (ymd) {
         const datePart = `[${ymd[1]}/${String(ymd[2]).padStart(2, '0')}/${String(ymd[3]).padStart(2, '0')}]`;
         const textPart = summarizeText(cleanLine.replace(/(\d{4})年(\d{1,2})月(\d{1,2})日/, '').replace(/^[\s:：\-・]+/, ''), 120);
-        return textPart ? `${datePart} ${textPart}` : null;
+        return textPart ? `${datePart} ${textPart}` : `${datePart} ${cleanLine}`;
       }
 
       // YYYY年M月
@@ -360,7 +480,7 @@ function extractTimelineFromText(text, fallbackContent, fallbackDate) {
       if (ym) {
         const datePart = `[${ym[1]}/${String(ym[2]).padStart(2, '0')}]`;
         const textPart = summarizeText(cleanLine.replace(/(\d{4})年(\d{1,2})月/, '').replace(/^[\s:：\-・]+/, ''), 120);
-        return textPart ? `${datePart} ${textPart}` : null;
+        return textPart ? `${datePart} ${textPart}` : `${datePart} ${cleanLine}`;
       }
 
       // YYYY年 または YYYY年度
@@ -368,7 +488,7 @@ function extractTimelineFromText(text, fallbackContent, fallbackDate) {
       if (yearOnly) {
         const datePart = `[${yearOnly[1]}年]`;
         const textPart = summarizeText(cleanLine.replace(/(\d{4})年(?:度)?/, '').replace(/^[\s:：\-・]+/, ''), 120);
-        return textPart ? `${datePart} ${textPart}` : null;
+        return textPart ? `${datePart} ${textPart}` : `${datePart} ${cleanLine}`;
       }
 
       // YYYY/MM/DD または YYYY-MM-DD
@@ -376,7 +496,19 @@ function extractTimelineFromText(text, fallbackContent, fallbackDate) {
       if (slashDate) {
         const datePart = `[${slashDate[1]}/${String(slashDate[2]).padStart(2, '0')}/${String(slashDate[3]).padStart(2, '0')}]`;
         const textPart = summarizeText(cleanLine.replace(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/, '').replace(/^[\s:：\-・]+/, ''), 120);
-        return textPart ? `${datePart} ${textPart}` : null;
+        return textPart ? `${datePart} ${textPart}` : `${datePart} ${cleanLine}`;
+      }
+
+      // 和暦: 令和X年
+      const reiwa = cleanLine.match(/令和(\d{1,2}|元)年(?:(\d{1,2})月)?(?:(\d{1,2})日)?/);
+      if (reiwa) {
+        const rYear = reiwa[1] === "元" ? 1 : Number(reiwa[1]);
+        const gYear = 2018 + rYear;
+        const mPart = reiwa[2] ? `/${String(reiwa[2]).padStart(2, '0')}` : '';
+        const dPart = reiwa[3] ? `/${String(reiwa[3]).padStart(2, '0')}` : '';
+        const datePart = `[${gYear}${mPart}${dPart}${!mPart && !dPart ? '年' : ''}]`;
+        const textPart = summarizeText(cleanLine.replace(/令和\S+年(?:\d+月)?(?:\d+日)?/, '').replace(/^[\s:：\-・]+/, ''), 120);
+        return textPart ? `${datePart} ${textPart}` : `${datePart} ${cleanLine}`;
       }
 
       // 既に日付が含まれている一般的な行
@@ -399,7 +531,7 @@ function extractTimelineFromText(text, fallbackContent, fallbackDate) {
   for (const line of candidateTexts) {
     let clean = line.replace(/^[#\-\*•・\d\.\(\)\s]+/, '').trim();
     if (!clean || clean.length < 6) continue;
-    if (clean.includes("出力構成") || clean.includes("プロンプト") || clean.includes("厳守事項") || clean.includes("本文中に日付") || clean.includes("【カテゴリ】") || clean.includes("【キーワード】")) continue;
+    if (clean.includes("出力構成") || clean.includes("プロンプト") || clean.includes("厳守事項") || clean.includes("本文中に日付") || clean.includes("【カテゴリ】") || clean.includes("【キーワード】") || clean.includes("記事中に登場する")) continue;
 
     // YYYY年M月D日
     const ymd = clean.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
@@ -453,41 +585,52 @@ function extractTimelineFromText(text, fallbackContent, fallbackDate) {
     return unique.slice(0, 5).join("\n");
   }
 
-  // 3. 記事の発行日が存在する場合のセーフガード
-  if (fallbackDate) {
-    return `[${fallbackDate}] 記事発表・報道`;
+  // 3. パターンC: 日付が検出できない場合のフォールバック（公表日・ファイル日付＋タイトル）
+  let targetDate = fallbackDate || "";
+  if (!targetDate || !/\d{4}/.test(targetDate)) {
+    targetDate = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
   }
-
-  return "";
+  const cleanTargetDate = targetDate.replace(/[-_]/g, '/');
+  const safeTitle = (fallbackTitle || "記事公表").replace(/^[#\-\*\s]+/, '').trim();
+  return `[${cleanTargetDate}] ${summarizeText(safeTitle, 100)}`;
 }
 
 // 解析テキストからスプレッドシート用フィールド（D列・E列・L列）を構築
 function buildSheetFieldsFromFreeText(rawText, fallbackContent, fallbackTitle, fallbackDate) {
-  const text = (rawText && rawText.trim()) ? rawText : (fallbackContent || "");
+  const hasAiResult = !!(rawText && rawText.trim());
+  const text = hasAiResult ? rawText : (fallbackContent || "");
 
   // 1. D列: カテゴリ/タグ
   const tags = extractCategoryFromText(text, fallbackTitle);
 
-  // 2. E列: highlights（要約・具体的数値事実・市場影響・キーワード）
+  // 2. E列: highlights（要約・具体的数値事実・市場影響・キーワード・年表）
   let highlights = "";
-  if (rawText && rawText.trim()) {
-    // 【カテゴリ】ブロックと【年表】ブロックを排除し、本文要約・事実・影響・キーワードをそのまま格納
+  if (hasAiResult) {
+    // 【カテゴリ】ブロックのみを排除（D列に格納するため）、要約・事実・影響・キーワード・年表はすべて完全保持
     let cleanHighlights = rawText
       .replace(/【\s*(?:カテゴリ(?:[・\/]タグ)?|タグ|分野|分類)\s*】[\s\S]*?(?=\n\s*【|\n\s*###|\n\s*---|$)/gi, '')
-      .replace(/(?:【\s*(?:年表|時系列|経緯|スケジュール|歴史|タイムライン|重要日程|日程)\s*】|(?:^|\n)\s*(?:#+\s*)?(?:年表|時系列|経緯|スケジュール|タイムライン)\s*[:：]?)\s*\n?[\s\S]*?(?=\n\s*(?:【|#+|---|===)|$)/gi, '')
       .trim();
 
     // 先頭・末尾の余分な改行や水平線をクリーンアップ
     cleanHighlights = cleanHighlights.replace(/^(?:---|===|\s+)+/, '').replace(/(?:---|===|\s+)+$/, '').trim();
-    highlights = cleanHighlights || rawText.substring(0, 2000);
+    highlights = cleanHighlights || rawText;
   } else {
-    // Geminiが失敗したか未設定時のフォールバック要約
+    // Geminiが一時的に未実行またはキー未設定時の構造化フォールバック
     const cleanFallback = (fallbackContent || "").replace(/\s+/g, ' ').trim();
-    highlights = "【要約】\n" + cleanFallback.substring(0, 300) + (cleanFallback.length > 300 ? "..." : "");
+    const summaryExcerpt = cleanFallback ? cleanFallback.substring(0, 300) + (cleanFallback.length > 300 ? "..." : "") : (fallbackTitle || "記事概要");
+    let safeDate = fallbackDate || Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
+    safeDate = safeDate.replace(/[-_]/g, '/');
+
+    highlights = 
+      `【要約】\n${summaryExcerpt}\n\n` +
+      `【具体的数値・事実】\n・${fallbackTitle || "記事公表"}（公表日: ${safeDate}）\n\n` +
+      `【市場・実務への影響】\n・関連市場・動向の進展に留意。\n\n` +
+      `【キーワード】\n- [[${tags}]]: 関連分野\n\n` +
+      `【年表】\n[${safeDate}] ${fallbackTitle || "記事公表"}`;
   }
 
   // 3. L列: timeline（年表）
-  const timeline = extractTimelineFromText(text, fallbackContent, fallbackDate);
+  const timeline = extractTimelineFromText(rawText, fallbackContent, fallbackDate, fallbackTitle);
 
   return {
     tags: tags,
@@ -544,60 +687,86 @@ function normalizeGeminiResult(parsed) {
 }
 
 function callGeminiAnalyzeText(content, persona, syncPrompt, apiKey, model) {
-  if (!apiKey) {
+  const resolvedApiKey = getGeminiApiKey(apiKey);
+  if (!resolvedApiKey) {
     return { title: "", is_verbatim: isShortArticle(content), summary: content.substring(0, 300), key_facts: [], market_impact: "", keywords: [], timeline: "" };
   }
   const prompt = buildAnalysisPromptForJsonMode(persona, syncPrompt, content);
   const targetModel = model || getConfig('GEMINI_MODEL') || "gemini-2.5-flash";
-  const payload = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.1, responseMimeType: "application/json", responseSchema: UNIFIED_RESPONSE_SCHEMA }
-  };
-  try {
-    const response = UrlFetchApp.fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`,
-      { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true }
-    );
-    if (response.getResponseCode() === 200) {
-      const resJson = JSON.parse(response.getContentText());
-      const rawText = resJson.candidates[0].content.parts[0].text;
-      return normalizeGeminiResult(JSON.parse(rawText));
+  const candidateModels = getCandidateModels(targetModel);
+
+  for (const m of candidateModels) {
+    try {
+      const payload = {
+        contents: [{ parts: [{ text: prompt }] }],
+        safetySettings: GEMINI_SAFETY_SETTINGS,
+        generationConfig: { temperature: 0.1, responseMimeType: "application/json", responseSchema: UNIFIED_RESPONSE_SCHEMA }
+      };
+      const response = UrlFetchApp.fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${resolvedApiKey}`,
+        { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true }
+      );
+      if (response.getResponseCode() === 200) {
+        const resJson = JSON.parse(response.getContentText());
+        const rawText = extractGeminiResponseText(resJson);
+        if (rawText) {
+          return normalizeGeminiResult(JSON.parse(rawText));
+        }
+      }
+    } catch (e) {
+      Logger.log(`[Gemini JSON] Model ${m} エラー: ${e.message}`);
     }
-  } catch (e) {
-    console.error("Gemini(json/text) Error: " + e.message);
   }
+
   return { title: "", is_verbatim: false, summary: content.substring(0, 300), key_facts: [], market_impact: "", keywords: [], timeline: "" };
 }
 
 function callGeminiAnalyzeFile(file, apiKey, model, persona, syncPrompt) {
-  if (!apiKey) {
+  const resolvedApiKey = getGeminiApiKey(apiKey);
+  if (!resolvedApiKey) {
     return { title: "", is_verbatim: true, summary: "ファイル名: " + file.getName(), key_facts: [], market_impact: "", keywords: [], timeline: "" };
   }
+  const fileName = file.getName();
+  let mimeType = file.getMimeType();
+  if (fileName.toLowerCase().endsWith('.pdf')) {
+    mimeType = "application/pdf";
+  }
+
   const targetModel = model || getConfig('GEMINI_MODEL') || "gemini-2.5-flash";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
+  const candidateModels = getCandidateModels(targetModel);
   const base64Data = Utilities.base64Encode(file.getBlob().getBytes());
   const prompt = buildAnalysisPromptForJsonMode(
     persona, syncPrompt,
-    "(添付されたファイルの内容を読み取り、記載されているテキスト・図表の情報をもとに分析してください。ファイル名: " + file.getName() + ")"
+    "(添付されたファイル（PDF等の記事・資料）の内容を読み取り、指定の出力構成に従ってJSON形式ですべての項目を出力してください。ファイル名: " + fileName + ")"
   );
-  const payload = {
-    contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: file.getMimeType(), data: base64Data } }] }],
-    generationConfig: { temperature: 0.1, responseMimeType: "application/json", responseSchema: UNIFIED_RESPONSE_SCHEMA, maxOutputTokens: 2000 }
-  };
-  try {
-    const response = UrlFetchApp.fetch(url, { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true });
-    if (response.getResponseCode() === 200) {
-      const result = JSON.parse(response.getContentText());
-      const text = result.candidates[0].content.parts[0].text;
-      return normalizeGeminiResult(JSON.parse(text));
+
+  for (const m of candidateModels) {
+    try {
+      const payload = {
+        contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: mimeType, data: base64Data } }] }],
+        safetySettings: GEMINI_SAFETY_SETTINGS,
+        generationConfig: { temperature: 0.1, responseMimeType: "application/json", responseSchema: UNIFIED_RESPONSE_SCHEMA, maxOutputTokens: 8000 }
+      };
+      const response = UrlFetchApp.fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${resolvedApiKey}`,
+        { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true }
+      );
+      if (response.getResponseCode() === 200) {
+        const resJson = JSON.parse(response.getContentText());
+        const rawText = extractGeminiResponseText(resJson);
+        if (rawText) {
+          return normalizeGeminiResult(JSON.parse(rawText));
+        }
+      }
+    } catch (e) {
+      Logger.log(`[Gemini JSON File] Model ${m} エラー: ${e.message}`);
     }
-  } catch (e) {
-    console.error("Gemini(json/vision) Error: " + e.message);
   }
-  return { title: "", is_verbatim: true, summary: "解析完了: " + file.getName(), key_facts: [], market_impact: "", keywords: [], timeline: "" };
+
+  return { title: "", is_verbatim: true, summary: "解析完了: " + fileName, key_facts: [], market_impact: "", keywords: [], timeline: "" };
 }
 
-function buildSheetFieldsFromGeminiResult(parsed, rawContent) {
+function buildSheetFieldsFromGeminiResult(parsed, rawContent, fallbackTitle, fallbackDate) {
   const isVerbatim = parsed.is_verbatim || isShortArticle(rawContent);
 
   let tagsWikilinks = "一般";
@@ -616,17 +785,22 @@ function buildSheetFieldsFromGeminiResult(parsed, rawContent) {
     if (parsed.keywords && parsed.keywords.length > 0) {
       parts.push("【キーワード】\n" + parsed.keywords.map(k => `- [[${k.term}]]: ${k.definition}`).join("\n"));
     }
+    if (parsed.timeline) {
+      parts.push("【年表】\n" + parsed.timeline);
+    }
     highlightsText = parts.join("\n\n");
   }
 
-  return { tags: tagsWikilinks, highlights: highlightsText, timeline: parsed.timeline || "" };
+  const timeline = parsed.timeline || extractTimelineFromText("", rawContent, fallbackDate, fallbackTitle);
+
+  return { tags: tagsWikilinks, highlights: highlightsText, timeline: timeline };
 }
 
 // 共通ディスパッチャ
 function analyzeText(content, persona, syncPrompt, apiKey, model, outputMode, title, pubDate) {
   if (outputMode === 'json') {
     const parsed = callGeminiAnalyzeText(content, persona, syncPrompt, apiKey, model);
-    return buildSheetFieldsFromGeminiResult(parsed, content);
+    return buildSheetFieldsFromGeminiResult(parsed, content, title, pubDate);
   }
   const rawText = callGeminiFree(content, persona, syncPrompt, apiKey, model);
   return buildSheetFieldsFromFreeText(rawText, content, title, pubDate);
@@ -645,10 +819,10 @@ function analyzeFile(file, apiKey, model, persona, syncPrompt, outputMode) {
 
   if (outputMode === 'json') {
     const parsed = callGeminiAnalyzeFile(file, apiKey, model, persona, syncPrompt);
-    return buildSheetFieldsFromGeminiResult(parsed, "");
+    return buildSheetFieldsFromGeminiResult(parsed, fileBaseName, fileBaseName, pubDate);
   }
   const rawText = callGeminiFreeFile(file, apiKey, model, persona, syncPrompt);
-  return buildSheetFieldsFromFreeText(rawText, "", fileBaseName, pubDate);
+  return buildSheetFieldsFromFreeText(rawText, fileBaseName, fileBaseName, pubDate);
 }
 
 function isShortArticle(text, threshold) {
@@ -1289,8 +1463,15 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
               continue;
             }
 
+            const dateMatch = fileName.match(/\b(20\d{2}[\/\-_]?\d{2}[\/\-_]?\d{2})\b/);
+            let pubDateStr = "";
+            if (dateMatch) {
+              pubDateStr = dateMatch[1].replace(/[-_]/g, '/');
+            } else {
+              pubDateStr = Utilities.formatDate(file.getDateCreated(), "JST", "yyyy/MM/dd");
+            }
+
             const fields = analyzeFile(file, geminiApiKey, geminiModel, persona, syncPrompt, outputMode);
-            const pubDateStr = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
             sheet.appendRow([
               fileBaseName,
               fileBaseName,
@@ -1321,8 +1502,15 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
             // 画像・スクリーンショット処理
             const ssId = 'ss_' + file.getId();
             if (!existingIds.has(ssId)) {
+              const dateMatch = fileName.match(/\b(20\d{2}[\/\-_]?\d{2}[\/\-_]?\d{2})\b/);
+              let pubDateStr = "";
+              if (dateMatch) {
+                pubDateStr = dateMatch[1].replace(/[-_]/g, '/');
+              } else {
+                pubDateStr = Utilities.formatDate(file.getDateCreated(), "JST", "yyyy/MM/dd");
+              }
+
               const fields = analyzeFile(file, geminiApiKey, geminiModel, persona, syncPrompt, outputMode);
-              const pubDateStr = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
               sheet.appendRow([
                 ssId,
                 fileName,
