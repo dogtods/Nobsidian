@@ -140,6 +140,9 @@ function getGeminiApiKey(explicitKey) {
 function normalizeGeminiModelName(modelName) {
   if (!modelName) return "gemini-2.5-flash";
   let m = String(modelName).trim().replace(/^models\//i, '');
+  if (m === "gemini-flash-lite-latest" || m === "gemini-flash-lite" || m === "gemini-2.5-flash-lite-latest") {
+    return "gemini-2.5-flash-lite";
+  }
   if (m === "gemini-flash-latest" || m === "gemini-flash" || m === "gemini-1.5-flash-latest") {
     return "gemini-2.5-flash";
   }
@@ -159,12 +162,13 @@ function getCandidateModels(targetModel) {
   const norm = normalizeGeminiModelName(targetModel);
   const list = [
     norm,
+    "gemini-2.5-flash-lite",
+    "gemini-2.0-flash-lite",
     "gemini-2.5-flash",
     "gemini-2.0-flash",
     "gemini-1.5-flash",
     "gemini-1.5-flash-8b",
-    "gemini-1.5-pro",
-    "gemini-2.0-flash-lite"
+    "gemini-1.5-pro"
   ];
   return Array.from(new Set(list));
 }
