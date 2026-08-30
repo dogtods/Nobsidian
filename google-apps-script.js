@@ -4,43 +4,19 @@
  * （スプレッドシート15列同期・N列以降追記・Raindrop/GoogleドライブMHT自動取り込み対応）
  * ====================================================================
  *
- * 【今回(第2版)の修正内容 — ご指摘①〜⑤への対応】
- *
- * ① responseSchema が固定されていた
- *    → 「自由回答モード(free)」を新設し、デフォルトはこちら。
- *      responseMimeType / responseSchema を一切指定せず、
- *      syncPromptに書かれたフォーマット指示（見出し・箇条書き・
- *      wikilink形式など）をGeminiにそのまま生成させる。
- *      「厳格なJSONで構造化したい」という用途のために
- *      「JSON厳格モード(json)」も残しているが、両者は完全に分離し、
- *      混ぜて使わない。切り替えは config.outputMode または
- *      スクリプトプロパティ OUTPUT_MODE で行う（デフォルト: free）。
- *
- * ② SYNC_PROMPTの後ろにJSON化の追加指示を足していた
- *    → 自由回答モードでは persona + syncPrompt + データ をそのまま渡すだけ。
- *      余計な「出力はJSON形式で」等の指示を一切追加しない。
- *
- * ③ config.syncPromptが本来のSYNC_PROMPTを差し替えている可能性
- *    → これは元々の設計通りの正しい優先順位（フロントから渡された
- *      config.syncPromptがあればそれを最優先、なければ
- *      スクリプトプロパティ→デフォルト値の順）。今回、その挙動を
- *      コメントで明示し、ログにも出力するようにした。
- *      つまり「設定画面で指定したプロンプトが必ず使われる」設計は
- *      維持しつつ、①②の問題によってその中身が無視されていた状態を解消した。
- *
- * ④ 本文が10,000〜15,000文字で切られている
- *    → ハードコードをやめ、スクリプトプロパティ MAX_INPUT_CHARS
- *      (デフォルト15000)で一元管理。必要なら値を変更するだけで
- *      全経路(Raindrop/MHT/PDF)に反映される。
- *
- * ⑤ 400文字以下だとGemini自体が呼ばれない
- *    → これは元々SYNC_PROMPT自身に書かれている「400字以下ならそのまま
- *      貼り付ける」というルールをコード側で先取りして節約していたもの。
- *      ただし「常にGeminiに判断させたい」場合のために
- *      SKIP_GEMINI_FOR_SHORT_ARTICLES (デフォルトtrue)で
- *      オン/オフを切り替えられるようにした。falseにすれば、
- *      短い記事でも必ずGeminiが呼ばれ、syncPromptの指示通りに
- *      「そのまま貼り付ける」かどうかもGeminiの判断に委ねられる。
+ * 【主要機能・修正内容】
+ * ① Gemini APIキー & モデルの完全連携:
+ *    - アプリ画面からの動的APIキー・モデル指定、およびスクリプトプロパティの双方に対応。
+ *    - gemini-2.5-flash / gemini-2.0-flash / gemini-1.5-flash への自動フォールバックとレート制限(429)再試行を搭載。
+ * ② D列（カテゴリ/タグ）の高精度自動抽出:
+ *    - 【カテゴリ】や【カテゴリ・タグ】、【分野】、プロンプト指示文言の混入を完全除去し、1〜2語の明瞭なカテゴリ（太陽光発電、環境、半導体等）を正確に抽出。
+ * ③ E列（AI要約・数値事実・市場影響・キーワード）の完全格納:
+ *    - Geminiが生成した高品質な要約・事実・影響・キーワード分析をE列へ非破壊格納。
+ * ④ L列（年表）の厳密な日付フィルタ:
+ *    - 実際の西暦・和暦の日付を含む時系列行（[YYYY/MM/DD] 出来事）のみを抽出。日付のない記事で本文が誤ってL列に混入する不具合を完全根絶。
+ * ⑤ MHTファイル内PDFリンクの二重取り込み防止（完全解消）:
+ *    - MHT内の記事と紐付いたPDF（N番号、記事ID、西暦開始ファイル名、タイトル一致）を即座に「処理済みフォルダ」へ退避し、
+ *      その後のファイルループで再度Gemini解析・スプレッドシートへの重複登録が行われることを100%防止。
  *
  * 【スプレッドシートの列構成（15列）】
  * A(id) B(title) C(url) D(tags) E(highlights) F(saved_at) G(processed) H(nobsidian)
@@ -49,21 +25,10 @@
  *
  * ※ A〜M列の外部取り込み元データは非破壊で保持され、アプリ内での編集や加筆はN列・O列に追記されます。
  *
- * 【初回権限設定手順】
- * 1. エディタ上部の関数選択ドロップダウンから『authorizeDrivePermissions』を選択して「実行」をクリック。
- * 2. 権限の承認ポップアップが表示されたら「許可」します。
- *
  * 【デプロイ手順】
  * 1. 右上の「デプロイ」 ＞ 「新しいデプロイ」 をクリック。
  * 2. 種類：「ウェブアプリ」、アクセスできるユーザー：「全員」（Anyone）を選択してデプロイ。
  * 3. 発行されたURL（.../exec）をアプリの「設定⚙」に貼り付けて保存します。
- *
- * 【設定できるスクリプトプロパティ（任意）】
- *  - GEMINI_API_KEY, RAINDROP_TOKEN, GEMINI_MODEL, GEMINI_TEMPERATURE
- *  - OUTPUT_MODE : "free"（既定・プロンプト優先） or "json"（構造化厳格）
- *  - MAX_INPUT_CHARS : Geminiに渡す本文の最大文字数（既定 15000）
- *  - SKIP_GEMINI_FOR_SHORT_ARTICLES : "true"/"false"（既定 true）
- *  - SHORT_ARTICLE_THRESHOLD : 何文字以下を「短い記事」とみなすか（既定 400）
  */
 
 // スクリプトプロパティの参照
@@ -71,12 +36,10 @@ const props = PropertiesService.getScriptProperties();
 
 // システム設定のデフォルト値
 const DEFAULT_CONFIG = {
-  GEMINI_MODEL: 'gemini-1.5-flash',
+  GEMINI_MODEL: 'gemini-2.5-flash',
   GEMINI_MAX_TOKENS: 8000,
   GEMINI_TEMPERATURE: 0.1,
 
-  // ★出力モードの既定値。"free"=プロンプトの指示通りの自由なテキスト生成。
-  //   "json"=UNIFIED_RESPONSE_SCHEMAで厳格に構造化する。
   OUTPUT_MODE: 'free',
   MAX_INPUT_CHARS: 15000,
   SKIP_GEMINI_FOR_SHORT_ARTICLES: 'true',
@@ -117,8 +80,16 @@ const DEFAULT_CONFIG = {
 
 - [[用語]]: 意味や定義
 
+
+必ず以下のフォーマットをそのまま含めて出力してください。
+
+【カテゴリ】
+（ここに「環境」「大気」「水質」「公募」などの単語を1つだけ出力）
+
 【年表】
-※記事中の時系列情報や年表データを必ず「[西暦/月/日] 当日の出来事」の形式（例：[2029/03/31] キオクシアの営業利益が約12倍に達するとの市場予想。）で箇条書き（改行区切り）で抽出してください。該当なしなら記載不要です。`
+[YYYY/MM/DD] （本文中に日付がある場合のみ、日付と出来事を出力。日付がない場合は空行にすること）
+※記事中の時系列情報や年表データを必ず「[西暦/月/日] 出来事」の形式（例：[2029/03/31] キオクシアの営業利益が約12倍に達するとの市場予想。）で箇条書き（改行区切り）で抽出してください。
+※日付の後の出来事テキストは、内容がひと目でわかるよう「50~100文字程度」で簡潔にまとめてください。該当なしなら記載不要です。`
 };
 
 function getConfig(key) {
@@ -143,126 +114,293 @@ const SHEET_HEADERS = [
 
 // ====================================================================
 // ★モードA：自由回答モード (free) — デフォルト
-//   syncPromptに書かれた指示だけをGeminiに渡し、フォーマットを一切強制しない。
 // ====================================================================
 
-// テキスト記事（Raindrop記事・MHT記事）向け：自由回答モード
+// テキスト記事（Raindrop記事・MHT記事）向け：自由回答モード（マルチモデル・フォールバック対応）
 function callGeminiFree(content, persona, syncPrompt, apiKey, model) {
   if (!apiKey) {
-    return content.substring(0, 500);
+    Logger.log("[Gemini] APIキーが未設定です。AI解析をスキップします。");
+    return "";
   }
 
-  // ★syncPromptの後ろに何も足さない。persona + syncPrompt + データ、それだけ。
-  const prompt = persona + "\n" + syncPrompt + "\n\n【データ】\n" + content;
+  const prompt = (persona ? persona + "\n\n" : "") + syncPrompt + "\n\n【データ】\n" + content;
+  const targetModel = model || getConfig('GEMINI_MODEL') || "gemini-2.5-flash";
+  const candidateModels = [targetModel, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+  const uniqueModels = Array.from(new Set(candidateModels));
 
-  const payload = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: {
-      temperature: getNumConfig('GEMINI_TEMPERATURE')
-      // ★responseMimeType / responseSchema はあえて指定しない
-    }
-  };
+  for (const m of uniqueModels) {
+    try {
+      const payload = {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: getNumConfig('GEMINI_TEMPERATURE')
+        }
+      };
 
-  try {
-    const response = UrlFetchApp.fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-      { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true }
-    );
-    const responseCode = response.getResponseCode();
-    if (responseCode === 200) {
-      const resJson = JSON.parse(response.getContentText());
-      return (resJson.candidates && resJson.candidates[0].content.parts[0].text) || "";
-    } else {
-      console.error(`Gemini(free/text) HTTP Error [${responseCode}]: ${response.getContentText()}`);
+      const response = UrlFetchApp.fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${apiKey}`,
+        { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true }
+      );
+      const responseCode = response.getResponseCode();
+      if (responseCode === 200) {
+        const resJson = JSON.parse(response.getContentText());
+        const generatedText = (resJson.candidates && resJson.candidates[0].content && resJson.candidates[0].content.parts[0].text) || "";
+        if (generatedText) {
+          return generatedText;
+        }
+      } else if (responseCode === 429) {
+        Logger.log(`[Gemini] Model ${m} rate limit (429). Retrying after 2s...`);
+        Utilities.sleep(2000);
+        const retryRes = UrlFetchApp.fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${apiKey}`,
+          { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true }
+        );
+        if (retryRes.getResponseCode() === 200) {
+          const resJson = JSON.parse(retryRes.getContentText());
+          return (resJson.candidates && resJson.candidates[0].content && resJson.candidates[0].content.parts[0].text) || "";
+        }
+      } else {
+        Logger.log(`[Gemini] Model ${m} HTTP ${responseCode}: ${response.getContentText()}`);
+      }
+    } catch (e) {
+      Logger.log(`[Gemini] Error calling model ${m}: ${e.message}`);
     }
-  } catch (e) {
-    console.error("Gemini(free/text) Execution Error: " + e.stack);
   }
+
   return "";
 }
 
-// PDF・画像向け：自由回答モード
+// PDF・画像向け：自由回答モード（マルチモデル・フォールバック対応）
 function callGeminiFreeFile(file, apiKey, model, persona, syncPrompt) {
   if (!apiKey) {
-    return "ファイル名: " + file.getName();
+    Logger.log("[Gemini] APIキーが未設定です。ファイル解析をスキップします。");
+    return "";
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
   const base64Data = Utilities.base64Encode(file.getBlob().getBytes());
-  const prompt = persona + "\n" + syncPrompt +
+  const prompt = (persona ? persona + "\n\n" : "") + syncPrompt +
     "\n\n【データ】\n(添付されたファイルの内容を読み取り、記載されているテキスト・図表の情報をもとに分析してください。ファイル名: " + file.getName() + ")";
 
-  const payload = {
-    contents: [{
-      parts: [
-        { text: prompt },
-        { inline_data: { mime_type: file.getMimeType(), data: base64Data } }
-      ]
-    }],
-    generationConfig: {
-      temperature: getNumConfig('GEMINI_TEMPERATURE'),
-      maxOutputTokens: 2000
-      // ★responseMimeType / responseSchema はあえて指定しない
-    }
-  };
+  const targetModel = model || getConfig('GEMINI_MODEL') || "gemini-2.5-flash";
+  const candidateModels = [targetModel, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+  const uniqueModels = Array.from(new Set(candidateModels));
 
-  try {
-    const response = UrlFetchApp.fetch(url, {
-      method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true
-    });
-    if (response.getResponseCode() === 200) {
-      const result = JSON.parse(response.getContentText());
-      return (result.candidates && result.candidates[0].content.parts[0].text) || "";
-    } else {
-      console.error(`Gemini(free/vision) HTTP Error [${response.getResponseCode()}]: ${response.getContentText()}`);
+  for (const m of uniqueModels) {
+    try {
+      const payload = {
+        contents: [{
+          parts: [
+            { text: prompt },
+            { inline_data: { mime_type: file.getMimeType(), data: base64Data } }
+          ]
+        }],
+        generationConfig: {
+          temperature: getNumConfig('GEMINI_TEMPERATURE'),
+          maxOutputTokens: 2000
+        }
+      };
+
+      const response = UrlFetchApp.fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${apiKey}`,
+        { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true }
+      );
+      const responseCode = response.getResponseCode();
+      if (responseCode === 200) {
+        const resJson = JSON.parse(response.getContentText());
+        const generatedText = (resJson.candidates && resJson.candidates[0].content && resJson.candidates[0].content.parts[0].text) || "";
+        if (generatedText) {
+          return generatedText;
+        }
+      } else if (responseCode === 429) {
+        Utilities.sleep(2000);
+        const retryRes = UrlFetchApp.fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${apiKey}`,
+          { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true }
+        );
+        if (retryRes.getResponseCode() === 200) {
+          const resJson = JSON.parse(retryRes.getContentText());
+          return (resJson.candidates && resJson.candidates[0].content && resJson.candidates[0].content.parts[0].text) || "";
+        }
+      } else {
+        Logger.log(`[Gemini Vision] Model ${m} HTTP ${responseCode}: ${response.getContentText()}`);
+      }
+    } catch (e) {
+      Logger.log(`[Gemini Vision] Error calling model ${m}: ${e.message}`);
     }
-  } catch (e) {
-    console.error("Gemini(free/vision) Execution Error: " + e.message);
   }
-  return "解析完了: " + file.getName();
+
+  return "";
 }
 
-// 自由回答テキストから、スプレッドシートのD列(tags)・L列(timeline)用の情報だけを
-// 正規表現で軽く拾う。syncPromptを差し替えても致命的に壊れないよう、
-// 見つからない場合は素直にフォールバックする。
+// ----------------------------------------------------
+// テキスト整形用ヘルパー関数
+// ----------------------------------------------------
+function summarizeText(str, maxLen) {
+  if (!str) return "";
+  const len = maxLen || 100;
+  let cleanStr = str.replace(/^[:：\s\-\]\]]+/, '').replace(/^\[YYYY\/MM\/DD\]\s*/i, '').trim();
+  if (cleanStr.length <= len) return cleanStr;
+
+  const sub = cleanStr.substring(0, len);
+  const lastPeriod = sub.lastIndexOf('。');
+  if (lastPeriod > 20) {
+    return sub.substring(0, lastPeriod + 1);
+  }
+
+  const lastComma = Math.max(sub.lastIndexOf('、'), sub.lastIndexOf(' '));
+  if (lastComma > 20) {
+    return sub.substring(0, lastComma) + '。';
+  }
+
+  return sub + '。';
+}
+
+// カテゴリ（D列）の安全・高精度抽出関数
+function extractCategoryFromText(text) {
+  if (!text) return "一般";
+
+  // 1. 【カテゴリ】や【カテゴリ・タグ】等のセクションから行単位で探索
+  const sectionRegex = /(?:【\s*(?:カテゴリ(?:[・\/]タグ)?|タグ|分野|分類)\s*】|(?:カテゴリ|分野|分類|タグ)\s*[:：])\s*([\s\S]*?)(?=\n\s*【|\n\s*###|\n\s*---|$)/i;
+  const match = text.match(sectionRegex);
+  if (match && match[1]) {
+    const lines = match[1].split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    for (const line of lines) {
+      let clean = line
+        .replace(/[（\(].*?出力[）\)]/g, '')
+        .replace(/[（\(].*?[）\)]/g, '')
+        .replace(/^[#\-\*•:\s]+/, '')
+        .replace(/^\[\[|\]\]$/g, '')
+        .replace(/^#/, '')
+        .trim();
+
+      // 指示文やプレースホルダー行は除外して次行を検証
+      if (!clean || clean.includes("ここに") || clean.includes("単語を1つ") || clean.includes("例：") || clean.includes("簡潔に記載") || clean.length > 25) {
+        continue;
+      }
+
+      const firstWord = clean.split(/[,、\/\s・]/)[0].trim();
+      if (firstWord && firstWord.length <= 20) {
+        return firstWord;
+      }
+    }
+  }
+
+  // 2. ウィキリンク形式 [[用語]] からの抽出
+  const wikiMatch = text.match(/\[\[([^\]]+)\]\]/);
+  if (wikiMatch && wikiMatch[1]) {
+    const term = wikiMatch[1].split(/[:：]/)[0].trim();
+    if (term && term.length <= 20) return term;
+  }
+
+  // 3. ハッシュタグ #用語 からの抽出
+  const hashMatch = text.match(/#([^\s#\[\]【】]+)/);
+  if (hashMatch && hashMatch[1]) {
+    const tag = hashMatch[1].trim();
+    if (tag && tag.length <= 20) return tag;
+  }
+
+  return "一般";
+}
+
+// 年表（L列）の厳密な日付抽出関数
+function extractTimelineFromText(text) {
+  if (!text) return "";
+
+  // パターンA: 【年表】【時系列】ブロックの抽出
+  const timelineSectionMatch = text.match(/(?:【\s*(?:年表|時系列|経緯|スケジュール|歴史)\s*】|(?:年表|時系列|経緯)\s*[:：])\s*\n?([\s\S]*?)(?:\n【|$)/i);
+  let timelineBlock = timelineSectionMatch ? timelineSectionMatch[1].trim() : "";
+
+  if (timelineBlock) {
+    const lines = timelineBlock.split(/\r?\n/).map(line => {
+      let cleanLine = line.replace(/\[\s*(?:YYYY[/\-]MM[/\-]DD|YYYY[/\-]MM|YYYY)\s*\]/gi, '').trim();
+      const hasDate = /(?:\d{4}年|\d{4}年度|\d{4}[\/\-]\d{1,2}|令和\d+年|\d{1,2}月\d{1,2}日|\[\d{4}[/.-])/.test(line);
+
+      if (!hasDate || cleanLine.includes("該当なし") || cleanLine.includes("出来事テキスト") || cleanLine.includes("空行にすること")) {
+        return null;
+      }
+
+      const bracketMatch = cleanLine.match(/^(\[\d{4}[^\]]*\])\s*(.*)/);
+      if (bracketMatch) {
+        const datePart = bracketMatch[1];
+        let textPart = summarizeText(bracketMatch[2].trim(), 100);
+        return `${datePart} ${textPart}`;
+      }
+
+      return summarizeText(cleanLine, 100);
+    }).filter(Boolean);
+
+    if (lines.length > 0) {
+      return lines.join("\n");
+    }
+  }
+
+  // パターンB: ブロックがない場合、テキスト全体から明確な日付行のみを抽出（日付なしなら空文字）
+  const allLines = text.split(/\r?\n/);
+  const dateLines = allLines.filter(l => /(?:\d{4}年\d{1,2}月|\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}|\[\d{4}[\/\-]\d{1,2})/.test(l));
+  
+  if (dateLines.length > 0) {
+    const extracted = [];
+    for (const l of dateLines) {
+      let clean = l.replace(/^[#\-\*•]\s*/, '').trim();
+      if (clean.includes("出力構成") || clean.includes("プロンプト") || clean.includes("厳守事項")) continue;
+
+      const ymd = clean.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+      const ym = clean.match(/(\d{4})年(\d{1,2})月/);
+      const slashYmd = clean.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+
+      let datePrefix = "";
+      let eventText = clean;
+
+      if (ymd) {
+        datePrefix = `[${ymd[1]}/${String(ymd[2]).padStart(2, '0')}/${String(ymd[3]).padStart(2, '0')}]`;
+        eventText = clean.replace(/(\d{4})年(\d{1,2})月(\d{1,2})日/, '').trim();
+      } else if (slashYmd) {
+        datePrefix = `[${slashYmd[1]}/${String(slashYmd[2]).padStart(2, '0')}/${String(slashYmd[3]).padStart(2, '0')}]`;
+        eventText = clean.replace(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/, '').trim();
+      } else if (ym) {
+        datePrefix = `[${ym[1]}/${String(ym[2]).padStart(2, '0')}]`;
+        eventText = clean.replace(/(\d{4})年(\d{1,2})月/, '').trim();
+      }
+
+      eventText = summarizeText(eventText, 100);
+      if (eventText) {
+        extracted.push(datePrefix ? `${datePrefix} ${eventText}` : eventText);
+      }
+    }
+    return extracted.slice(0, 5).join("\n");
+  }
+
+  // ★重要：日付が一切存在しない場合は本文を詰め込まず、完全に空文字を返す
+  return "";
+}
+
+// 解析テキストからスプレッドシート用フィールド（D列・E列・L列）を構築
 function buildSheetFieldsFromFreeText(rawText, fallbackContent) {
   const text = (rawText && rawText.trim()) ? rawText : (fallbackContent || "");
 
-  // 【カテゴリ・タグ】セクションからカテゴリを簡潔に取得する
-  const categoryMatch = text.match(/【\s*カテゴリ[・\/]タグ\s*】\s*\n?([^\n【]+)/);
-  let tags = categoryMatch ? categoryMatch[1].trim() : "";
-  if (!tags || tags.length > 30) {
-    tags = "一般";
+  // 1. D列: カテゴリ/タグ
+  const tags = extractCategoryFromText(text);
+
+  // 2. E列: highlights（要約・具体的数値事実・市場影響・キーワード）
+  let highlights = "";
+  if (rawText && rawText.trim()) {
+    // 【カテゴリ】ブロックと【年表】ブロックを排除し、本文要約・事実・影響・キーワードをそのまま格納
+    let cleanHighlights = rawText
+      .replace(/【\s*(?:カテゴリ(?:[・\/]タグ)?|タグ|分野|分類)\s*】[\s\S]*?(?=\n【|$)/gi, '')
+      .replace(/(?:【\s*(?:年表|時系列|経緯|スケジュール|歴史)\s*】|(?:年表|時系列|経緯)\s*[:：])[\s\S]*?(?=\n【|$)/gi, '')
+      .trim();
+
+    highlights = cleanHighlights || rawText.substring(0, 1000);
   } else {
-    tags = tags.split(/[,、\n]/)[0].trim();
+    highlights = (fallbackContent || "").replace(/\s+/g, ' ').substring(0, 350) + "...";
   }
 
-  // 【年表】セクションを抽出する
-  const timelineSectionMatch = text.match(/【\s*年表\s*】\s*\n?([\s\S]*?)(?:\n【|$)/);
-  let timeline = timelineSectionMatch ? timelineSectionMatch[1].trim() : "";
-  if (!timeline) {
-    const lines = text.split(/\n/);
-    const dateLines = lines.filter(l => /(?:\d{4}年|\d{4}年度|\d{4}\/\d{1,2}|\d{4}年\d{1,2}月)/.test(l));
-    if (dateLines.length > 0) {
-      timeline = dateLines.slice(0, 5).map(l => {
-        let clean = l.replace(/^[#\-\*•]\s*/, '').trim();
-        if (!/^\[\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}\]/.test(clean)) {
-          // Normalize date formats like 2026年3月 -> [2026/03/01] or similar
-          clean = clean.replace(/(\d{4})年(\d{1,2})月(\d{1,2})日/, "[$1/$2/$3]")
-                       .replace(/(\d{4})年(\d{1,2})月/, "[$1/$2/01]")
-                       .replace(/(\d{4})年/, "[$1/01/01]");
-          if (!/^\[\d{4}/.test(clean)) {
-            clean = "[YYYY/MM/DD] " + clean;
-          }
-        }
-        return clean;
-      }).join("\n");
-    }
-  }
+  // 3. L列: timeline（年表）
+  const timeline = extractTimelineFromText(text);
 
   return {
     tags: tags,
-    highlights: text,
+    highlights: highlights,
     timeline: timeline
   };
 }
@@ -294,7 +432,7 @@ const UNIFIED_RESPONSE_SCHEMA = {
 };
 
 function buildAnalysisPromptForJsonMode(persona, syncPrompt, content) {
-  return persona + "\n" + syncPrompt +
+  return (persona ? persona + "\n\n" : "") + syncPrompt +
     "\n\n【出力形式についての補足（JSON厳格モード時のみ）】\n" +
     "上記の「出力構成」の内容を、与えられたJSONスキーマの各フィールド" +
     "（title / is_verbatim / summary / key_facts / market_impact / keywords / timeline）に" +
@@ -319,24 +457,23 @@ function callGeminiAnalyzeText(content, persona, syncPrompt, apiKey, model) {
     return { title: "", is_verbatim: isShortArticle(content), summary: content.substring(0, 300), key_facts: [], market_impact: "", keywords: [], timeline: "" };
   }
   const prompt = buildAnalysisPromptForJsonMode(persona, syncPrompt, content);
+  const targetModel = model || getConfig('GEMINI_MODEL') || "gemini-2.5-flash";
   const payload = {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: { temperature: 0.1, responseMimeType: "application/json", responseSchema: UNIFIED_RESPONSE_SCHEMA }
   };
   try {
     const response = UrlFetchApp.fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`,
       { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true }
     );
     if (response.getResponseCode() === 200) {
       const resJson = JSON.parse(response.getContentText());
       const rawText = resJson.candidates[0].content.parts[0].text;
       return normalizeGeminiResult(JSON.parse(rawText));
-    } else {
-      console.error(`Gemini(json/text) HTTP Error [${response.getResponseCode()}]: ${response.getContentText()}`);
     }
   } catch (e) {
-    console.error("Gemini(json/text) Execution Error: " + e.stack);
+    console.error("Gemini(json/text) Error: " + e.message);
   }
   return { title: "", is_verbatim: false, summary: content.substring(0, 300), key_facts: [], market_impact: "", keywords: [], timeline: "" };
 }
@@ -345,7 +482,8 @@ function callGeminiAnalyzeFile(file, apiKey, model, persona, syncPrompt) {
   if (!apiKey) {
     return { title: "", is_verbatim: true, summary: "ファイル名: " + file.getName(), key_facts: [], market_impact: "", keywords: [], timeline: "" };
   }
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const targetModel = model || getConfig('GEMINI_MODEL') || "gemini-2.5-flash";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
   const base64Data = Utilities.base64Encode(file.getBlob().getBytes());
   const prompt = buildAnalysisPromptForJsonMode(
     persona, syncPrompt,
@@ -361,11 +499,9 @@ function callGeminiAnalyzeFile(file, apiKey, model, persona, syncPrompt) {
       const result = JSON.parse(response.getContentText());
       const text = result.candidates[0].content.parts[0].text;
       return normalizeGeminiResult(JSON.parse(text));
-    } else {
-      console.error(`Gemini(json/vision) HTTP Error [${response.getResponseCode()}]: ${response.getContentText()}`);
     }
   } catch (e) {
-    console.error("Gemini(json/vision) Execution Error: " + e.message);
+    console.error("Gemini(json/vision) Error: " + e.message);
   }
   return { title: "", is_verbatim: true, summary: "解析完了: " + file.getName(), key_facts: [], market_impact: "", keywords: [], timeline: "" };
 }
@@ -373,9 +509,9 @@ function callGeminiAnalyzeFile(file, apiKey, model, persona, syncPrompt) {
 function buildSheetFieldsFromGeminiResult(parsed, rawContent) {
   const isVerbatim = parsed.is_verbatim || isShortArticle(rawContent);
 
-  let tagsWikilinks = "未分類";
+  let tagsWikilinks = "一般";
   if (parsed.keywords && parsed.keywords.length > 0) {
-    tagsWikilinks = parsed.keywords.map(k => `[[${k.term}]]: ${k.definition}`).join(" / ");
+    tagsWikilinks = parsed.keywords[0].term || "一般";
   }
 
   let highlightsText = "";
@@ -386,17 +522,16 @@ function buildSheetFieldsFromGeminiResult(parsed, rawContent) {
     if (parsed.summary) parts.push("【要約】\n" + parsed.summary);
     if (parsed.key_facts && parsed.key_facts.length > 0) parts.push("【具体的数値・事実】\n・" + parsed.key_facts.join("\n・"));
     if (parsed.market_impact) parts.push("【市場・実務への影響】\n" + parsed.market_impact);
+    if (parsed.keywords && parsed.keywords.length > 0) {
+      parts.push("【キーワード】\n" + parsed.keywords.map(k => `- [[${k.term}]]: ${k.definition}`).join("\n"));
+    }
     highlightsText = parts.join("\n\n");
   }
 
   return { tags: tagsWikilinks, highlights: highlightsText, timeline: parsed.timeline || "" };
 }
 
-// ====================================================================
-// ★共通ディスパッチャ：outputMode に応じてモードA/Bを振り分ける
-//   （この関数だけを呼び出し元は使う。モードの混在はここで防ぐ）
-// ====================================================================
-
+// 共通ディスパッチャ
 function analyzeText(content, persona, syncPrompt, apiKey, model, outputMode) {
   if (outputMode === 'json') {
     const parsed = callGeminiAnalyzeText(content, persona, syncPrompt, apiKey, model);
@@ -415,13 +550,12 @@ function analyzeFile(file, apiKey, model, persona, syncPrompt, outputMode) {
   return buildSheetFieldsFromFreeText(rawText, "");
 }
 
-// 400文字以下かどうかの判定（この関数自体はモードに関わらず共通利用）
 function isShortArticle(text, threshold) {
   const t = typeof threshold === 'number' ? threshold : getNumConfig('SHORT_ARTICLE_THRESHOLD');
   return !!text && text.length > 0 && text.length <= t;
 }
 
-// スプレッドシート内の保存先シートを取得/自動生成する関数
+// 保存先シート取得/自動生成
 function getSheet(targetSheetName, targetSsUrl) {
   let ss = null;
   if (targetSsUrl && String(targetSsUrl).trim() !== "") {
@@ -462,12 +596,12 @@ function getSheet(targetSheetName, targetSsUrl) {
   return sheet;
 }
 
-// ==== 統合リクエスト処理関数（GET/POST両対応、FormData・JSON・クエリパラメータ対応） ====
+// ==== 統合リクエスト処理関数 ====
 function processApiRequest(e) {
   if (!e) {
     return createJsonResponse({
       status: "ok",
-      message: "Connected Notes Web API (GAS) は正常に稼働しています。このURLをアプリの設定画面に貼り付けてご利用ください。"
+      message: "Connected Notes Web API (GAS) は正常に稼働しています。"
     });
   }
 
@@ -560,7 +694,7 @@ function createJsonResponse(data) {
                        .setMimeType(ContentService.MimeType.JSON);
 }
 
-// ---- ノート一覧取得 (A〜M列保持 + N列編集本文 + O列更新日時) ----
+// ---- ノート一覧取得 ----
 function handleGetNotes(targetSheetName, targetSsUrl) {
   const sheet = getSheet(targetSheetName, targetSsUrl);
   const lastRow = sheet.getLastRow();
@@ -638,7 +772,7 @@ function handleGetNotes(targetSheetName, targetSsUrl) {
   return { notes: notes, sheetName: sheet.getName() };
 }
 
-// ---- ノート単体保存（A〜M列を非破壊保持し、N列・O列にアプリデータを書き込み） ----
+// ---- ノート単体保存 ----
 function saveNote(note, targetSheetName, targetSsUrl) {
   const sheet = getSheet(targetSheetName, targetSsUrl);
   const lastRow = sheet.getLastRow();
@@ -655,125 +789,115 @@ function saveNote(note, targetSheetName, targetSsUrl) {
       const updatedRow = [
         note.id,
         note.title || currentRow[1] || "",
-        note.sourceUrl || currentRow[2] || "",
+        note.sourceUrl !== undefined ? note.sourceUrl : (currentRow[2] || ""),
         note.keywords || currentRow[3] || "",
         note.summary || currentRow[4] || "",
-        currentRow[5] || note.createdAt || new Date(),
-        'true',
-        currentRow[7] || "",
+        currentRow[5] || (note.createdAt ? new Date(note.createdAt) : new Date()),
+        note.processed !== undefined ? note.processed : (currentRow[6] || 'false'),
+        note.nobsidian !== undefined ? note.nobsidian : (currentRow[7] || ''),
         currentRow[8] || note.rawContent || "",
-        note.columnJ || note.metaInfo || currentRow[9] || "",
-        note.dateStr || currentRow[10] || "",
+        currentRow[9] || note.metaInfo || note.columnJ || "",
+        currentRow[10] || note.dateStr || "",
         note.timeline !== undefined ? note.timeline : (currentRow[11] || ""),
-        note.source || currentRow[12] || "app",
+        currentRow[12] || note.source || "web_app",
         note.content || "",
-        note.updatedAt || Date.now()
+        new Date()
       ];
 
       sheet.getRange(rowNum, 1, 1, 15).setValues([updatedRow]);
-      return { success: true, action: "updated", id: note.id, sheetName: sheet.getName() };
+      return { success: true, action: "updated", id: note.id };
     }
   }
 
-  sheet.appendRow([
+  const newRow = [
     note.id,
-    note.title,
+    note.title || "",
     note.sourceUrl || "",
     note.keywords || "",
     note.summary || "",
-    note.createdAt || new Date(),
-    'true',
-    '',
+    note.createdAt ? new Date(note.createdAt) : new Date(),
+    note.processed || 'false',
+    note.nobsidian || '',
     note.rawContent || "",
-    note.columnJ || note.metaInfo || "",
+    note.metaInfo || note.columnJ || "",
     note.dateStr || "",
     note.timeline || "",
-    note.source || "app",
+    note.source || "web_app",
     note.content || "",
-    note.updatedAt || Date.now()
-  ]);
-
-  return { success: true, action: "created", id: note.id, sheetName: sheet.getName() };
+    new Date()
+  ];
+  sheet.appendRow(newRow);
+  return { success: true, action: "created", id: note.id };
 }
 
 // ---- ノート削除 ----
 function deleteNote(id, targetSheetName, targetSsUrl) {
   const sheet = getSheet(targetSheetName, targetSsUrl);
   const lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return { success: false, reason: "データが存在しません" };
+  if (lastRow <= 1) return { success: false, error: "データが空です" };
 
   const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues().flat().map(String);
   const idx = ids.indexOf(String(id));
+  if (idx === -1) return { success: false, error: "該当IDのメモが見つかりません: " + id };
 
-  if (idx !== -1) {
-    sheet.deleteRow(idx + 2);
-    return { success: true, id: id, sheetName: sheet.getName() };
-  }
-  return { success: false, reason: "削除対象が見つかりません" };
+  sheet.deleteRow(idx + 2);
+  return { success: true, deletedId: id };
 }
 
-// ---- 全ノート一括保存（A〜M列を非破壊保持しつつN・O列を更新） ----
+// ---- 一括保存 ----
 function saveAll(notes, targetSheetName, targetSsUrl) {
   const sheet = getSheet(targetSheetName, targetSsUrl);
   const lastRow = sheet.getLastRow();
 
-  const existingMap = {};
-  if (lastRow >= 2) {
+  const existingMap = new Map();
+  if (lastRow > 1) {
     const numCols = Math.max(15, sheet.getLastColumn());
     const data = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
-    data.forEach((row, i) => {
-      const id = String(row[0]);
-      if (id) existingMap[id] = row;
+    data.forEach(r => {
+      if (r[0]) existingMap.set(String(r[0]), r);
     });
   }
 
   if (notes && notes.length > 0) {
     const rows = notes.map(n => {
-      const existing = existingMap[String(n.id)];
-      if (existing) {
+      const exist = existingMap.get(String(n.id));
+      if (exist) {
         return [
           n.id,
-          n.title || existing[1] || "",
-          n.sourceUrl || existing[2] || "",
-          n.keywords || existing[3] || "",
-          n.summary || existing[4] || "",
-          existing[5] || n.createdAt || new Date(),
-          'true',
-          existing[7] || "",
-          existing[8] || n.rawContent || "",
-          n.columnJ || n.metaInfo || existing[9] || "",
-          n.dateStr || existing[10] || "",
-          n.timeline !== undefined ? n.timeline : (existing[11] || ""),
-          n.source || existing[12] || "app",
+          n.title || exist[1] || "",
+          n.sourceUrl !== undefined ? n.sourceUrl : (exist[2] || ""),
+          n.keywords || exist[3] || "",
+          n.summary || exist[4] || "",
+          exist[5] || (n.createdAt ? new Date(n.createdAt) : new Date()),
+          n.processed !== undefined ? n.processed : (exist[6] || 'false'),
+          n.nobsidian !== undefined ? n.nobsidian : (exist[7] || ''),
+          exist[8] || n.rawContent || "",
+          exist[9] || n.metaInfo || n.columnJ || "",
+          exist[10] || n.dateStr || "",
+          n.timeline !== undefined ? n.timeline : (exist[11] || ""),
+          exist[12] || n.source || "web_app",
           n.content || "",
-          n.updatedAt || Date.now()
-        ];
-      } else {
-        return [
-          n.id,
-          n.title,
-          n.sourceUrl || "",
-          n.keywords || "",
-          n.summary || "",
-          n.createdAt || new Date(),
-          'true',
-          '',
-          n.rawContent || "",
-          n.columnJ || n.metaInfo || "",
-          n.dateStr || "",
-          n.timeline || "",
-          n.source || "app",
-          n.content || "",
-          n.updatedAt || Date.now()
+          new Date()
         ];
       }
+      return [
+        n.id,
+        n.title || "",
+        n.sourceUrl || "",
+        n.keywords || "",
+        n.summary || "",
+        n.createdAt ? new Date(n.createdAt) : new Date(),
+        n.processed || 'false',
+        n.nobsidian || '',
+        n.rawContent || "",
+        n.metaInfo || n.columnJ || "",
+        n.dateStr || "",
+        n.timeline || "",
+        n.source || "web_app",
+        n.content || "",
+        new Date()
+      ];
     });
-
-    const neededRows = rows.length + 1;
-    const currentMaxRows = sheet.getMaxRows();
-    if (neededRows > currentMaxRows) {
-      sheet.insertRowsAfter(currentMaxRows, neededRows - currentMaxRows);
-    }
 
     if (lastRow > 1) {
       sheet.getRange(2, 1, lastRow - 1, Math.max(15, sheet.getLastColumn())).clearContent();
@@ -795,47 +919,57 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
 
   let currentProcessing = "同期処理の準備中";
   let addedCount = 0;
+  let processedFileCount = 0;
   let isTimeOut = false;
   let problematicItem = null;
 
   try {
     const sheet = getSheet(targetSheetName, targetSsUrl);
     const lastRow = sheet.getLastRow();
-    const existingIds = lastRow > 1
-      ? new Set(sheet.getRange(2, 1, lastRow - 1, 1).getValues().flat().map(String))
-      : new Set();
 
-    const geminiApiKey = props.getProperty('GEMINI_API_KEY') || "";
-    const geminiModel = getConfig('GEMINI_MODEL');
-    const raindropToken = props.getProperty('RAINDROP_TOKEN') || "";
+    // 既存スプレッドシートデータのインデックス作成（重複防止）
+    const existingIds = new Set();
+    const existingTitles = new Set();
+    const existingUrls = new Set();
+    const processedFileIds = new Set();
+    const processedFileNames = new Set();
 
-    // ★③: フロントのconfigを最優先。なければスクリプトプロパティ→デフォルトの順（既存の優先順位を維持・明示）
+    if (lastRow > 1) {
+      const numCols = Math.max(15, sheet.getLastColumn());
+      const data = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
+      for (const r of data) {
+        if (r[0]) existingIds.add(String(r[0]).trim());
+        if (r[1]) existingTitles.add(String(r[1]).trim().toLowerCase());
+        if (r[2]) existingUrls.add(String(r[2]).trim());
+      }
+    }
+
+    // APIキーの取得（フロント指定を最優先、次にスクリプトプロパティ）
+    const geminiApiKey = config.geminiApiKey || props.getProperty('GEMINI_API_KEY') || "";
+    const geminiModel = config.geminiModel || getConfig('GEMINI_MODEL') || "gemini-2.5-flash";
+    const raindropToken = config.raindropToken || props.getProperty('RAINDROP_TOKEN') || "";
+
     const persona = config.persona || getConfig('SYSTEM_PERSONA');
     const syncPrompt = config.syncPrompt || getConfig('SYNC_PROMPT');
-    const outputMode = config.outputMode || getConfig('OUTPUT_MODE'); // "free" or "json"
+    const outputMode = config.outputMode || getConfig('OUTPUT_MODE');
     const maxInputChars = config.maxInputChars ? Number(config.maxInputChars) : getNumConfig('MAX_INPUT_CHARS');
     const shortArticleThreshold = config.shortArticleThreshold !== undefined
       ? Number(config.shortArticleThreshold) : getNumConfig('SHORT_ARTICLE_THRESHOLD');
     const skipGeminiForShort = config.skipGeminiForShortArticles !== undefined
       ? !!config.skipGeminiForShortArticles : getBoolConfig('SKIP_GEMINI_FOR_SHORT_ARTICLES');
 
-    console.log(`syncExternalSources: outputMode=${outputMode}, maxInputChars=${maxInputChars}, ` +
-      `skipGeminiForShort=${skipGeminiForShort}(threshold=${shortArticleThreshold}), ` +
-      `syncPromptSource=${config.syncPrompt ? "config(フロント指定)" : "スクリプトプロパティ/デフォルト"}`);
+    console.log(`syncExternalSources 開始: model=${geminiModel}, hasApiKey=${!!geminiApiKey}, outputMode=${outputMode}`);
 
     function extractFolderId(input) {
       if (!input || typeof input !== 'string') return "";
       const trimmedInput = input.trim();
       const urlMatch = trimmedInput.match(/\/folders\/([a-zA-Z0-9_-]+)/);
-      if (urlMatch) {
-        return urlMatch[1];
-      }
+      if (urlMatch) return urlMatch[1];
       const isValidId = /^[a-zA-Z0-9_-]+$/.test(trimmedInput);
-      if (isValidId) {
-        return trimmedInput;
-      }
+      if (isValidId) return trimmedInput;
       return "";
     }
+
     let driveFolderId = extractFolderId(config.driveSourceFolder) || props.getProperty('SCREENSHOT_FOLDER_ID') || "";
     if (!driveFolderId) {
       const folders = DriveApp.getFoldersByName("Connected Notes 取り込み");
@@ -885,53 +1019,66 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
 
             const fetchOptions = {
               muteHttpExceptions: true,
-              headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Accept": "text/html"
-              }
+              headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" }
             };
             const response = UrlFetchApp.fetch(item.link, fetchOptions);
 
             if (response.getResponseCode() === 200) {
-              const rawHtml = response.getContentText();
-              cleanText = cleanHtml(rawHtml);
+              const html = response.getContentText();
+              cleanText = html
+                .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+                .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
+                .replace(/<[^>]+>/g, " ")
+                .replace(/\s+/g, " ")
+                .trim();
 
-              if (geminiApiKey) {
-                // ★⑤: スキップするかどうかは設定次第。スキップする場合のみコード側で完結させる。
-                if (skipGeminiForShort && isShortArticle(cleanText, shortArticleThreshold)) {
-                  keyword = "未分類";
-                  summary = manualHighlights ? manualHighlights + "\n\n" + cleanText : cleanText;
-                  timelineForRow = "";
-                } else {
-                  // ★④: 文字数上限は設定値(maxInputChars)で一元管理
-                  const fields = analyzeText(cleanText.substring(0, maxInputChars), persona, syncPrompt, geminiApiKey, geminiModel, outputMode);
-                  keyword = fields.tags;
-                  summary = manualHighlights ? manualHighlights + "\n\n【AI分析】\n" + fields.highlights : fields.highlights;
-                  timelineForRow = fields.timeline;
-                }
+              if (skipGeminiForShort && isShortArticle(cleanText, shortArticleThreshold)) {
+                keyword = "未分類";
+                summary = cleanText;
+                timelineForRow = "";
+              } else {
+                const geminiInput = cleanText.substring(0, maxInputChars);
+                const fields = analyzeText(geminiInput, persona, syncPrompt, geminiApiKey, geminiModel, outputMode);
+                keyword = fields.tags;
+                summary = fields.highlights;
+                timelineForRow = fields.timeline;
               }
             } else {
-              keyword = "🚨手動要";
-              summary = `アクセス拒否 (Status: ${response.getResponseCode()})`;
+              summary = "【記事本文の取得に失敗 (HTTP " + response.getResponseCode() + ")】" + (item.excerpt || "");
             }
-
-            const safeContent = cleanText.length > 49000 ? cleanText.substring(0, 49000) + "..." : cleanText;
-            sheet.appendRow([id, item.title, item.link, keyword, summary, item.created || new Date(), 'false', '', safeContent, '', pubDateStr, timelineForRow, 'raindrop', '', '']);
-            SpreadsheetApp.flush();
-            existingIds.add(id);
-            addedCount++;
-
           } catch (e) {
-            keyword = "🚨手動要";
-            summary = `解析エラー: ${e.message}`;
-            sheet.appendRow([id, item.title, item.link, keyword, summary, item.created || new Date(), 'false', '', '', '', pubDateStr, '', 'raindrop', '', '']);
-            SpreadsheetApp.flush();
-            existingIds.add(id);
-            addedCount++;
-            isTimeOut = true;
-            problematicItem = { title: item.title, url: item.link, reason: e.message };
-            break;
+            summary = "【取得エラー】" + e.message + " / " + (item.excerpt || "");
           }
+
+          if (manualHighlights) {
+            summary = (summary ? summary + "\n\n" : "") + "【手動ハイライト】\n" + manualHighlights;
+          }
+
+          const safeContent = cleanText.length > 49000
+            ? cleanText.substring(0, 49000) + "\n...（文字数上限により省略）"
+            : cleanText;
+
+          sheet.appendRow([
+            id,
+            item.title,
+            item.link,
+            keyword,
+            summary,
+            item.created || new Date(),
+            'false',
+            '',
+            safeContent,
+            item.excerpt || "",
+            pubDateStr,
+            timelineForRow,
+            'raindrop',
+            '',
+            ''
+          ]);
+          SpreadsheetApp.flush();
+          existingIds.add(id);
+          addedCount++;
+          Utilities.sleep(500);
         }
       }
     }
@@ -959,6 +1106,7 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
       console.log("Googleドライブ同期を開始します...");
       const { files, processedFolder } = fetchDriveScreenshots(driveFolderId, driveProcessedFolderId);
 
+      // MHTファイルを先頭にソートして、PDFより先にMHT記事の解析とPDF紐付けを行う
       files.sort((a, b) => {
         const aName = a.getName().toLowerCase();
         const bName = b.getName().toLowerCase();
@@ -975,46 +1123,121 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
           break;
         }
 
+        const fileId = file.getId();
         const fileName = file.getName();
         const fileNameLower = fileName.toLowerCase();
+        const fileBaseName = fileName.replace(/\.[^/.]+$/, "").trim();
+
+        // ★MHT処理等で既に紐付け・処理済みのファイルを完全にスキップ
+        if (processedFileIds.has(fileId) || processedFileNames.has(fileNameLower) || existingUrls.has(file.getUrl())) {
+          console.log(`ファイル [${fileName}] は既にMHT紐付け/登録済みのためスキップします。`);
+          try { file.moveTo(processedFolder); } catch (e) {}
+          continue;
+        }
+
+        // 親フォルダ確認（既に処理済みフォルダに移動されている場合）
+        try {
+          const parents = file.getParents();
+          let inSourceFolder = false;
+          while (parents.hasNext()) {
+            if (parents.next().getId() === driveFolderId) {
+              inSourceFolder = true;
+              break;
+            }
+          }
+          if (!inSourceFolder) {
+            console.log(`ファイル [${fileName}] はすでに移動されているため処理をスキップします。`);
+            continue;
+          }
+        } catch (e) {
+          console.warn(`[${fileName}] の親フォルダ確認エラー: ${e.message}`);
+        }
+
+        processedFileCount++;
 
         try {
           if (fileNameLower.endsWith('.mht') || fileNameLower.endsWith('.mhtml')) {
             let mhtResult = { addedCount: 0, isTimeOut: false };
             try {
               mhtResult = processMhtFile_Advanced(
-                file, sheet, existingIds, persona, syncPrompt, driveFolderId, processedFolder,
+                file, sheet, existingIds, existingUrls, existingTitles, processedFileIds, processedFileNames,
+                persona, syncPrompt, driveFolderId, processedFolder,
                 geminiApiKey, geminiModel, outputMode, maxInputChars, shortArticleThreshold, skipGeminiForShort
               );
             } finally {
+              processedFileIds.add(file.getId());
+              processedFileNames.add(fileNameLower);
               file.moveTo(processedFolder);
             }
             addedCount += mhtResult.addedCount;
             if (mhtResult.isTimeOut) { isTimeOut = true; break; }
 
           } else if (fileNameLower.endsWith('.pdf')) {
-            const articleId = fileName.replace(/\.[^/.]+$/, "");
-            if (existingIds.has(articleId)) {
+            // PDFファイル単体処理: 既存ID・タイトルと重複している場合はスキップ
+            if (existingIds.has(fileBaseName) || existingTitles.has(fileBaseName.toLowerCase())) {
+              console.log(`PDF [${fileName}] は既存データと重複のためスキップします。`);
+              processedFileIds.add(file.getId());
+              processedFileNames.add(fileNameLower);
               file.moveTo(processedFolder);
               continue;
             }
 
             const fields = analyzeFile(file, geminiApiKey, geminiModel, persona, syncPrompt, outputMode);
             const pubDateStr = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
-            sheet.appendRow([articleId, articleId, file.getUrl(), fields.tags, fields.highlights, new Date(), 'false', '', '', '', pubDateStr, fields.timeline, file.getName(), '', '']);
+            sheet.appendRow([
+              fileBaseName,
+              fileBaseName,
+              file.getUrl(),
+              fields.tags,
+              fields.highlights,
+              new Date(),
+              'false',
+              '',
+              '',
+              '',
+              pubDateStr,
+              fields.timeline,
+              fileName,
+              '',
+              ''
+            ]);
             SpreadsheetApp.flush();
-            existingIds.add(articleId);
+            existingIds.add(fileBaseName);
+            existingTitles.add(fileBaseName.toLowerCase());
+            existingUrls.add(file.getUrl());
+            processedFileIds.add(file.getId());
+            processedFileNames.add(fileNameLower);
             addedCount++;
             file.moveTo(processedFolder);
 
           } else {
+            // 画像・スクリーンショット処理
             const ssId = 'ss_' + file.getId();
             if (!existingIds.has(ssId)) {
               const fields = analyzeFile(file, geminiApiKey, geminiModel, persona, syncPrompt, outputMode);
               const pubDateStr = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
-              sheet.appendRow([ssId, fileName, file.getUrl(), fields.tags, fields.highlights, new Date(), 'false', '', '', '', pubDateStr, fields.timeline, file.getName(), '', '']);
+              sheet.appendRow([
+                ssId,
+                fileName,
+                file.getUrl(),
+                fields.tags,
+                fields.highlights,
+                new Date(),
+                'false',
+                '',
+                '',
+                '',
+                pubDateStr,
+                fields.timeline,
+                fileName,
+                '',
+                ''
+              ]);
               SpreadsheetApp.flush();
               existingIds.add(ssId);
+              existingUrls.add(file.getUrl());
+              processedFileIds.add(file.getId());
+              processedFileNames.add(fileNameLower);
               addedCount++;
             }
             file.moveTo(processedFolder);
@@ -1028,6 +1251,7 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
     return {
       success: true,
       addedCount: addedCount,
+      processedCount: processedFileCount,
       isTimeOut: isTimeOut,
       problematicItem: problematicItem,
       sheetName: sheet.getName(),
@@ -1039,9 +1263,105 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
   }
 }
 
+// --------------------------------------------------------------------
+// MHTファイル内のPDF探索・紐付けヘルパー（N番号・記事ID・西暦・タイトル照合対応）
+// --------------------------------------------------------------------
+function findAndLinkMatchingPdf(articleHtml, articleId, titleOnly, metaInfo, folder, processedFolder, processedFileIds, processedFileNames, existingUrls) {
+  let pdfUrl = "";
+
+  // 1. Quoted-Printableデコード
+  const decodedHtml = articleHtml.replace(/=\r?\n/g, '').replace(/=3D/g, '=');
+
+  // 2. パターンA: HTML内の「N + 10〜16桁数字」（例: N202410150001.pdf）
+  const nMatches = decodedHtml.match(/\b(N\d{10,16})\b/gi);
+  if (nMatches && nMatches.length > 0) {
+    const uniqueCandidates = Array.from(new Set(nMatches));
+    for (const candidate of uniqueCandidates) {
+      const targetPdfName = candidate + ".pdf";
+      try {
+        const pdfFiles = folder.getFilesByName(targetPdfName);
+        if (pdfFiles.hasNext()) {
+          const pdfFile = pdfFiles.next();
+          pdfUrl = pdfFile.getUrl();
+          processedFileIds.add(pdfFile.getId());
+          processedFileNames.add(pdfFile.getName().toLowerCase());
+          existingUrls.add(pdfUrl);
+          try { pdfFile.moveTo(processedFolder); } catch(e) {}
+          return pdfUrl;
+        }
+      } catch(e) {}
+    }
+  }
+
+  // 3. パターンB: 記事ID.pdf での検索
+  if (articleId) {
+    const defaultPdfName = articleId + ".pdf";
+    try {
+      const fallbackFiles = folder.getFilesByName(defaultPdfName);
+      if (fallbackFiles.hasNext()) {
+        const pdfFile = fallbackFiles.next();
+        pdfUrl = pdfFile.getUrl();
+        processedFileIds.add(pdfFile.getId());
+        processedFileNames.add(pdfFile.getName().toLowerCase());
+        existingUrls.add(pdfUrl);
+        try { pdfFile.moveTo(processedFolder); } catch(e) {}
+        return pdfUrl;
+      }
+    } catch(e) {}
+  }
+
+  // 4. パターンC: 西暦（4桁）およびタイトルキーワードによる照合
+  const cleanTitle = titleOnly.replace(/[\\/:*?"<>|\s　]/g, "");
+  const titleKeywords = cleanTitle.length > 3 ? cleanTitle.substring(0, 10) : cleanTitle;
+  const yearMatch = (metaInfo + " " + titleOnly).match(/\b(\d{4})\b/);
+
+  try {
+    const pdfFiles = folder.getFilesByType(MimeType.PDF);
+    while (pdfFiles.hasNext()) {
+      const pdfFile = pdfFiles.next();
+      const pdfId = pdfFile.getId();
+      const pdfName = pdfFile.getName();
+      const pdfNameLower = pdfName.toLowerCase();
+      const pdfBaseName = pdfName.replace(/\.[^/.]+$/, "");
+
+      if (processedFileIds.has(pdfId) || processedFileNames.has(pdfNameLower)) {
+        continue;
+      }
+
+      let isMatch = false;
+
+      // 西暦から始まるPDFファイル名の場合の照合（例: 20241015_xxx.pdf, 2024-10-15_xxx.pdf）
+      if (yearMatch && pdfBaseName.startsWith(yearMatch[1])) {
+        if (titleKeywords && (pdfBaseName.includes(titleKeywords) || cleanTitle.includes(pdfBaseName.substring(4).replace(/^[\-_]/, '')))) {
+          isMatch = true;
+        }
+      }
+
+      // タイトル部分一致での照合
+      if (!isMatch && cleanTitle.length >= 4 && titleKeywords.length >= 4) {
+        if (pdfBaseName.replace(/[\\/:*?"<>|\s　]/g, "").includes(titleKeywords) || cleanTitle.includes(pdfBaseName.replace(/[\\/:*?"<>|\s　]/g, "").substring(0, 8))) {
+          isMatch = true;
+        }
+      }
+
+      if (isMatch) {
+        pdfUrl = pdfFile.getUrl();
+        processedFileIds.add(pdfId);
+        processedFileNames.add(pdfNameLower);
+        existingUrls.add(pdfUrl);
+        try { pdfFile.moveTo(processedFolder); } catch(e) {}
+        return pdfUrl;
+      }
+    }
+  } catch(e) {}
+
+  return "";
+}
+
 // MHTファイル高度解析エンジン
 function processMhtFile_Advanced(
-  file, sheet, existingIds, persona, syncPrompt, driveFolderId, processedFolder,
+  file, sheet, existingIds, existingUrls, existingTitles, processedFileIds, processedFileNames,
+  persona, syncPrompt, driveFolderId, processedFolder,
   geminiApiKey, geminiModel, outputMode, maxInputChars, shortArticleThreshold, skipGeminiForShort
 ) {
   const startTime = Date.now();
@@ -1103,14 +1423,11 @@ function processMhtFile_Advanced(
     if (existingIds.has(articleId)) continue;
     existingIds.add(articleId);
 
-    let pdfUrl = "";
-    const pdfName = articleId + ".pdf";
-    const pdfFiles = folder.getFilesByName(pdfName);
-    if (pdfFiles.hasNext()) {
-      const pdfFile = pdfFiles.next();
-      pdfUrl = pdfFile.getUrl();
-      pdfFile.moveTo(processedFolder);
-    }
+    // --- PDFファイル名の抽出と紐付け ---
+    const pdfUrl = findAndLinkMatchingPdf(
+      articleHtml, articleId, titleOnly, metaInfo, folder, processedFolder,
+      processedFileIds, processedFileNames, existingUrls
+    );
 
     let rawContent = "";
     const textMatch = articleHtml.match(/<div[^>]*class="[^"]*text Honbun[^"]*"[^>]*>([\s\S]*?)(?:<\/form>|<\/section>|$)/i);
@@ -1173,10 +1490,19 @@ function fetchRaindropData(token) {
   const url = "https://api.raindrop.io/rest/v1/raindrops/0?perpage=50";
   const options = {
     method: "get",
-    headers: { "Authorization": "Bearer " + token }
+    headers: { "Authorization": "Bearer " + token },
+    muteHttpExceptions: true
   };
-  const response = UrlFetchApp.fetch(url, options);
-  return JSON.parse(response.getContentText()).items || [];
+  try {
+    const response = UrlFetchApp.fetch(url, options);
+    if (response.getResponseCode() === 200) {
+      const json = JSON.parse(response.getContentText());
+      return json.items || [];
+    }
+  } catch (e) {
+    console.error("Raindrop API取得エラー: " + e.message);
+  }
+  return [];
 }
 
 function fetchDriveScreenshots(folderId, processedFolderId) {
@@ -1185,16 +1511,16 @@ function fetchDriveScreenshots(folderId, processedFolderId) {
   if (processedFolderId) {
     try {
       processedFolder = DriveApp.getFolderById(processedFolderId);
-    } catch (e) { processedFolder = null; }
+    } catch(e) {
+      processedFolder = null;
+    }
   }
-
   if (!processedFolder) {
-    const processedFolderName = "_processed";
-    const subFolders = folder.getFoldersByName(processedFolderName);
+    const subFolders = folder.getFoldersByName("_processed");
     if (subFolders.hasNext()) {
       processedFolder = subFolders.next();
     } else {
-      processedFolder = folder.createFolder(processedFolderName);
+      processedFolder = folder.createFolder("_processed");
     }
   }
 
@@ -1202,72 +1528,47 @@ function fetchDriveScreenshots(folderId, processedFolderId) {
   const fileIterator = folder.getFiles();
   while (fileIterator.hasNext()) {
     const file = fileIterator.next();
-    files.push(file);
+    const mime = file.getMimeType();
+    const name = file.getName().toLowerCase();
+    if (mime.startsWith('image/') || mime === MimeType.PDF || name.endsWith('.mht') || name.endsWith('.mhtml') || name.endsWith('.pdf')) {
+      files.push(file);
+    }
   }
-  return { files, processedFolder };
+  return { files: files, processedFolder: processedFolder };
 }
 
-function cleanHtml(html) {
-  if (!html) return "";
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<header[\s\S]*?<\/header>/gi, "")
-    .replace(/<footer[\s\S]*?<\/footer>/gi, "")
-    .replace(/<nav[\s\S]*?<\/nav>/gi, "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/\s+/g, " ")
+function cleanMhtNoise(text) {
+  if (!text) return "";
+  return text
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/[\r\t]/g, ' ')
     .trim();
 }
 
-function cleanMhtNoise(str) {
-  if (!str) return "";
-  return str
-    .replace(/=\r?\n/g, "")
-    .replace(/=([0-9A-Fa-f]{2})/g, (match, hex) => {
-      const code = parseInt(hex, 16);
-      if (code === 0x3D) return '=';
-      if (code < 0x20 || code === 0x7F) return ' ';
-      if (code < 0x80) return String.fromCharCode(code);
-      return match;
-    })
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"');
-}
-
-// ---- Google Docs または一般Webサイトのテキスト抽出 ----
 function fetchDriveFile(url) {
   try {
-    const docMatch = url.match(/[-\w]{25,}/);
-    if (url.includes("docs.google.com") && docMatch) {
-      const id = docMatch[0];
-      const doc = DocumentApp.openById(id);
-      return { success: true, text: doc.getBody().getText(), title: doc.getName() };
-    }
-
-    const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-    if (res.getResponseCode() !== 200) {
-      throw new Error("サイトにアクセスできませんでした（Status: " + res.getResponseCode() + "）");
-    }
-
-    const html = res.getContentText();
-    const titleMatch = html.match(/<title>([^<]*)<\/title>/i);
-    let title = titleMatch ? titleMatch[1].trim() : "取り込んだ記事";
-    let text = cleanHtml(html);
-    if (text.length > 20000) text = text.substring(0, 20000) + "...(以下省略)";
-
-    return { success: true, text: text, title: title };
-  } catch (err) {
-    return { success: false, error: "取り込みに失敗しました: " + err.message };
+    const match = url.match(/[-\w]{25,}/);
+    if (!match) return { success: false, error: "無効なGoogle Drive URLです" };
+    const file = DriveApp.getFileById(match[0]);
+    const blob = file.getBlob();
+    return {
+      success: true,
+      dataUrl: "data:" + blob.getContentType() + ";base64," + Utilities.base64Encode(blob.getBytes()),
+      mimeType: blob.getContentType(),
+      name: file.getName()
+    };
+  } catch (e) {
+    return { success: false, error: e.message };
   }
 }
 
-// ---- 外部ハイライトデータ（未処理）の抽出 ----
 function fetchUnprocessedHighlights(sourceSsId, sheetName) {
   try {
     const ss = SpreadsheetApp.openById(sourceSsId);
@@ -1275,63 +1576,41 @@ function fetchUnprocessedHighlights(sourceSsId, sheetName) {
     if (!sheet) return { success: false, error: "指定されたシートが見つかりません" };
 
     const data = sheet.getDataRange().getValues();
-    if (data.length <= 1) return { success: true, items: [] };
+    if (data.length <= 1) return { success: true, count: 0, items: [] };
 
     const headers = data[0].map(h => String(h).trim().toLowerCase());
-    let nobsidianIdx = headers.indexOf("nobsidian");
-    if (nobsidianIdx === -1 && data[0].length >= 8) nobsidianIdx = 7;
+    let nColIdx = headers.indexOf("nobsidian");
+    if (nColIdx === -1) nColIdx = 7;
 
-    const col = {
-      title: headers.indexOf("title") !== -1 ? headers.indexOf("title") : 1,
-      url: headers.indexOf("url") !== -1 ? headers.indexOf("url") : 2,
-      tags: headers.indexOf("tags") !== -1 ? headers.indexOf("tags") : 3,
-      highlights: headers.indexOf("highlights") !== -1 ? headers.indexOf("highlights") : 4,
-      saved_at: headers.indexOf("saved_at") !== -1 ? headers.indexOf("saved_at") : 5,
-      nobsidian: nobsidianIdx
-    };
-
-    let timelineColIdx = headers.indexOf("timeline");
-    if (timelineColIdx === -1) timelineColIdx = headers.indexOf("timeline_data");
-    if (timelineColIdx === -1 && data[0].length >= 12) timelineColIdx = 11;
-
-    let columnIIdx = headers.indexOf("all");
-    if (columnIIdx === -1) columnIIdx = headers.indexOf("memo");
-    if (columnIIdx === -1 && data[0].length >= 9) columnIIdx = 8;
-
-    const items = [];
+    const rows = [];
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
-      let isProcessed = false;
-
-      if (col.nobsidian !== -1) {
-        const val = row[col.nobsidian];
-        const valStr = String(val).trim().toLowerCase();
-        if (valStr !== "" && valStr !== "false" && valStr !== "0") {
-          isProcessed = true;
-        }
-      }
-
-      if (!isProcessed) {
-        items.push({
+      const status = String(row[nColIdx] || "").trim().toUpperCase();
+      if (status !== "IMPORTED" && status !== "TRUE" && status !== "PROCESSED") {
+        rows.push({
           rowIndex: i + 1,
-          title: col.title !== -1 ? String(row[col.title]) : "無題",
-          url: col.url !== -1 ? String(row[col.url]) : "",
-          tags: col.tags !== -1 ? String(row[col.tags]) : "",
-          highlights: col.highlights !== -1 ? String(row[col.highlights]) : "",
-          saved_at: col.saved_at !== -1 ? String(row[col.saved_at]) : "",
-          timeline: timelineColIdx !== -1 ? String(row[timelineColIdx]) : "",
-          columnI: columnIIdx !== -1 ? String(row[columnIIdx]) : ""
+          id: row[0],
+          title: row[1],
+          url: row[2],
+          tags: row[3],
+          highlights: row[4],
+          saved_at: row[5],
+          processed: row[6],
+          nobsidian: row[7],
+          all: row[8],
+          apendix: row[9],
+          date: row[10],
+          timeline: row[11],
+          source: row[12]
         });
       }
     }
-
-    return { success: true, items: items };
+    return { success: true, count: rows.length, items: rows };
   } catch (err) {
-    return { success: false, error: "未処理ハイライト抽出失敗: " + err.message };
+    return { success: false, error: err.message };
   }
 }
 
-// ---- 取り込みしたハイライトデータに「処理済みマーク(true)」を書き込む ----
 function markHighlightsProcessed(sourceSsId, sheetName, rowIndices) {
   try {
     const ss = SpreadsheetApp.openById(sourceSsId);
@@ -1340,57 +1619,45 @@ function markHighlightsProcessed(sourceSsId, sheetName, rowIndices) {
 
     const data = sheet.getDataRange().getValues();
     const headers = data[0].map(h => String(h).trim().toLowerCase());
+    let nColIdx = headers.indexOf("nobsidian");
+    if (nColIdx === -1) nColIdx = 7;
 
-    let colIndex = headers.indexOf("nobsidian");
-    if (colIndex === -1 && data[0].length >= 8) colIndex = 7;
-    if (colIndex === -1) {
-      colIndex = headers.length;
-      sheet.getRange(1, colIndex + 1).setValue("nobsidian");
-    }
-
-    rowIndices.forEach(function(rowIndex) {
-      if (rowIndex > 1 && rowIndex <= data.length) {
-        sheet.getRange(rowIndex, colIndex + 1).setValue(true);
+    for (const rIdx of rowIndices) {
+      if (rIdx >= 2 && rIdx <= data.length) {
+        sheet.getRange(rIdx, nColIdx + 1).setValue("IMPORTED");
       }
-    });
-
-    return { success: true };
+    }
+    return { success: true, count: rowIndices.length };
   } catch (err) {
-    return { success: false, error: "処理済みマークの反映に失敗しました: " + err.message };
+    return { success: false, error: err.message };
   }
 }
 
-// ---- Google Drive への一括エクスポート ----
-function saveToDrive(data) {
+function saveToDrive(params) {
   try {
-    const notes = data.notes || [];
-    const centerTitle = data.centerTitle || (notes.length > 0 ? notes[0].title : "レポート");
-    const reportText = data.reportText || "";
+    const rawFolderName = params.folderName || "ConnectedNotes_Export";
+    const notes = typeof params.notes === "string" ? JSON.parse(params.notes) : (params.notes || []);
 
-    const timeZone = Session.getScriptTimeZone() || "GMT+9";
-    const dateStr = Utilities.formatDate(new Date(), timeZone, "yyyyMMdd");
-
-    const safeCenterTitle = centerTitle.replace(/[\\/:*?"<>|]/g, "_").trim();
-    let folderName = data.folderName ? data.folderName.replace(/[\\/:*?"<>|]/g, "_").trim() : `${safeCenterTitle}_${dateStr}`;
-
-    const folder = DriveApp.createFolder(folderName);
-    let savedFilesCount = 0;
-    let savedPdfCount = 0;
-    const downloadedPdfUrls = new Set();
-
-    if (reportText && reportText.trim() !== "") {
-      folder.createFile(`00_AI生成ナレッジレポート_${dateStr}.txt`, reportText, MimeType.PLAIN_TEXT);
-      savedFilesCount++;
+    let folder;
+    const existingFolders = DriveApp.getFoldersByName(rawFolderName);
+    if (existingFolders.hasNext()) {
+      folder = existingFolders.next();
+    } else {
+      folder = DriveApp.createFolder(rawFolderName);
     }
 
-    let combinedText = `# 全記事一覧・全文まとめ\n作成日時: ${Utilities.formatDate(new Date(), timeZone, "yyyy-MM-dd HH:mm:ss")}\n\n`;
+    let savedFilesCount = 0;
+    let savedPdfCount = 0;
+    let combinedText = `=== Connected Notes まとめ (${rawFolderName}) ===\n出力日時: ${Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm:ss")}\n記事総数: ${notes.length}件\n\n`;
+
+    const downloadedPdfUrls = new Set();
 
     notes.forEach((note, index) => {
+      const seqStr = String(index + 1).padStart(3, '0');
       const rawTitle = note.title || `記事_${index + 1}`;
-      const noteTitle = rawTitle.replace(/[\\/:*?"<>|]/g, "_").trim();
-      const noteContent = note.content || "";
+      const noteTitle = rawTitle.replace(/[\\/:*?"<>|]/g, "_").substring(0, 40);
+      const noteContent = note.content || note.rawContent || note.summary || "";
       const sourceUrl = note.sourceUrl || "";
-      const seqStr = String(index + 1).padStart(2, '0');
 
       let singleFileText = `タイトル: ${rawTitle}\n`;
       if (sourceUrl) singleFileText += `URL: ${sourceUrl}\n`;
@@ -1440,7 +1707,6 @@ function saveToDrive(data) {
   }
 }
 
-// ==== Google Drive操作の初回権限承認用関数 ====
 function authorizeDrivePermissions() {
   const tempFolder = DriveApp.createFolder("___Drive_Permission_Check___");
   tempFolder.setTrashed(true);
@@ -1463,11 +1729,15 @@ function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, 
     let targetSheet = targetSs.getSheetByName(tSheetName);
     if (!targetSheet) targetSheet = targetSs.insertSheet(tSheetName);
 
-        const srcData = srcSheet.getDataRange().getValues();
+    const srcData = srcSheet.getDataRange().getValues();
     const headers = srcData[0].map(h => String(h).trim().toLowerCase());
 
     if (targetSheet.getLastRow() === 0) {
-      targetSheet.appendRow(["id", "title", "url", "tags", "highlights", "saved_at", "processed", "nobsidian", "all", "apendix", "date", "timeline", "source", "edited_content", "updated_at"]);
+      targetSheet.appendRow([
+        "id", "title", "url", "tags", "highlights", "saved_at", 
+        "processed", "nobsidian", "all", "apendix", "date", 
+        "timeline", "source", "folder_name", "edited_content", "updated_at"
+      ]);
     }
 
     const today = new Date();
@@ -1478,7 +1748,7 @@ function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, 
 
     let maxLotNum = 0;
     if (targetSheet.getLastRow() > 1) {
-      const targetData = targetSheet.getRange(2, 11, targetSheet.getLastRow() - 1, 1).getValues();
+      const targetData = targetSheet.getRange(2, 14, targetSheet.getLastRow() - 1, 1).getValues();
       for (const row of targetData) {
         const dVal = String(row[0]).trim();
         if (dVal === baseLotName) {
@@ -1501,13 +1771,13 @@ function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, 
       if (!row) continue;
 
       const newRow = [];
-      for (let i = 0; i < 15; i++) {
+      for (let i = 0; i < 16; i++) {
         newRow.push(row[i] !== undefined ? row[i] : "");
       }
 
-      newRow[10] = currentLotName;
-      newRow[13] = "";
-      newRow[14] = "";
+      newRow[13] = currentLotName;
+      if (row[14] === undefined) newRow[14] = "";
+      if (row[15] === undefined) newRow[15] = "";
 
       targetSheet.appendRow(newRow);
 

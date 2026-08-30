@@ -199,11 +199,11 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
             value={model}
             onChange={(e) => setModel(e.target.value)}
           >
-            <option value="gemini-flash-lite-latest">gemini-flash-lite-latest</option>
+            <option value="gemini-2.5-flash">gemini-2.5-flash (推奨・高速高精度)</option>
+            <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+            <option value="gemini-1.5-flash">gemini-1.5-flash</option>
             <option value="gemini-flash-latest">gemini-flash-latest</option>
             <option value="gemini-pro-latest">gemini-pro-latest</option>
-            <option value="gemini-3.5-flash">gemini-3.5-flash</option>
-            <option value="gemini-3.1-pro">gemini-3.1-pro</option>
           </select>
         </div>
 

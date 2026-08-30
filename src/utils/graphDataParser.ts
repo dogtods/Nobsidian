@@ -12,11 +12,20 @@ export function extractWikiLinks(content: string): string[] {
   return matches.map(m => m.slice(2, -2).trim()).filter(t => t.length > 0);
 }
 
-// Extract folder name from keywords: e.g. [folder:Folder Name]
+// Extract folder/category name from keywords: e.g. [folder:Folder Name] or plain category name (e.g. "太陽光発電", "環境")
 export function getFolderFromKeywords(keywordsStr: string): string {
-  if (!keywordsStr) return "未分類";
-  const match = keywordsStr.match(/\[folder:(.+?)\]/);
-  return match ? match[1].trim() : "未分類";
+  if (!keywordsStr || typeof keywordsStr !== "string") return "未分類";
+  const trimmed = keywordsStr.trim();
+  if (!trimmed) return "未分類";
+  const match = trimmed.match(/\[folder:(.+?)\]/i);
+  if (match) return match[1].trim();
+  // Strip wikilinks: [[Category]] -> Category
+  let clean = trimmed.replace(/^\[\[|\]\]$/g, '').trim();
+  // Strip hashtags: #Category -> Category
+  clean = clean.replace(/^#/, '').trim();
+  // If multiple words or tags separated by comma, slash, bullet, or newline, take primary
+  const first = clean.split(/[,、\/\n・]/)[0].trim();
+  return first || "未分類";
 }
 
 // Convert timestamp to YYYY-MM-DD format
