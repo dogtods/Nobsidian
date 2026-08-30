@@ -42,54 +42,44 @@ const DEFAULT_CONFIG = {
 
   OUTPUT_MODE: 'free',
   MAX_INPUT_CHARS: 15000,
-  SKIP_GEMINI_FOR_SHORT_ARTICLES: 'true',
-  SHORT_ARTICLE_THRESHOLD: 400,
+  SKIP_GEMINI_FOR_SHORT_ARTICLES: 'false',
+  SHORT_ARTICLE_THRESHOLD: 50,
 
   SYSTEM_PERSONA: 'あなたは環境ビジネス・技術情報の専門アナリストです。',
 
   SYNC_PROMPT: `# 役割
 あなたは客観的かつ論理的な「ビジネスリサーチ・アナリスト」です。
-提供された記事から、事実と構造を正確に抽出してください。
+提供された記事から、事実と構造を正確に抽出し、以下の出力構成で整理してください。
 
 # 厳守事項
 - 資料外の知識で補完しない。不明な点は「資料内に記述なし」と明記すること。
-- 事実（客観）と解釈・示唆（主観）は、指定されたセクションで完全に分離すること。
+- 事実（客観）と示唆（主観）を分離すること。
+- 記事の長短に関わらず、必ずすべてのセクションを過不足なく出力すること。
 
 ---
 
 # 出力構成
 
-### 【記事タイトルまたはテーマ】
-
-【カテゴリ・タグ】
-※この記事の分野や分類を表すカテゴリ名を一言で簡潔に記載してください（例：太陽光発電、半導体、EV充電、金融政策 など短く1〜2語）。
+【カテゴリ】
+（この記事の主題分野・分類を表す単語を1つだけ出力。例：太陽光発電、半導体、環境、EV充電、脱炭素、蓄電池、水質、金融、公募 など）
 
 【要約】
-※記事の内容をわかりやすく要約して200文字程度にしてください。
+※記事の内容を論理的かつ分かりやすく要約（約150〜250文字）。
 
 【具体的数値・事実】
-※数値・固有名詞・日付を最優先した箇条書き。資料にある事実のみ（3〜5点）。
+※記事中の数値、固有名詞、日付、企業名、決定事項を最優先した箇条書き（3〜5点）。
 
 【市場・実務への影響】
-※この記事がどのような社会的・経済的文脈にあり、市場や実務にどう影響するか（2〜3文）。
-
-- ただし、読み込んだ記事の文字数が400文字以下の場合、上記の要約、具体的数値・事実、市場・実務への影響などは行わず、記事をそのまま貼り付けてください。
+※この記事が社会的・経済的・産業的にどう影響するか（2〜3文）。
 
 【キーワード】
-※記事中の専門用語・業界用語を抽出し、必ず以下の「ウィキリンク形式」で出力してください。3〜5単語。
-
-- [[用語]]: 意味や定義
-
-
-必ず以下のフォーマットをそのまま含めて出力してください。
-
-【カテゴリ】
-（ここに「環境」「大気」「水質」「公募」などの単語を1つだけ出力）
+※記事中の専門用語・業界用語を抽出し、以下の「ウィキリンク形式」で出力（3〜5単語）。
+- [[用語]]: 意味や定義の解説
 
 【年表】
-[YYYY/MM/DD] （本文中に日付がある場合のみ、日付と出来事を出力。日付がない場合は空行にすること）
-※記事中の時系列情報や年表データを必ず「[西暦/月/日] 出来事」の形式（例：[2029/03/31] キオクシアの営業利益が約12倍に達するとの市場予想。）で箇条書き（改行区切り）で抽出してください。
-※日付の後の出来事テキストは、内容がひと目でわかるよう「50~100文字程度」で簡潔にまとめてください。該当なしなら記載不要です。`
+※記事中に記載されているすべての日付（過去の経緯、発表日、施行日、将来予測など）を抽出し、必ず以下の形式で箇条書き（改行区切り）で出力してください。
+[YYYY/MM/DD] 出来事（内容がひと目でわかるよう50〜100文字程度で簡潔にまとめる）
+（※本文中に日付が一切ない場合は「該当なし」と記載）`
 };
 
 function getConfig(key) {
@@ -125,7 +115,7 @@ function callGeminiFree(content, persona, syncPrompt, apiKey, model) {
 
   const prompt = (persona ? persona + "\n\n" : "") + syncPrompt + "\n\n【データ】\n" + content;
   const targetModel = model || getConfig('GEMINI_MODEL') || "gemini-2.5-flash";
-  const candidateModels = [targetModel, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+  const candidateModels = [targetModel, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest"];
   const uniqueModels = Array.from(new Set(candidateModels));
 
   for (const m of uniqueModels) {
@@ -133,7 +123,8 @@ function callGeminiFree(content, persona, syncPrompt, apiKey, model) {
       const payload = {
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
-          temperature: getNumConfig('GEMINI_TEMPERATURE')
+          temperature: getNumConfig('GEMINI_TEMPERATURE'),
+          maxOutputTokens: 8000
         }
       };
 
@@ -182,7 +173,7 @@ function callGeminiFreeFile(file, apiKey, model, persona, syncPrompt) {
     "\n\n【データ】\n(添付されたファイルの内容を読み取り、記載されているテキスト・図表の情報をもとに分析してください。ファイル名: " + file.getName() + ")";
 
   const targetModel = model || getConfig('GEMINI_MODEL') || "gemini-2.5-flash";
-  const candidateModels = [targetModel, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+  const candidateModels = [targetModel, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest"];
   const uniqueModels = Array.from(new Set(candidateModels));
 
   for (const m of uniqueModels) {
@@ -196,7 +187,7 @@ function callGeminiFreeFile(file, apiKey, model, persona, syncPrompt) {
         }],
         generationConfig: {
           temperature: getNumConfig('GEMINI_TEMPERATURE'),
-          maxOutputTokens: 2000
+          maxOutputTokens: 8000
         }
       };
 
@@ -256,12 +247,12 @@ function summarizeText(str, maxLen) {
 }
 
 // カテゴリ（D列）の安全・高精度抽出関数
-function extractCategoryFromText(text) {
-  if (!text) return "一般";
+function extractCategoryFromText(text, fallbackTitle) {
+  if (!text && !fallbackTitle) return "一般";
 
-  // 1. 【カテゴリ】や【カテゴリ・タグ】等のセクションから行単位で探索
-  const sectionRegex = /(?:【\s*(?:カテゴリ(?:[・\/]タグ)?|タグ|分野|分類)\s*】|(?:カテゴリ|分野|分類|タグ)\s*[:：])\s*([\s\S]*?)(?=\n\s*【|\n\s*###|\n\s*---|$)/i;
-  const match = text.match(sectionRegex);
+  // 1. 【カテゴリ】等のセクションから行単位で探索
+  const sectionRegex = /(?:【\s*(?:カテゴリ(?:[・\/]タグ)?|タグ|分野|分類)\s*】|(?:^|\n)\s*(?:カテゴリ|分野|分類|タグ)\s*[:：])\s*([\s\S]*?)(?=\n\s*【|\n\s*###|\n\s*---|\n\s*\[\[|$)/i;
+  const match = (text || "").match(sectionRegex);
   if (match && match[1]) {
     const lines = match[1].split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     for (const line of lines) {
@@ -279,24 +270,47 @@ function extractCategoryFromText(text) {
       }
 
       const firstWord = clean.split(/[,、\/\s・]/)[0].trim();
-      if (firstWord && firstWord.length <= 20) {
+      if (firstWord && firstWord.length >= 2 && firstWord.length <= 20) {
         return firstWord;
       }
     }
   }
 
   // 2. ウィキリンク形式 [[用語]] からの抽出
-  const wikiMatch = text.match(/\[\[([^\]]+)\]\]/);
+  const wikiMatch = (text || "").match(/\[\[([^\]]+)\]\]/);
   if (wikiMatch && wikiMatch[1]) {
     const term = wikiMatch[1].split(/[:：]/)[0].trim();
-    if (term && term.length <= 20) return term;
+    if (term && term.length >= 2 && term.length <= 20) return term;
   }
 
   // 3. ハッシュタグ #用語 からの抽出
-  const hashMatch = text.match(/#([^\s#\[\]【】]+)/);
+  const hashMatch = (text || "").match(/#([^\s#\[\]【】]+)/);
   if (hashMatch && hashMatch[1]) {
     const tag = hashMatch[1].trim();
-    if (tag && tag.length <= 20) return tag;
+    if (tag && tag.length >= 2 && tag.length <= 20) return tag;
+  }
+
+  // 4. タイトル・本文からのドメインキーワード自動判定（AI未実行時のスマートフォールバック）
+  const source = ((fallbackTitle || "") + " " + (text || "")).toLowerCase();
+  const domainRules = [
+    { cat: "太陽光発電", words: ["太陽光", "メガソーラー", "fit", "fip", "pv"] },
+    { cat: "風力発電", words: ["風力", "洋上風力", "ウインド"] },
+    { cat: "蓄電池・水素", words: ["蓄電池", "水素", "燃料電池", "アンモニア", "バッテリー"] },
+    { cat: "EV・モビリティ", words: ["ev", "電気自動車", "充電", "モビリティ", "自動運転"] },
+    { cat: "半導体・電子", words: ["半導体", "チップ", "ファウンドリ", "tsmc", "キオクシア", "ラピダス"] },
+    { cat: "脱炭素・環境", words: ["脱炭素", "カーボンニュートラル", "排出量", "温室効果ガス", "省エネ", "gx", "環境省", "循環経済"] },
+    { cat: "水質・資源", words: ["水処理", "水質", "下水", "廃棄物", "リサイクル", "バイオ"] },
+    { cat: "金融・市場", words: ["金利", "株価", "為替", "日銀", "投資", "ファンド", "決算", "買収", "m&a"] },
+    { cat: "公募・政策", words: ["公募", "補助金", "助成金", "経産省", "nedo", "指針", "法案", "閣議決定"] },
+    { cat: "AI・DX", words: ["生成ai", "人工知能", "dx", "クラウド", "データセンター"] }
+  ];
+
+  for (const rule of domainRules) {
+    for (const w of rule.words) {
+      if (source.includes(w)) {
+        return rule.cat;
+      }
+    }
   }
 
   return "一般";
@@ -307,7 +321,7 @@ function extractTimelineFromText(text) {
   if (!text) return "";
 
   // パターンA: 【年表】【時系列】ブロックの抽出
-  const timelineSectionMatch = text.match(/(?:【\s*(?:年表|時系列|経緯|スケジュール|歴史)\s*】|(?:年表|時系列|経緯)\s*[:：])\s*\n?([\s\S]*?)(?:\n【|$)/i);
+  const timelineSectionMatch = text.match(/(?:【\s*(?:年表|時系列|経緯|スケジュール|歴史)\s*】|(?:^|\n)\s*(?:年表|時系列|経緯)\s*[:：])\s*\n?([\s\S]*?)(?=\n\s*【|\n\s*###|\n\s*---|$)/i);
   let timelineBlock = timelineSectionMatch ? timelineSectionMatch[1].trim() : "";
 
   if (timelineBlock) {
@@ -315,14 +329,23 @@ function extractTimelineFromText(text) {
       let cleanLine = line.replace(/\[\s*(?:YYYY[/\-]MM[/\-]DD|YYYY[/\-]MM|YYYY)\s*\]/gi, '').trim();
       const hasDate = /(?:\d{4}年|\d{4}年度|\d{4}[\/\-]\d{1,2}|令和\d+年|\d{1,2}月\d{1,2}日|\[\d{4}[/.-])/.test(line);
 
-      if (!hasDate || cleanLine.includes("該当なし") || cleanLine.includes("出来事テキスト") || cleanLine.includes("空行にすること")) {
+      if (!hasDate || cleanLine.includes("該当なし") || cleanLine.includes("出来事テキスト") || cleanLine.includes("空行にすること") || cleanLine.includes("本文中に日付")) {
         return null;
       }
 
+      // [YYYY/MM/DD] 形式の整形
       const bracketMatch = cleanLine.match(/^(\[\d{4}[^\]]*\])\s*(.*)/);
       if (bracketMatch) {
         const datePart = bracketMatch[1];
         let textPart = summarizeText(bracketMatch[2].trim(), 100);
+        return textPart ? `${datePart} ${textPart}` : null;
+      }
+
+      // 年月日の自動ブラケット化
+      const ymd = cleanLine.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+      if (ymd) {
+        const datePart = `[${ymd[1]}/${String(ymd[2]).padStart(2, '0')}/${String(ymd[3]).padStart(2, '0')}]`;
+        const textPart = summarizeText(cleanLine.replace(/(\d{4})年(\d{1,2})月(\d{1,2})日/, '').replace(/^[\s:：\-・]+/, ''), 100);
         return `${datePart} ${textPart}`;
       }
 
@@ -342,7 +365,7 @@ function extractTimelineFromText(text) {
     const extracted = [];
     for (const l of dateLines) {
       let clean = l.replace(/^[#\-\*•]\s*/, '').trim();
-      if (clean.includes("出力構成") || clean.includes("プロンプト") || clean.includes("厳守事項")) continue;
+      if (clean.includes("出力構成") || clean.includes("プロンプト") || clean.includes("厳守事項") || clean.includes("本文中に日付")) continue;
 
       const ymd = clean.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
       const ym = clean.match(/(\d{4})年(\d{1,2})月/);
@@ -362,37 +385,43 @@ function extractTimelineFromText(text) {
         eventText = clean.replace(/(\d{4})年(\d{1,2})月/, '').trim();
       }
 
-      eventText = summarizeText(eventText, 100);
+      eventText = summarizeText(eventText.replace(/^[\s:：\-・]+/, ''), 100);
       if (eventText) {
         extracted.push(datePrefix ? `${datePrefix} ${eventText}` : eventText);
       }
     }
-    return extracted.slice(0, 5).join("\n");
+    if (extracted.length > 0) {
+      return extracted.slice(0, 5).join("\n");
+    }
   }
 
-  // ★重要：日付が一切存在しない場合は本文を詰め込まず、完全に空文字を返す
+  // 日付が一切存在しない場合は完全に空文字を返す
   return "";
 }
 
 // 解析テキストからスプレッドシート用フィールド（D列・E列・L列）を構築
-function buildSheetFieldsFromFreeText(rawText, fallbackContent) {
+function buildSheetFieldsFromFreeText(rawText, fallbackContent, fallbackTitle) {
   const text = (rawText && rawText.trim()) ? rawText : (fallbackContent || "");
 
   // 1. D列: カテゴリ/タグ
-  const tags = extractCategoryFromText(text);
+  const tags = extractCategoryFromText(text, fallbackTitle);
 
   // 2. E列: highlights（要約・具体的数値事実・市場影響・キーワード）
   let highlights = "";
   if (rawText && rawText.trim()) {
     // 【カテゴリ】ブロックと【年表】ブロックを排除し、本文要約・事実・影響・キーワードをそのまま格納
     let cleanHighlights = rawText
-      .replace(/【\s*(?:カテゴリ(?:[・\/]タグ)?|タグ|分野|分類)\s*】[\s\S]*?(?=\n【|$)/gi, '')
-      .replace(/(?:【\s*(?:年表|時系列|経緯|スケジュール|歴史)\s*】|(?:年表|時系列|経緯)\s*[:：])[\s\S]*?(?=\n【|$)/gi, '')
+      .replace(/【\s*(?:カテゴリ(?:[・\/]タグ)?|タグ|分野|分類)\s*】[\s\S]*?(?=\n\s*【|\n\s*###|\n\s*---|$)/gi, '')
+      .replace(/(?:【\s*(?:年表|時系列|経緯|スケジュール|歴史)\s*】|(?:^|\n)\s*(?:年表|時系列|経緯)\s*[:：])[\s\S]*?(?=\n\s*【|\n\s*###|\n\s*---|$)/gi, '')
       .trim();
 
-    highlights = cleanHighlights || rawText.substring(0, 1000);
+    // 先頭の余分な改行や水平線をクリーンアップ
+    cleanHighlights = cleanHighlights.replace(/^(?:---|===|\s+)+/, '').trim();
+    highlights = cleanHighlights || rawText.substring(0, 2000);
   } else {
-    highlights = (fallbackContent || "").replace(/\s+/g, ' ').substring(0, 350) + "...";
+    // Geminiが失敗したか未設定時のフォールバック要約
+    const cleanFallback = (fallbackContent || "").replace(/\s+/g, ' ').trim();
+    highlights = "【要約】\n" + cleanFallback.substring(0, 300) + (cleanFallback.length > 300 ? "..." : "");
   }
 
   // 3. L列: timeline（年表）
@@ -532,22 +561,23 @@ function buildSheetFieldsFromGeminiResult(parsed, rawContent) {
 }
 
 // 共通ディスパッチャ
-function analyzeText(content, persona, syncPrompt, apiKey, model, outputMode) {
+function analyzeText(content, persona, syncPrompt, apiKey, model, outputMode, title) {
   if (outputMode === 'json') {
     const parsed = callGeminiAnalyzeText(content, persona, syncPrompt, apiKey, model);
     return buildSheetFieldsFromGeminiResult(parsed, content);
   }
   const rawText = callGeminiFree(content, persona, syncPrompt, apiKey, model);
-  return buildSheetFieldsFromFreeText(rawText, content);
+  return buildSheetFieldsFromFreeText(rawText, content, title);
 }
 
 function analyzeFile(file, apiKey, model, persona, syncPrompt, outputMode) {
+  const fileName = file.getName();
   if (outputMode === 'json') {
     const parsed = callGeminiAnalyzeFile(file, apiKey, model, persona, syncPrompt);
     return buildSheetFieldsFromGeminiResult(parsed, "");
   }
   const rawText = callGeminiFreeFile(file, apiKey, model, persona, syncPrompt);
-  return buildSheetFieldsFromFreeText(rawText, "");
+  return buildSheetFieldsFromFreeText(rawText, "", fileName);
 }
 
 function isShortArticle(text, threshold) {
@@ -1264,42 +1294,118 @@ function syncExternalSources(options, targetSheetName, targetSsUrl) {
 }
 
 // --------------------------------------------------------------------
-// MHTファイル内のPDF探索・紐付けヘルパー（N番号・記事ID・西暦・タイトル照合対応）
+// 記事ID抽出専用関数（英字開始・西暦開始の2種類を完全網羅）
 // --------------------------------------------------------------------
-function findAndLinkMatchingPdf(articleHtml, articleId, titleOnly, metaInfo, folder, processedFolder, processedFileIds, processedFileNames, existingUrls) {
-  let pdfUrl = "";
-
+function extractMhtArticleId(articleHtml, titleOnly, metaInfo) {
   // 1. Quoted-Printableデコード
-  const decodedHtml = articleHtml.replace(/=\r?\n/g, '').replace(/=3D/g, '=');
+  const decoded = articleHtml
+    .replace(/=\r?\n/g, '')
+    .replace(/=3D/g, '=')
+    .replace(/=20/g, ' ');
 
-  // 2. パターンA: HTML内の「N + 10〜16桁数字」（例: N202410150001.pdf）
-  const nMatches = decodedHtml.match(/\b(N\d{10,16})\b/gi);
-  if (nMatches && nMatches.length > 0) {
-    const uniqueCandidates = Array.from(new Set(nMatches));
-    for (const candidate of uniqueCandidates) {
-      const targetPdfName = candidate + ".pdf";
-      try {
-        const pdfFiles = folder.getFilesByName(targetPdfName);
-        if (pdfFiles.hasNext()) {
-          const pdfFile = pdfFiles.next();
-          pdfUrl = pdfFile.getUrl();
-          processedFileIds.add(pdfFile.getId());
-          processedFileNames.add(pdfFile.getName().toLowerCase());
-          existingUrls.add(pdfUrl);
-          try { pdfFile.moveTo(processedFolder); } catch(e) {}
-          return pdfUrl;
-        }
-      } catch(e) {}
+  // 2. keyShoshi パターン（NIRKDB有無、クォート有無、西暦・英字開始すべて対応）
+  const keyShoshiPatterns = [
+    /keyShoshi\s*=\s*["']?(?:NIRKDB\s*|NIRK\s*)?([A-Za-z0-9_-]+)["']?/i,
+    /name=["']?keyShoshi["']?[^>]*value=["']?(?:NIRKDB\s*|NIRK\s*)?([A-Za-z0-9_-]+)["']?/i,
+    /value=["']?(?:NIRKDB\s*|NIRK\s*)?([A-Za-z0-9_-]+)["']?[^>]*name=["']?keyShoshi["']?/i,
+    /keyShoshi.*?([A-Za-z0-9_]{6,24})/i
+  ];
+
+  for (const regex of keyShoshiPatterns) {
+    const match = decoded.match(regex);
+    if (match && match[1]) {
+      let id = match[1].trim().replace(/^NIRKDB/i, '').replace(/^NIRK/i, '').trim();
+      if (id && id.length >= 4) {
+        return id;
+      }
     }
   }
 
-  // 3. パターンB: 記事ID.pdf での検索
-  if (articleId) {
-    const defaultPdfName = articleId + ".pdf";
+  // 3. 一般的な記事ID属性、hidden input、JS関数引数からの抽出
+  const attrPatterns = [
+    /<input[^>]+(?:name|id)=["']?(?:key|id|docId|articleId|shoshiId|kijiId|item_id)["']?[^>]+value=["']?([A-Za-z0-9_-]+)["']?/i,
+    /<input[^>]+value=["']?([A-Za-z0-9_-]+)["']?[^>]+(?:name|id)=["']?(?:key|id|docId|articleId|shoshiId|kijiId|item_id)["']?/i,
+    /(?:dispPdf|openPdf|showArticle|viewDoc|getArticle|pdfDownload|goPdf|showDetail|openShoshi)\s*\(\s*['"]?([A-Za-z0-9_-]+)['"]?/i,
+    /(?:記事番号|記事ID|管理番号|文書番号|文献番号|ID)[：:\s]*([A-Za-z0-9_-]+)/i,
+    /id=["']?(?:art_|kiji_|doc_)?(20\d{8,16}|19\d{8,16}|[A-Za-z]\d{8,16})["']?/i,
+    /name=["']?(?:frm_|art_|kiji_)?(20\d{8,16}|19\d{8,16}|[A-Za-z]\d{8,16})["']?/i
+  ];
+
+  for (const regex of attrPatterns) {
+    const match = decoded.match(regex);
+    if (match && match[1]) {
+      const id = match[1].trim();
+      if (id && id.length >= 4) {
+        return id;
+      }
+    }
+  }
+
+  // 4. 西暦から始まる8〜16桁の数字（例: 202410150001）または英字開始（N2024..., K2024...）
+  const yearPatternMatch = decoded.match(/\b(20\d{8,16}|19\d{8,16})\b/) ||
+                           decoded.match(/\b([A-Za-z]\d{8,16})\b/i);
+  if (yearPatternMatch && yearPatternMatch[1]) {
+    return yearPatternMatch[1].trim();
+  }
+
+  // 5. フォールバック: タイトル＋日付から決定論的なハッシュIDを生成
+  const dateOnlyMatch = (metaInfo + " " + titleOnly).match(/\d{4}[\/\-]\d{2}[\/\-]\d{2}/);
+  const stableMeta = dateOnlyMatch ? dateOnlyMatch[0] : (metaInfo || "").substring(0, 10);
+  const rawIdStr = (titleOnly || "Untitled") + stableMeta;
+  const safeId = Utilities.base64EncodeWebSafe(Utilities.newBlob(rawIdStr).getBytes());
+  return "NKN_" + safeId.replace(/[^a-zA-Z0-9]/g, "").substring(0, 15);
+}
+
+// --------------------------------------------------------------------
+// MHTファイル内のPDF探索・紐付けヘルパー（N番号・記事ID・西暦・タイトル照合対応）
+// --------------------------------------------------------------------
+function findAndLinkMatchingPdf(articleHtml, articleId, titleOnly, metaInfo, folder, processedFolder, processedFileIds, processedFileNames, existingUrls) {
+  if (!folder) return "";
+  let pdfUrl = "";
+
+  const decodedHtml = articleHtml.replace(/=\r?\n/g, '').replace(/=3D/g, '=');
+
+  // 1. 探索用候補リスト（優先度順）
+  const candidateIds = new Set();
+
+  if (articleId && !articleId.startsWith("NKN_")) {
+    candidateIds.add(articleId);
+    // 西暦で始まる場合（例: 202410150001）、N付き（N202410150001）も候補に追加
+    if (/^\d{8,16}$/.test(articleId)) {
+      candidateIds.add("N" + articleId);
+    } else if (/^N\d{8,16}$/i.test(articleId)) {
+      // Nで始まる場合（例: N202410150001）、Nなし（202410150001）も候補に追加
+      candidateIds.add(articleId.substring(1));
+    }
+  }
+
+  // HTML内の全西暦番号・N番号パターン（例: 202410150001, N202410150001）
+  const matches = decodedHtml.match(/\b(20\d{8,16}|19\d{8,16}|N\d{8,16})\b/gi);
+  if (matches) {
+    matches.forEach(m => {
+      candidateIds.add(m);
+      if (/^\d{8,16}$/.test(m)) candidateIds.add("N" + m);
+      if (/^N\d{8,16}$/i.test(m)) candidateIds.add(m.substring(1));
+    });
+  }
+
+  // HTML内の明示的な .pdf ファイル名参照
+  const pdfRefMatches = decodedHtml.match(/([a-zA-Z0-9_\-\u3000-\u9fff]+\.pdf)/gi);
+  if (pdfRefMatches) {
+    pdfRefMatches.forEach(p => {
+      const base = p.replace(/\.pdf$/i, '');
+      candidateIds.add(base);
+    });
+  }
+
+  // 2. 完全一致ファイル名での高速検索（候補ID + .pdf）
+  for (const cand of candidateIds) {
+    if (!cand) continue;
+    const targetPdfName = cand + ".pdf";
     try {
-      const fallbackFiles = folder.getFilesByName(defaultPdfName);
-      if (fallbackFiles.hasNext()) {
-        const pdfFile = fallbackFiles.next();
+      const pdfFiles = folder.getFilesByName(targetPdfName);
+      if (pdfFiles.hasNext()) {
+        const pdfFile = pdfFiles.next();
         pdfUrl = pdfFile.getUrl();
         processedFileIds.add(pdfFile.getId());
         processedFileNames.add(pdfFile.getName().toLowerCase());
@@ -1310,7 +1416,7 @@ function findAndLinkMatchingPdf(articleHtml, articleId, titleOnly, metaInfo, fol
     } catch(e) {}
   }
 
-  // 4. パターンC: 西暦（4桁）およびタイトルキーワードによる照合
+  // 3. 部分一致・西暦＋タイトルによる探索
   const cleanTitle = titleOnly.replace(/[\\/:*?"<>|\s　]/g, "");
   const titleKeywords = cleanTitle.length > 3 ? cleanTitle.substring(0, 10) : cleanTitle;
   const yearMatch = (metaInfo + " " + titleOnly).match(/\b(\d{4})\b/);
@@ -1330,14 +1436,22 @@ function findAndLinkMatchingPdf(articleHtml, articleId, titleOnly, metaInfo, fol
 
       let isMatch = false;
 
-      // 西暦から始まるPDFファイル名の場合の照合（例: 20241015_xxx.pdf, 2024-10-15_xxx.pdf）
-      if (yearMatch && pdfBaseName.startsWith(yearMatch[1])) {
+      // 候補IDで前方一致
+      for (const cand of candidateIds) {
+        if (cand && pdfBaseName.includes(cand)) {
+          isMatch = true;
+          break;
+        }
+      }
+
+      // 西暦＋タイトル一致
+      if (!isMatch && yearMatch && pdfBaseName.startsWith(yearMatch[1])) {
         if (titleKeywords && (pdfBaseName.includes(titleKeywords) || cleanTitle.includes(pdfBaseName.substring(4).replace(/^[\-_]/, '')))) {
           isMatch = true;
         }
       }
 
-      // タイトル部分一致での照合
+      // タイトル部分一致（4文字以上）
       if (!isMatch && cleanTitle.length >= 4 && titleKeywords.length >= 4) {
         if (pdfBaseName.replace(/[\\/:*?"<>|\s　]/g, "").includes(titleKeywords) || cleanTitle.includes(pdfBaseName.replace(/[\\/:*?"<>|\s　]/g, "").substring(0, 8))) {
           isMatch = true;
@@ -1376,11 +1490,38 @@ function processMhtFile_Advanced(
   const htmlMatch = rawData.match(/<html[\s\S]*?<\/html>/i);
   if (htmlMatch) htmlContent = htmlMatch[0];
 
-  const formBlocks = htmlContent.split(/<form /gi);
-  const articles = [];
-  for (let i = 1; i < formBlocks.length; i++) {
-    const block = "<form " + formBlocks[i];
-    if (block.includes('hdgLv2')) articles.push(block);
+  // 1. 記事ブロックの分割（formタグ、hdgLv2タグ、記事クラス、または単一記事）
+  let articles = [];
+  const formBlocks = htmlContent.split(/<form[\s>]/gi);
+  if (formBlocks.length > 1) {
+    for (let i = 1; i < formBlocks.length; i++) {
+      const block = "<form " + formBlocks[i];
+      if (block.includes('hdgLv2') || block.includes('keyShoshi') || /class="[^"]*(?:val02|honbun|title|article)/i.test(block)) {
+        articles.push(block);
+      }
+    }
+  }
+
+  if (articles.length === 0) {
+    const hdgBlocks = htmlContent.split(/(?=<div[^>]*class="[^"]*hdgLv2)/gi);
+    if (hdgBlocks.length > 1) {
+      for (const b of hdgBlocks) {
+        if (b.length > 50) articles.push(b);
+      }
+    }
+  }
+
+  if (articles.length === 0) {
+    const kijiBlocks = htmlContent.split(/(?=(?:<div[^>]*class="[^"]*(?:article|kiji|news|detail|item)[^"]*"|<div[^>]*id="[^"]*(?:art|kiji|doc)[^"]*"|keyShoshi=))/gi);
+    if (kijiBlocks.length > 1) {
+      for (const b of kijiBlocks) {
+        if (b.length > 100) articles.push(b);
+      }
+    }
+  }
+
+  if (articles.length === 0) {
+    articles.push(htmlContent);
   }
 
   const folder = DriveApp.getFolderById(driveFolderId);
@@ -1392,7 +1533,11 @@ function processMhtFile_Advanced(
     }
 
     const articleHtml = articles[i];
-    const rawTitleTag = articleHtml.match(/<div[^>]*class="[^"]*hdgLv2 val02[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+
+    // タイトルの抽出
+    const rawTitleTag = articleHtml.match(/<div[^>]*class="[^"]*(?:hdgLv2|val02|title|kiji_title|midashi)[^"]*"[^>]*>([\s\S]*?)<\/div>/i) ||
+                        articleHtml.match(/<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>/i) ||
+                        articleHtml.match(/<td[^>]*class="[^"]*(?:title|midashi|val02)[^"]*"[^>]*>([\s\S]*?)<\/td>/i);
     let fullTitleText = rawTitleTag ? rawTitleTag[1].replace(/<[^>]+>/g, ' ').trim() : "タイトル不明";
     fullTitleText = cleanMhtNoise(fullTitleText);
 
@@ -1405,32 +1550,23 @@ function processMhtFile_Advanced(
       metaInfo = splitMatch[0].trim().replace(/PDF有/g, "").replace(/書誌情報印刷/g, "").replace(/\s+/g, " ").trim();
     }
 
-    const idMatch = articleHtml.match(/keyShoshi(?:=|3D)NIRKDB\s*([a-zA-Z0-9]+)/i);
-    const hasHonbun = articleHtml.includes('text Honbun');
-    let articleId = "";
-
-    if (idMatch) {
-      articleId = idMatch[1].trim().toUpperCase();
-    } else {
-      if (!hasHonbun) continue;
-      const dateOnlyMatch = metaInfo.match(/\d{4}[\/\-]\d{2}[\/\-]\d{2}/);
-      const stableMeta = dateOnlyMatch ? dateOnlyMatch[0] : metaInfo.substring(0, 10);
-      const rawIdStr = titleOnly + stableMeta;
-      const safeId = Utilities.base64EncodeWebSafe(Utilities.newBlob(rawIdStr).getBytes());
-      articleId = "NKN_" + safeId.replace(/[^a-zA-Z0-9]/g, "").substring(0, 15);
-    }
+    // 記事IDの抽出（アルファベット開始・西暦開始の双方を完全に網羅）
+    const articleId = extractMhtArticleId(articleHtml, titleOnly, metaInfo);
 
     if (existingIds.has(articleId)) continue;
     existingIds.add(articleId);
 
-    // --- PDFファイル名の抽出と紐付け ---
+    // PDFファイル名の抽出と紐付け（即時_processedへ移動・重複防止）
     const pdfUrl = findAndLinkMatchingPdf(
       articleHtml, articleId, titleOnly, metaInfo, folder, processedFolder,
       processedFileIds, processedFileNames, existingUrls
     );
 
+    // 本文テキストの抽出
     let rawContent = "";
-    const textMatch = articleHtml.match(/<div[^>]*class="[^"]*text Honbun[^"]*"[^>]*>([\s\S]*?)(?:<\/form>|<\/section>|$)/i);
+    const textMatch = articleHtml.match(/<div[^>]*class="[^"]*(?:text\s*Honbun|Honbun|honbun|text_honbun|c-article_body|body|detail_text)[^"]*"[^>]*>([\s\S]*?)(?:<\/form>|<\/section>|<\/div>\s*<\/div>|$)/i) ||
+                      articleHtml.match(/<td[^>]*class="[^"]*(?:text\s*Honbun|Honbun|honbun)[^"]*"[^>]*>([\s\S]*?)<\/td>/i) ||
+                      articleHtml.match(/<p[^>]*class="[^"]*(?:honbun|text)[^"]*"[^>]*>([\s\S]*?)<\/p>/i);
     if (textMatch) {
       rawContent = textMatch[1].replace(/<[^>]+>/g, '\n').trim();
     } else {
@@ -1443,20 +1579,22 @@ function processMhtFile_Advanced(
       ? rawContent.substring(0, 49000) + "\n...（文字数上限により省略）"
       : rawContent;
 
+    // AI解析（D列カテゴリ、E列要約・事実・影響・キーワード、L列年表）
     let tagsForRow, highlightsForRow, timelineForRow;
     if (skipGeminiForShort && isShortArticle(rawContent, shortArticleThreshold)) {
-      tagsForRow = "未分類";
-      highlightsForRow = rawContent;
-      timelineForRow = "";
+      const fallbackFields = buildSheetFieldsFromFreeText("", rawContent, titleOnly);
+      tagsForRow = fallbackFields.tags;
+      highlightsForRow = fallbackFields.highlights;
+      timelineForRow = fallbackFields.timeline;
     } else {
       const geminiInputContent = rawContent.substring(0, maxInputChars);
-      const fields = analyzeText(geminiInputContent, persona, syncPrompt, geminiApiKey, geminiModel, outputMode);
+      const fields = analyzeText(geminiInputContent, persona, syncPrompt, geminiApiKey, geminiModel, outputMode, titleOnly);
       tagsForRow = fields.tags;
       highlightsForRow = fields.highlights;
       timelineForRow = fields.timeline;
     }
 
-    const dateOnlyMatch = metaInfo.match(/\d{4}[\/\-]\d{2}[\/\-]\d{2}/);
+    const dateOnlyMatch = (metaInfo + " " + titleOnly).match(/\d{4}[\/\-]\d{2}[\/\-]\d{2}/);
     const pubDateStr = dateOnlyMatch ? dateOnlyMatch[0] : Utilities.formatDate(file.getDateCreated(), "JST", "yyyy/MM/dd");
 
     sheet.appendRow([
