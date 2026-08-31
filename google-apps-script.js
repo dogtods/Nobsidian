@@ -2158,56 +2158,44 @@ function processMhtFile_Advanced(
   let aiSuccessCount = 0;
   let fallbackCount = 0;
 
+  // 1. 生データの取得とQP（Quoted-Printable）ソフト改行を除去
   let rawData = file.getBlob().getDataAsString();
   rawData = rawData.replace(/=\r?\n/g, "");
 
+  // 2. HTMLパートのみを抽出（後半のバイナリ画像データを切り捨て）
   let htmlContent = rawData;
   const htmlMatch = rawData.match(/<html[\s\S]*?<\/html>/i);
-  if (htmlMatch) htmlContent = htmlMatch[0];
-
-  // 1. 記事ブロックの分割（formタグ、hdgLv2タグ、記事クラス、または単一記事）
-  let articles = [];
-  
-  // 専用の正規表現マッチングで keyShoshi または article/kiji ブロックを確実に独立抽出
-  const formMatches = htmlContent.match(/<form[\s\S]*?(?:<\/form>|(?=<form[\s>]))/gi);
-  if (formMatches && formMatches.length > 0) {
-    for (const block of formMatches) {
-      if (block.includes('keyShoshi') || block.includes('hdgLv2') || /class="[^"]*(?:val02|honbun|title|article)/i.test(block)) {
-        if (!articles.includes(block)) {
-          articles.push(block);
-        }
-      }
-    }
+  if (htmlMatch) {
+    htmlContent = htmlMatch[0];
   }
 
+  // 3. 記事ブロックの分割（<form タグで区切る）- 安定した古いバージョンのロジックを復元
+  const formBlocks = htmlContent.split(/<form /gi);
+  const articles = [];
+  for (let i = 1; i < formBlocks.length; i++) {
+    const block = "<form " + formBlocks[i];
+    // 日経MHT等の主要な記事ブロック（hdgLv2を含む）のみを確実に対象とする
+    if (block.includes('hdgLv2')) {
+      articles.push(block);
+    }
+  }
+  
+  // 汎用MHT用フォールバック（formタグ区切りで見つからなかった場合）
   if (articles.length === 0) {
     const articleDivMatches = htmlContent.match(/<div[^>]*class="[^"]*(?:article|kiji|news|detail|item|box)[^"]*"[\s\S]*?(?:<\/div>\s*<\/div>|<\/section>|$)/gi);
     if (articleDivMatches && articleDivMatches.length > 0) {
       for (const block of articleDivMatches) {
-        if (block.length > 80 && !articles.includes(block)) {
-          articles.push(block);
-        }
+        if (block.length > 80 && !articles.includes(block)) articles.push(block);
       }
     }
-  }
-
-  if (articles.length === 0) {
-    const hdgBlocks = htmlContent.split(/(?=<div[^>]*class="[^"]*hdgLv2)/gi);
-    if (hdgBlocks.length > 1) {
-      for (const b of hdgBlocks) {
-        if (b.length > 50 && !articles.includes(b)) articles.push(b);
-      }
-    }
-  }
-
-  if (articles.length === 0) {
-    articles.push(htmlContent);
+    if (articles.length === 0) articles.push(htmlContent);
   }
 
   const folder = DriveApp.getFolderById(driveFolderId);
   const seenArticleIds = new Set();
   const seenTitles = new Set();
 
+  // 4. 記事ごとのループ処理
   for (let i = 0; i < articles.length; i++) {
     if (Date.now() - startTime > TIME_LIMIT) {
       isTimeOut = true;
@@ -2216,64 +2204,95 @@ function processMhtFile_Advanced(
 
     const articleHtml = articles[i];
 
-    // タイトルの抽出
-    const rawTitleTag = articleHtml.match(/<div[^>]*class="[^"]*(?:hdgLv2|val02|title|kiji_title|midashi)[^"]*"[^>]*>([\s\S]*?)<\/div>/i) ||
-                        articleHtml.match(/<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>/i) ||
-                        articleHtml.match(/<td[^>]*class="[^"]*(?:title|midashi|val02)[^"]*"[^>]*>([\s\S]*?)<\/td>/i);
-    let fullTitleText = rawTitleTag ? rawTitleTag[1].replace(/<[^>]+>/g, ' ').trim() : "";
+    // ① タイトルとメタ情報の取得
+    const rawTitleTag = articleHtml.match(/<div[^>]*class="[^"]*hdgLv2 val02[^"]*"[^>]*>([\s\S]*?)<\/div>/i) ||
+                        articleHtml.match(/<div[^>]*class="[^"]*(?:hdgLv2|val02|title|kiji_title|midashi)[^"]*"[^>]*>([\s\S]*?)<\/div>/i) ||
+                        articleHtml.match(/<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>/i);
+    let fullTitleText = rawTitleTag ? rawTitleTag[1].replace(/<[^>]+>/g, ' ').trim() : "タイトル不明";
     fullTitleText = cleanMhtNoise(fullTitleText);
 
     if (!fullTitleText || fullTitleText === "タイトル不明" || fullTitleText.length < 3) {
-      // タイトルが見つからないブロックはスキップ（ゴミや共通レイアウトの可能性）
       continue;
     }
 
     let titleOnly = fullTitleText;
     let metaInfo = "";
-
     const splitMatch = fullTitleText.match(/(\d{4}[\/\d].*)$/);
     if (splitMatch) {
       titleOnly = fullTitleText.substring(0, splitMatch.index).trim();
       metaInfo = splitMatch[0].trim().replace(/PDF有/g, "").replace(/書誌情報印刷/g, "").replace(/\s+/g, " ").trim();
     }
 
-    // 記事IDの抽出（アルファベット開始・西暦開始の双方を完全に網羅）
-    const articleId = extractMhtArticleId(articleHtml, titleOnly, metaInfo);
+    // ② ID特定と2重取得防止（ガードA・B）- 厳密なID抽出ロジックを復元
+    const idMatch = articleHtml.match(/keyShoshi(?:=|3D)NIRKDB\s*([a-zA-Z0-9]+)/i) || 
+                    articleHtml.match(/keyShoshi.*?([A-Za-z0-9_]{6,24})/i) ||
+                    articleHtml.match(/name=["']?keyShoshi["']?[^>]*value=["']?(?:NIRKDB\s*|NIRK\s*)?([A-Za-z0-9_-]+)["']?/i);
+    const hasHonbun = articleHtml.includes('text Honbun');
+    let articleId = "";
+
+    if (idMatch && idMatch[1]) {
+      // 正規IDがある場合はそれを使用（大文字統一）
+      let idStr = idMatch[1].trim().replace(/^NIRKDB/i, '').replace(/^NIRK/i, '').trim();
+      articleId = idStr.toUpperCase();
+    } else {
+      // ガードA: 正規IDがなく、本文エリア（text Honbun）もないブロックは
+      // 一覧のスニペットと判断してスキップ（2重取得の主因を排除）
+      if (!hasHonbun && articleHtml.includes('hdgLv2')) {
+        continue;
+      }
+      // ガードB: 本文はあるが正規IDがない記事の疑似ID生成
+      const dateOnlyMatch = (metaInfo + " " + titleOnly).match(/\d{4}[\/\-]\d{2}[\/\-]\d{2}/);
+      const stableMeta = dateOnlyMatch ? dateOnlyMatch[0] : (metaInfo || "").substring(0, 10);
+      const rawIdStr = titleOnly + stableMeta;
+      const safeId = Utilities.base64EncodeWebSafe(Utilities.newBlob(rawIdStr).getBytes());
+      articleId = "NKN_" + safeId.replace(/[^a-zA-Z0-9]/g, "").substring(0, 15);
+    }
 
     if (existingIds.has(articleId) || seenArticleIds.has(articleId) || seenTitles.has(titleOnly.toLowerCase())) {
-      // 既に処理済みのIDや同一タイトルの重複記事ブロックは完全にスキップ
       continue;
     }
     seenArticleIds.add(articleId);
     seenTitles.add(titleOnly.toLowerCase());
     existingIds.add(articleId);
 
-    // PDFファイル名の抽出と紐付け（即時_processedへ移動・重複防止）
-    const pdfUrl = findAndLinkMatchingPdf(
-      articleHtml, articleId, titleOnly, metaInfo, folder, processedFolder,
-      processedFileIds, processedFileNames, existingUrls
-    );
+    // ④ 対応するPDFファイルの検索と紐付け
+    let pdfUrl = "";
+    // まずは完全一致（最も確実）
+    const targetPdfName = articleId + ".pdf";
+    try {
+      if (folder) {
+        const pdfFiles = folder.getFilesByName(targetPdfName);
+        if (pdfFiles.hasNext()) {
+          const pdfFile = pdfFiles.next();
+          pdfUrl = pdfFile.getUrl();
+          processedFileIds.add(pdfFile.getId());
+          processedFileNames.add(pdfFile.getName().toLowerCase());
+          existingUrls.add(pdfUrl);
+          try { pdfFile.moveTo(processedFolder); } catch(e) {}
+        }
+      }
+    } catch(e) {}
 
-    // 本文テキストの抽出
+    // 見つからない場合はファジーマッチ（findAndLinkMatchingPdf）
+    if (!pdfUrl) {
+      pdfUrl = findAndLinkMatchingPdf(
+        articleHtml, articleId, titleOnly, metaInfo, folder, processedFolder,
+        processedFileIds, processedFileNames, existingUrls
+      );
+    }
+
+    // ⑤ 本文抽出（I列用）
     let rawContent = "";
-    const textMatch = articleHtml.match(/<div[^>]*class="[^"]*(?:text\s*Honbun|Honbun|honbun|text_honbun|c-article_body|body|detail_text)[^"]*"[^>]*>([\s\S]*?)(?:<\/form>|<\/section>|<\/div>\s*<\/div>|$)/i) ||
-                      articleHtml.match(/<td[^>]*class="[^"]*(?:text\s*Honbun|Honbun|honbun)[^"]*"[^>]*>([\s\S]*?)<\/td>/i) ||
-                      articleHtml.match(/<p[^>]*class="[^"]*(?:honbun|text)[^"]*"[^>]*>([\s\S]*?)<\/p>/i);
+    const textMatch = articleHtml.match(/<div[^>]*class="[^"]*text Honbun[^"]*"[^>]*>([\s\S]*?)(?:<\/form>|<\/section>|<\/div>\s*<\/div>|$)/i) ||
+                      articleHtml.match(/<div[^>]*class="[^"]*(?:text\s*Honbun|Honbun|honbun|text_honbun|c-article_body|body|detail_text)[^"]*"[^>]*>([\s\S]*?)(?:<\/form>|<\/section>|<\/div>\s*<\/div>|$)/i);
     if (textMatch) {
       rawContent = textMatch[1].replace(/<[^>]+>/g, '\n').trim();
     } else {
-      // フォールバック: タイトル部分を除いたテキスト領域を抽出
-      let tempText = articleHtml.replace(/<[^>]+>/g, '\n').trim();
-      if (titleOnly && tempText.includes(titleOnly)) {
-        const idx = tempText.indexOf(titleOnly);
-        tempText = tempText.substring(idx + titleOnly.length).trim();
-      }
-      rawContent = tempText;
+      rawContent = articleHtml.replace(/<[^>]+>/g, '\n').trim();
     }
     rawContent = cleanMhtNoise(rawContent);
     rawContent = rawContent.replace(/\s+PDF\s*$/i, '').replace(/\n\s*\n/g, '\n\n').trim();
 
-    // 本文が短すぎる、またはタイトルと全く同じ場合はスキップ
     if (!rawContent || rawContent.length < 15 || rawContent === titleOnly) {
       continue;
     }
@@ -2285,8 +2304,7 @@ function processMhtFile_Advanced(
     const dateOnlyMatch = (metaInfo + " " + titleOnly).match(/\d{4}[\/\-]\d{2}[\/\-]\d{2}/);
     const pubDateStr = dateOnlyMatch ? dateOnlyMatch[0] : Utilities.formatDate(file.getDateCreated(), "JST", "yyyy/MM/dd");
 
-    // AI解析（D列カテゴリ、E列要約・事実・影響・キーワード、L列年表）
-    // ★PDF解析時と同様に、記事タイトル・掲載情報・本文を完全構造化したテキストとしてGeminiに渡す
+    // ⑥ AI解析（最新の構造化出力を利用）
     let tagsForRow, highlightsForRow, timelineForRow;
     if (skipGeminiForShort && isShortArticle(rawContent, shortArticleThreshold)) {
       const fallbackFields = buildSheetFieldsFromFreeText("", rawContent, titleOnly, pubDateStr);
@@ -2295,11 +2313,8 @@ function processMhtFile_Advanced(
       timelineForRow = fallbackFields.timeline;
       fallbackCount++;
     } else {
-      const structuredArticleText = 
-        `【記事タイトル】\n${titleOnly}\n\n` +
-        (metaInfo ? `【掲載情報・日付】\n${metaInfo}\n\n` : `【日付】\n${pubDateStr}\n\n`) +
-        `【本文】\n${rawContent}`;
-      const geminiInputContent = structuredArticleText.substring(0, maxInputChars);
+      // プレーンな本文のみをAIに渡す（古いコードに合わせた安定挙動）
+      const geminiInputContent = rawContent.substring(0, maxInputChars);
       const fields = analyzeText(geminiInputContent, persona, syncPrompt, geminiApiKey, geminiModel, outputMode, titleOnly, pubDateStr);
       tagsForRow = fields.tags;
       highlightsForRow = fields.highlights;
@@ -2311,6 +2326,7 @@ function processMhtFile_Advanced(
       }
     }
 
+    // ⑦ スプレッドシートへの書き込み
     sheet.appendRow([
       articleId,
       titleOnly,
