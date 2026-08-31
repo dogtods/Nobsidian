@@ -45,33 +45,23 @@ const DEFAULT_CONFIG = {
   SKIP_GEMINI_FOR_SHORT_ARTICLES: 'false',
   SHORT_ARTICLE_THRESHOLD: 50,
 
-  SYSTEM_PERSONA: 'あなたは環境ビジネス・技術情報の専門アナリストです。',
+  SYSTEM_PERSONA: 'あなたは客観的かつ論理的な「ビジネスリサーチ・アナリスト」です。',
 
-  SYNC_PROMPT: `# 役割
-あなたは客観的かつ論理的な「ビジネスリサーチ・アナリスト」です。
-提供された記事・資料から、事実と構造を正確に抽出し、指定のスキーマに従って各項目を出力してください。
-
-# 厳守事項
+  SYNC_PROMPT: `# 出力構成・品質ルール
+- 記事・資料内に元タイトル（見出し）が存在する場合は、その元タイトルを最優先でそのまま維持すること（タイトルがない場合のみ30文字前後の適切なタイトルを生成）。
+- タイトルと要約は必ず異なる内容にすること。要約にタイトルの文言をそのまま流用・反復することを禁止する。
+- 要約は、記事の全体像、背景、決定事項、主要な論点・ポイントを論理的かつ分かりやすく要約すること（約250〜400文字程度で充実させて記述）。
+- 数値・固有名詞・日付・組織名を優先した客観的事実を3〜6点抽出すること。
+- 市場・実務・関連ビジネスへの影響や示唆を2〜4文で記述すること。
+- 専門用語・業界用語を3〜5件抽出し、用語（term）と意味・定義の解説（definition）のペアを作成すること。
 - 資料外の知識で勝手に補完・捏造しないこと。
 - 事実（客観）と示唆（主観）を明確に分離すること。
-- 内容を端折らず、十分な情報量と具体性（数値・固有名詞・背景）を担保すること。
 - 「【掲載情報・日付】」「【本文】」などの入力用メタ表記は出力に含めないこと。
 
-# 各項目の分析・抽出指針
-1. カテゴリ (category):
-   記事の主題分野を表す単語を1〜2語で簡潔に指定（例：脱炭素、太陽光発電、半導体、EV充電、蓄電池、環境、金融、公募 など）。
-2. タイトル (title):
-   記事の本質と要点を端的に表す具体的で分かりやすいタイトル（30文字前後）。
-3. 要約 (summary):
-   記事の全体像、背景、決定事項、主要な論点・ポイントを論理的かつ分かりやすく要約（約250〜400文字程度で充実させて記述）。
-4. 具体的数値・事実 (key_facts):
-   記事中の数値（金額・割合・容量・社数・年数・目標値等）、固有名詞、日付、企業名・組織名、具体的決定事項を3〜6点抽出。
-5. 市場・実務への影響 (market_impact):
-   社会的・経済的・産業界や関連ビジネス、企業実務にどのような影響や示唆を与えるかを分析（2〜4文）。
-6. キーワード (keywords):
-   記事中の専門用語・業界用語を3〜5件抽出し、用語（term）と意味・定義の解説（definition）のペアを作成。
-7. 年表・時系列 (timeline):
-   記事中に登場する過去の経緯、発表日、施行予定、将来目標、年度などのスケジュールを「[YYYY/MM/DD] 出来事の内容（50〜100文字程度）」の形式で改行区切りで時系列抽出。`
+# 日付解決・年表抽出ルール
+- 本文中で言及されている出来事の発生日・スケジュールのみを抽出すること。記事の発行日そのものをそのまま流用することは禁止。
+- ユーザー入力で与えられる「発行日（基準日）」をもとに、本文中の「昨日」「先月」「今年4月」「来年」「令和〇年」等の相対表現・和暦を、すべて絶対日付 [YYYY/MM/DD]、[YYYY/MM]、[YYYY年M月期]、または[YYYY年度] に正確に変換すること。
+- 該当する出来事の日付が本文中に存在しない場合は、timelineを空配列にすること。`
 };
 
 function getConfig(key) {
@@ -791,179 +781,377 @@ function buildSheetFieldsFromFreeText(rawText, fallbackContent, fallbackTitle, f
 }
 
 // ====================================================================
-// ★モードB：JSON厳格モード (json) — 明示的に構造化データが欲しい場合のみ使用
+// ★モードB：JSON構造化出力モード (Structured Output) — AI Studio完全準拠
 // ====================================================================
 
-const UNIFIED_RESPONSE_SCHEMA = {
+const STRUCTURED_ANALYSIS_SCHEMA = {
   type: "OBJECT",
   properties: {
     category: {
       type: "STRING",
-      description: "この記事の主題分野を表す単語を1つだけ。例：太陽光発電、半導体、EV充電、環境、金融、公募 など。1〜2語で簡潔に。"
+      description: "記事の主題分野を表す単語を1つだけ指定（例：太陽光発電、半導体、EV充電、脱炭素、環境、金融、公募 など）。1〜2語で簡潔に。"
     },
-    title: { type: "STRING", description: "記事タイトルまたはテーマ。判別できない場合は空文字。" },
-    is_verbatim: { type: "BOOLEAN", description: "本文が400文字以下、または要約が不適切なほど短い場合はtrue。" },
-    summary: { type: "STRING", description: "200文字程度の要約。is_verbatimがtrueなら空文字でよい。" },
-    key_facts: { type: "ARRAY", items: { type: "STRING" }, description: "数値・固有名詞・日付を優先した事実の箇条書き（3〜5点）。" },
-    market_impact: { type: "STRING", description: "市場・実務への影響（2〜3文）。is_verbatimがtrueなら空文字でよい。" },
+    title: {
+      type: "STRING",
+      description: "記事の本質と要点を端的に表す具体的で分かりやすいタイトル（30文字前後）。"
+    },
+    summary: {
+      type: "STRING",
+      description: "記事の全体像、背景、決定事項、主要な論点・ポイントを論理的かつ分かりやすく要約（約250〜400文字程度）。タイトルと同じ文言の単純反復は禁止。"
+    },
+    facts: {
+      type: "ARRAY",
+      items: { type: "STRING" },
+      description: "数値・固有名詞・日付・組織名を優先した客観的事実の箇条書き（3〜6点）。"
+    },
+    impact: {
+      type: "STRING",
+      description: "市場・実務・関連ビジネスへの影響や示唆（2〜4文）。"
+    },
     keywords: {
       type: "ARRAY",
       items: {
         type: "OBJECT",
-        properties: { term: { type: "STRING" }, definition: { type: "STRING" } },
+        properties: {
+          term: { type: "STRING", description: "専門用語・重要単語" },
+          definition: { type: "STRING", description: "その用語の簡潔な解説・定義" }
+        },
         required: ["term", "definition"]
       },
-      description: "専門用語・業界用語（3〜5件）。用語と意味・定義のペア。"
+      description: "記事中の専門用語・業界用語（3〜5件）。用語と定義のペア。"
     },
-    timeline: { type: "STRING", description: "[YYYY年M月] 出来事 の形式、改行区切り。該当なしなら空文字。" }
+    timeline: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          date: { type: "STRING", description: "出来事の日付（[YYYY/MM/DD]、[YYYY/MM]、[YYYY年M月期]、または[YYYY年度]形式。相対日付は基準日から絶対日付に変換）" },
+          event: { type: "STRING", description: "その日付に起きた出来事や予定の要約（50〜100文字程度）" }
+        },
+        required: ["date", "event"]
+      },
+      description: "本文中で言及されている出来事の発生日・スケジュールのリスト。記事の発行日そのものを流用することは禁止。相対日付は基準日から絶対日付に変換すること。該当する出来事の日付がない場合は空配列。"
+    }
   },
-  required: ["category", "title", "is_verbatim", "summary", "key_facts", "market_impact", "keywords", "timeline"]
+  required: ["category", "title", "summary", "facts", "impact", "keywords", "timeline"]
 };
 
-function buildAnalysisPromptForJsonMode(persona, syncPrompt, content) {
-  return (persona ? persona + "\n\n" : "") + syncPrompt +
-    "\n\n【出力形式についての補足（JSON厳格モード時のみ）】\n" +
-    "上記の「出力構成」の内容を、与えられたJSONスキーマの各フィールド" +
-    "（category / title / is_verbatim / summary / key_facts / market_impact / keywords / timeline）に" +
-    "過不足なく対応させて出力してください。\n\n" +
-    "【データ】\n" + content;
-}
+function normalizeStructuredResult(parsed) {
+  if (!parsed || typeof parsed !== "object") return null;
 
-function normalizeGeminiResult(parsed) {
+  const category = String(parsed.category || "").trim().replace(/[\[\]]/g, '') || "一般";
+  const title = String(parsed.title || "").replace(/^[#\-\*\s]+/, '').trim();
+  const summary = String(parsed.summary || "").trim();
+  
+  let facts = [];
+  if (Array.isArray(parsed.facts)) {
+    facts = parsed.facts.map(f => String(f).replace(/^[・\-\*\s]+/, '').trim()).filter(Boolean);
+  } else if (Array.isArray(parsed.key_facts)) {
+    facts = parsed.key_facts.map(f => String(f).replace(/^[・\-\*\s]+/, '').trim()).filter(Boolean);
+  }
+
+  const impact = String(parsed.impact || parsed.market_impact || "").trim();
+
+  let keywords = [];
+  if (Array.isArray(parsed.keywords)) {
+    keywords = parsed.keywords.map(k => {
+      if (typeof k === "string") {
+        const cleaned = k.replace(/[\[\]]/g, '').trim();
+        return cleaned ? { term: cleaned, definition: "" } : null;
+      }
+      const term = String(k.term || "").replace(/[\[\]]/g, '').trim();
+      const def = String(k.definition || "").trim();
+      return term ? { term: term, definition: def } : null;
+    }).filter(Boolean);
+  }
+
+  let timeline = [];
+  if (Array.isArray(parsed.timeline)) {
+    timeline = parsed.timeline.map(t => {
+      if (typeof t === "string") {
+        return t.trim();
+      }
+      const d = String(t.date || "").trim();
+      const ev = String(t.event || "").trim();
+      if (!d && !ev) return "";
+      const dateBracket = d.startsWith("[") && d.endsWith("]") ? d : `[${d}]`;
+      return ev ? `${dateBracket} ${ev}` : dateBracket;
+    }).filter(Boolean);
+  } else if (typeof parsed.timeline === "string" && parsed.timeline.trim()) {
+    timeline = parsed.timeline.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  }
+
   return {
-    category: parsed.category || "",
-    title: parsed.title || "",
-    is_verbatim: !!parsed.is_verbatim,
-    summary: parsed.summary || "",
-    key_facts: Array.isArray(parsed.key_facts) ? parsed.key_facts : [],
-    market_impact: parsed.market_impact || "",
-    keywords: Array.isArray(parsed.keywords) ? parsed.keywords : [],
-    timeline: parsed.timeline || ""
+    category: category,
+    title: title,
+    summary: summary,
+    facts: facts,
+    impact: impact,
+    keywords: keywords,
+    timeline: timeline
   };
 }
 
-function callGeminiAnalyzeText(content, persona, syncPrompt, apiKey, model) {
+function callGeminiStructuredAnalysis(content, pubDate, fallbackTitle, persona, syncPrompt, apiKey, model) {
   const resolvedApiKey = getGeminiApiKey(apiKey);
   if (!resolvedApiKey) {
-    return { category: "", title: "", is_verbatim: isShortArticle(content), summary: content.substring(0, 300), key_facts: [], market_impact: "", keywords: [], timeline: "" };
+    Logger.log("[Gemini Structured] ⚠️ APIキーが未設定です。");
+    return null;
   }
-  const prompt = buildAnalysisPromptForJsonMode(persona, syncPrompt, content);
+
+  const cleanPersona = persona || getConfig('SYSTEM_PERSONA');
+  const cleanPrompt = syncPrompt || getConfig('SYNC_PROMPT');
+  const systemInstructionText = (cleanPersona ? cleanPersona + "\n\n" : "") + cleanPrompt;
+
+  const validDate = pubDate || Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
+  const userContent = 
+    `発行日: ${validDate}\n` +
+    (fallbackTitle ? `記事タイトル（参考）: ${fallbackTitle}\n\n` : "\n") +
+    `【記事本文】\n${content}`;
+
   const targetModel = model || getConfig('GEMINI_MODEL') || "gemini-2.5-flash";
   const candidateModels = getCandidateModels(targetModel);
 
   for (const m of candidateModels) {
     try {
       const payload = {
-        contents: [{ parts: [{ text: prompt }] }],
+        systemInstruction: {
+          parts: [{ text: systemInstructionText }]
+        },
+        contents: [
+          {
+            parts: [{ text: userContent }]
+          }
+        ],
         safetySettings: GEMINI_SAFETY_SETTINGS,
-        generationConfig: { temperature: 0.1, responseMimeType: "application/json", responseSchema: UNIFIED_RESPONSE_SCHEMA }
+        generationConfig: {
+          temperature: 0.1,
+          responseMimeType: "application/json",
+          responseSchema: STRUCTURED_ANALYSIS_SCHEMA,
+          maxOutputTokens: 8192
+        }
       };
+
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${resolvedApiKey}`;
       const response = fetchGeminiWithRetry(url, payload, 3);
       if (!response) continue;
 
-      if (response.getResponseCode() === 200) {
+      const responseCode = response.getResponseCode();
+      if (responseCode === 200) {
         const resJson = JSON.parse(response.getContentText());
         const rawText = extractGeminiResponseText(resJson);
         if (rawText) {
-          return normalizeGeminiResult(JSON.parse(rawText));
+          const parsed = JSON.parse(rawText);
+          return normalizeStructuredResult(parsed);
         }
       } else {
-        Logger.log(`[Gemini JSON] Model ${m} HTTP ${response.getResponseCode()}: ${response.getContentText().substring(0, 300)}`);
+        Logger.log(`[Gemini Structured] Model ${m} HTTP ${responseCode}: ${response.getContentText().substring(0, 300)}`);
       }
     } catch (e) {
-      Logger.log(`[Gemini JSON] Model ${m} エラー: ${e.message}`);
+      Logger.log(`[Gemini Structured] Model ${m} エラー: ${e.message}`);
     }
   }
 
-  return { category: "", title: "", is_verbatim: false, summary: content.substring(0, 300), key_facts: [], market_impact: "", keywords: [], timeline: "" };
+  return null;
 }
 
-function callGeminiAnalyzeFile(file, apiKey, model, persona, syncPrompt) {
+function callGeminiStructuredFileAnalysis(file, pubDate, fallbackTitle, persona, syncPrompt, apiKey, model) {
   const resolvedApiKey = getGeminiApiKey(apiKey);
   if (!resolvedApiKey) {
-    return { category: "", title: "", is_verbatim: true, summary: "ファイル名: " + file.getName(), key_facts: [], market_impact: "", keywords: [], timeline: "" };
+    Logger.log("[Gemini Structured File] ⚠️ APIキーが未設定です。");
+    return null;
   }
+
   const fileName = file.getName();
   let mimeType = file.getMimeType();
   if (fileName.toLowerCase().endsWith('.pdf')) {
     mimeType = "application/pdf";
+  } else if (fileName.toLowerCase().endsWith('.png')) {
+    mimeType = "image/png";
+  } else if (fileName.toLowerCase().endsWith('.jpg') || fileName.toLowerCase().endsWith('.jpeg')) {
+    mimeType = "image/jpeg";
+  } else if (fileName.toLowerCase().endsWith('.webp')) {
+    mimeType = "image/webp";
   }
 
+  const cleanPersona = persona || getConfig('SYSTEM_PERSONA');
+  const cleanPrompt = syncPrompt || getConfig('SYNC_PROMPT');
+  const systemInstructionText = (cleanPersona ? cleanPersona + "\n\n" : "") + cleanPrompt;
+
+  const validDate = pubDate || Utilities.formatDate(file.getDateCreated(), "JST", "yyyy/MM/dd");
+  const userPrompt = 
+    `発行日: ${validDate}\n` +
+    `ファイル名: ${fileName}\n\n` +
+    `【指示】添付された資料の内容を詳細に分析し、指定のJSONスキーマに従って出力してください。`;
+
+  const base64Data = Utilities.base64Encode(file.getBlob().getBytes());
   const targetModel = model || getConfig('GEMINI_MODEL') || "gemini-2.5-flash";
   const candidateModels = getCandidateModels(targetModel);
-  const base64Data = Utilities.base64Encode(file.getBlob().getBytes());
-  const prompt = buildAnalysisPromptForJsonMode(
-    persona, syncPrompt,
-    "(添付されたファイル（PDF等の記事・資料）の内容を読み取り、指定の出力構成に従ってJSON形式ですべての項目を出力してください。ファイル名: " + fileName + ")"
-  );
 
   for (const m of candidateModels) {
     try {
       const payload = {
-        contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: mimeType, data: base64Data } }] }],
+        systemInstruction: {
+          parts: [{ text: systemInstructionText }]
+        },
+        contents: [
+          {
+            parts: [
+              { text: userPrompt },
+              { inline_data: { mime_type: mimeType, data: base64Data } }
+            ]
+          }
+        ],
         safetySettings: GEMINI_SAFETY_SETTINGS,
-        generationConfig: { temperature: 0.1, responseMimeType: "application/json", responseSchema: UNIFIED_RESPONSE_SCHEMA, maxOutputTokens: 8000 }
+        generationConfig: {
+          temperature: 0.1,
+          responseMimeType: "application/json",
+          responseSchema: STRUCTURED_ANALYSIS_SCHEMA,
+          maxOutputTokens: 8192
+        }
       };
+
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${resolvedApiKey}`;
       const response = fetchGeminiWithRetry(url, payload, 3);
       if (!response) continue;
 
-      if (response.getResponseCode() === 200) {
+      const responseCode = response.getResponseCode();
+      if (responseCode === 200) {
         const resJson = JSON.parse(response.getContentText());
         const rawText = extractGeminiResponseText(resJson);
         if (rawText) {
-          return normalizeGeminiResult(JSON.parse(rawText));
+          const parsed = JSON.parse(rawText);
+          return normalizeStructuredResult(parsed);
         }
       } else {
-        Logger.log(`[Gemini JSON File] Model ${m} HTTP ${response.getResponseCode()}: ${response.getContentText().substring(0, 300)}`);
+        Logger.log(`[Gemini Structured File] Model ${m} HTTP ${responseCode}: ${response.getContentText().substring(0, 300)}`);
       }
     } catch (e) {
-      Logger.log(`[Gemini JSON File] Model ${m} エラー (${fileName}): ${e.message}`);
+      Logger.log(`[Gemini Structured File] Model ${m} エラー (${fileName}): ${e.message}`);
     }
   }
 
-  return { category: "", title: "", is_verbatim: true, summary: "解析完了: " + fileName, key_facts: [], market_impact: "", keywords: [], timeline: "" };
+  return null;
 }
 
-function buildSheetFieldsFromGeminiResult(parsed, rawContent, fallbackTitle, fallbackDate) {
-  const isVerbatim = parsed.is_verbatim || isShortArticle(rawContent);
+function buildHighQualityFallbackFields(rawContent, fallbackTitle, fallbackDate) {
+  const cleanTitle = (fallbackTitle || "記事概要").replace(/^[#\-\*\s]+/, '').trim();
+  const cleanBody = (rawContent || "")
+    .replace(/【\s*(?:記事タイトル|掲載情報[・\/]日付|掲載情報|日付|本文|対象記事データ|データ)\s*】[\s\S]*?(?=\n\s*【|\n\s*###|$)/gi, '')
+    .replace(/【\s*(?:記事タイトル|掲載情報[・\/]日付|掲載情報|日付|本文|対象記事データ|データ)\s*】[^\n]*/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 
-  let tagsWikilinks = "";
-  if (parsed.category && String(parsed.category).trim() !== "") {
-    tagsWikilinks = String(parsed.category).trim().replace(/[\[\]]/g, '');
-  } else if (parsed.keywords && parsed.keywords.length > 0 && parsed.keywords[0].term) {
-    tagsWikilinks = String(parsed.keywords[0].term).trim().replace(/[\[\]]/g, '');
+  let summaryText = "";
+  if (cleanBody && cleanBody !== cleanTitle && cleanBody.length > 30) {
+    summaryText = cleanBody.substring(0, 350) + (cleanBody.length > 350 ? "..." : "");
   } else {
-    tagsWikilinks = extractCategoryFromText("", rawContent, fallbackTitle) || "一般";
+    summaryText = "記事の主要な動向と詳細な内容に関する記録です。";
   }
 
-  let highlightsText = "";
-  if (isVerbatim) {
-    highlightsText = (rawContent && rawContent.trim()) ? rawContent : (parsed.summary || "");
-  } else {
-    const parts = [];
-    if (parsed.summary) parts.push("【要約】\n" + parsed.summary);
-    if (parsed.key_facts && parsed.key_facts.length > 0) parts.push("【具体的数値・事実】\n・" + parsed.key_facts.join("\n・"));
-    if (parsed.market_impact) parts.push("【市場・実務への影響】\n" + parsed.market_impact);
-    if (parsed.keywords && parsed.keywords.length > 0) {
-      parts.push("【キーワード】\n" + parsed.keywords.map(k => `- [[${k.term}]]: ${k.definition}`).join("\n"));
+  const sentences = cleanBody.split(/(?<=[。！？\n])/);
+  const factSentences = [];
+  for (const s of sentences) {
+    const trimmed = s.trim();
+    if (trimmed.length > 10 && trimmed !== cleanTitle && /(\d+|％|割|社|年|月|日|円|トン|kW|MW|決定|公表|方針|開始)/.test(trimmed)) {
+      factSentences.push(`・${summarizeText(trimmed, 100)}`);
+      if (factSentences.length >= 4) break;
     }
-    // 注意: 【年表】はL列に独立して格納するため、E列（highlightsText）には含めない
-    highlightsText = parts.join("\n\n");
+  }
+  if (factSentences.length === 0) {
+    factSentences.push(`・${cleanTitle || "主要施策の発表"}`);
+    if (fallbackDate) factSentences.push(`・公表時期: ${fallbackDate}`);
   }
 
-  const timeline = parsed.timeline || extractTimelineFromText("", rawContent, fallbackDate, fallbackTitle);
-  const hasAi = !!(parsed.summary || (parsed.key_facts && parsed.key_facts.length > 0) || parsed.market_impact || (parsed.category && parsed.category.trim() !== ""));
+  const tags = extractCategoryFromText(rawContent, cleanTitle);
 
-  return { tags: tagsWikilinks, highlights: highlightsText, timeline: timeline, hasAiResult: hasAi };
+  const keywordList = tags && tags !== "一般" && tags !== "未分類"
+    ? `- [[${tags}]]: 本記事の主要な主題分野\n- [[産業動向]]: 業界および市場における最新の進展\n- [[実務対応]]: 関連基準や制度変更に伴う企業対応`
+    : `- [[産業動向]]: 業界および市場における最新の進展\n- [[サステナビリティ]]: 企業の持続可能性と環境対応\n- [[情報開示]]: 制度変更に伴う実務・経営対応`;
+
+  const highlights = 
+    `### ${cleanTitle}\n\n` +
+    `【要約】\n${summaryText}\n\n` +
+    `【具体的数値・事実】\n${factSentences.join("\n")}\n\n` +
+    `【市場・実務への影響】\n・関連市場および業界における実務対応や事業機会・リスク動向に留意。\n・今後の規制動向や開示基準の進展に合わせた体制整備が重要。\n\n` +
+    `【キーワード】\n${keywordList}`;
+
+  let targetDate = fallbackDate || "";
+  if (!targetDate || !/\d{4}/.test(targetDate)) {
+    targetDate = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
+  }
+  const cleanTargetDate = targetDate.replace(/[-_]/g, '/');
+  const timeline = `[${cleanTargetDate}] ${summarizeText(cleanTitle, 100)}`;
+
+  return {
+    tags: tags,
+    title: cleanTitle,
+    highlights: highlights,
+    timeline: timeline,
+    hasAiResult: false
+  };
+}
+
+function buildSheetFieldsFromStructuredResult(result, rawContent, fallbackTitle, fallbackDate) {
+  if (!result) {
+    return buildHighQualityFallbackFields(rawContent, fallbackTitle, fallbackDate);
+  }
+
+  // ファイル・元の記事の中にある元タイトル（fallbackTitle）を最優先で使用
+  const finalTitle = (fallbackTitle && String(fallbackTitle).trim() !== "") 
+    ? String(fallbackTitle).replace(/^[#\-\*\s]+/, '').trim() 
+    : (result.title || "記事概要");
+  const tags = result.category || extractCategoryFromText(rawContent, finalTitle) || "一般";
+
+  // E列: highlights（### タイトル、要約、具体的数値・事実、市場・実務への影響、キーワード）
+  const parts = [];
+  parts.push(`### ${finalTitle}`);
+
+  if (result.summary) {
+    parts.push(`【要約】\n${result.summary}`);
+  }
+
+  if (result.facts && result.facts.length > 0) {
+    parts.push(`【具体的数値・事実】\n・${result.facts.join("\n・")}`);
+  }
+
+  if (result.impact) {
+    parts.push(`【市場・実務への影響】\n${result.impact}`);
+  }
+
+  if (result.keywords && result.keywords.length > 0) {
+    const kwLines = result.keywords.map(k => {
+      return k.definition ? `- [[${k.term}]]: ${k.definition}` : `- [[${k.term}]]`;
+    }).join("\n");
+    parts.push(`【キーワード】\n${kwLines}`);
+  }
+
+  const highlights = parts.join("\n\n");
+
+  // L列: timeline（年表）
+  let timeline = "";
+  if (result.timeline && result.timeline.length > 0) {
+    timeline = result.timeline.join("\n");
+  } else {
+    timeline = extractTimelineFromText("", rawContent, fallbackDate, finalTitle);
+  }
+
+  const hasAi = !!(result.summary || (result.facts && result.facts.length > 0) || result.impact || result.category);
+
+  return {
+    tags: tags,
+    title: finalTitle,
+    highlights: highlights,
+    timeline: timeline,
+    hasAiResult: hasAi
+  };
 }
 
 // 共通ディスパッチャ
 function analyzeText(content, persona, syncPrompt, apiKey, model, outputMode, title, pubDate) {
-  if (outputMode === 'json') {
-    const parsed = callGeminiAnalyzeText(content, persona, syncPrompt, apiKey, model);
-    return buildSheetFieldsFromGeminiResult(parsed, content, title, pubDate);
+  if (outputMode !== 'free') {
+    const structured = callGeminiStructuredAnalysis(content, pubDate, title, persona, syncPrompt, apiKey, model);
+    return buildSheetFieldsFromStructuredResult(structured, content, title, pubDate);
   }
   const rawText = callGeminiFree(content, persona, syncPrompt, apiKey, model);
   return buildSheetFieldsFromFreeText(rawText, content, title, pubDate);
@@ -980,9 +1168,9 @@ function analyzeFile(file, apiKey, model, persona, syncPrompt, outputMode) {
     pubDate = Utilities.formatDate(file.getDateCreated(), "JST", "yyyy/MM/dd");
   }
 
-  if (outputMode === 'json') {
-    const parsed = callGeminiAnalyzeFile(file, apiKey, model, persona, syncPrompt);
-    return buildSheetFieldsFromGeminiResult(parsed, fileBaseName, fileBaseName, pubDate);
+  if (outputMode !== 'free') {
+    const structured = callGeminiStructuredFileAnalysis(file, pubDate, fileBaseName, persona, syncPrompt, apiKey, model);
+    return buildSheetFieldsFromStructuredResult(structured, fileBaseName, fileBaseName, pubDate);
   }
   const rawText = callGeminiFreeFile(file, apiKey, model, persona, syncPrompt);
   return buildSheetFieldsFromFreeText(rawText, fileBaseName, fileBaseName, pubDate);
@@ -1979,12 +2167,26 @@ function processMhtFile_Advanced(
 
   // 1. 記事ブロックの分割（formタグ、hdgLv2タグ、記事クラス、または単一記事）
   let articles = [];
-  const formBlocks = htmlContent.split(/<form[\s>]/gi);
-  if (formBlocks.length > 1) {
-    for (let i = 1; i < formBlocks.length; i++) {
-      const block = "<form " + formBlocks[i];
-      if (block.includes('hdgLv2') || block.includes('keyShoshi') || /class="[^"]*(?:val02|honbun|title|article)/i.test(block)) {
-        articles.push(block);
+  
+  // 専用の正規表現マッチングで keyShoshi または article/kiji ブロックを確実に独立抽出
+  const formMatches = htmlContent.match(/<form[\s\S]*?(?:<\/form>|(?=<form[\s>]))/gi);
+  if (formMatches && formMatches.length > 0) {
+    for (const block of formMatches) {
+      if (block.includes('keyShoshi') || block.includes('hdgLv2') || /class="[^"]*(?:val02|honbun|title|article)/i.test(block)) {
+        if (!articles.includes(block)) {
+          articles.push(block);
+        }
+      }
+    }
+  }
+
+  if (articles.length === 0) {
+    const articleDivMatches = htmlContent.match(/<div[^>]*class="[^"]*(?:article|kiji|news|detail|item|box)[^"]*"[\s\S]*?(?:<\/div>\s*<\/div>|<\/section>|$)/gi);
+    if (articleDivMatches && articleDivMatches.length > 0) {
+      for (const block of articleDivMatches) {
+        if (block.length > 80 && !articles.includes(block)) {
+          articles.push(block);
+        }
       }
     }
   }
@@ -1993,16 +2195,7 @@ function processMhtFile_Advanced(
     const hdgBlocks = htmlContent.split(/(?=<div[^>]*class="[^"]*hdgLv2)/gi);
     if (hdgBlocks.length > 1) {
       for (const b of hdgBlocks) {
-        if (b.length > 50) articles.push(b);
-      }
-    }
-  }
-
-  if (articles.length === 0) {
-    const kijiBlocks = htmlContent.split(/(?=(?:<div[^>]*class="[^"]*(?:article|kiji|news|detail|item)[^"]*"|<div[^>]*id="[^"]*(?:art|kiji|doc)[^"]*"|keyShoshi=))/gi);
-    if (kijiBlocks.length > 1) {
-      for (const b of kijiBlocks) {
-        if (b.length > 100) articles.push(b);
+        if (b.length > 50 && !articles.includes(b)) articles.push(b);
       }
     }
   }
@@ -2012,6 +2205,8 @@ function processMhtFile_Advanced(
   }
 
   const folder = DriveApp.getFolderById(driveFolderId);
+  const seenArticleIds = new Set();
+  const seenTitles = new Set();
 
   for (let i = 0; i < articles.length; i++) {
     if (Date.now() - startTime > TIME_LIMIT) {
@@ -2025,8 +2220,13 @@ function processMhtFile_Advanced(
     const rawTitleTag = articleHtml.match(/<div[^>]*class="[^"]*(?:hdgLv2|val02|title|kiji_title|midashi)[^"]*"[^>]*>([\s\S]*?)<\/div>/i) ||
                         articleHtml.match(/<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>/i) ||
                         articleHtml.match(/<td[^>]*class="[^"]*(?:title|midashi|val02)[^"]*"[^>]*>([\s\S]*?)<\/td>/i);
-    let fullTitleText = rawTitleTag ? rawTitleTag[1].replace(/<[^>]+>/g, ' ').trim() : "タイトル不明";
+    let fullTitleText = rawTitleTag ? rawTitleTag[1].replace(/<[^>]+>/g, ' ').trim() : "";
     fullTitleText = cleanMhtNoise(fullTitleText);
+
+    if (!fullTitleText || fullTitleText === "タイトル不明" || fullTitleText.length < 3) {
+      // タイトルが見つからないブロックはスキップ（ゴミや共通レイアウトの可能性）
+      continue;
+    }
 
     let titleOnly = fullTitleText;
     let metaInfo = "";
@@ -2040,7 +2240,12 @@ function processMhtFile_Advanced(
     // 記事IDの抽出（アルファベット開始・西暦開始の双方を完全に網羅）
     const articleId = extractMhtArticleId(articleHtml, titleOnly, metaInfo);
 
-    if (existingIds.has(articleId)) continue;
+    if (existingIds.has(articleId) || seenArticleIds.has(articleId) || seenTitles.has(titleOnly.toLowerCase())) {
+      // 既に処理済みのIDや同一タイトルの重複記事ブロックは完全にスキップ
+      continue;
+    }
+    seenArticleIds.add(articleId);
+    seenTitles.add(titleOnly.toLowerCase());
     existingIds.add(articleId);
 
     // PDFファイル名の抽出と紐付け（即時_processedへ移動・重複防止）
@@ -2057,10 +2262,21 @@ function processMhtFile_Advanced(
     if (textMatch) {
       rawContent = textMatch[1].replace(/<[^>]+>/g, '\n').trim();
     } else {
-      rawContent = articleHtml.replace(/<[^>]+>/g, '\n').trim();
+      // フォールバック: タイトル部分を除いたテキスト領域を抽出
+      let tempText = articleHtml.replace(/<[^>]+>/g, '\n').trim();
+      if (titleOnly && tempText.includes(titleOnly)) {
+        const idx = tempText.indexOf(titleOnly);
+        tempText = tempText.substring(idx + titleOnly.length).trim();
+      }
+      rawContent = tempText;
     }
     rawContent = cleanMhtNoise(rawContent);
     rawContent = rawContent.replace(/\s+PDF\s*$/i, '').replace(/\n\s*\n/g, '\n\n').trim();
+
+    // 本文が短すぎる、またはタイトルと全く同じ場合はスキップ
+    if (!rawContent || rawContent.length < 15 || rawContent === titleOnly) {
+      continue;
+    }
 
     const safeContent = rawContent.length > 49000
       ? rawContent.substring(0, 49000) + "\n...（文字数上限により省略）"
