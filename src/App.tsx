@@ -128,6 +128,38 @@ const getApiUrl = () => {
 };
 const LS_KEY = "cn_notes_cache";
 
+// E列(要約・ハイライト)と I列(生記事全文)の表示先を確実に分離・正規化するヘルパー
+const normalizeNoteItem = (n: Note): Note => {
+  const rawText = (n.rawContent || n.columnJ || "").trim();
+  const summaryText = (n.summary || "").trim();
+  let content = (n.content || "").trim();
+
+  // E列（AI要約・ハイライト）が存在し、かつ content が未設定か、または rawContent（I列全文）と同一の場合、
+  // ユーザーが各記事を開いて読むメイン画面に E列 の要約を美しく表示する
+  if (summaryText && (!content || content === rawText)) {
+    content = summaryText;
+    if (!content.startsWith("#") && !content.startsWith("【")) {
+      content = `# ${n.title}\n\n${summaryText}`;
+    }
+    if (n.dateStr && !content.includes(n.dateStr)) {
+      content += `\n\n---\n**日付:** ${n.dateStr}`;
+    }
+    if (n.sourceUrl && !content.includes(n.sourceUrl)) {
+      content += `\n**リンク:** [${n.sourceUrl}](${n.sourceUrl})`;
+    }
+  } else if (!content && rawText) {
+    content = rawText;
+  }
+
+  return {
+    ...n,
+    content: content || n.content || "",
+    columnJ: rawText,
+    rawContent: rawText,
+    summary: summaryText || n.summary || ""
+  };
+};
+
 export default function App() {
   const [notes, setNotes] = useState<Note[]>([]);
   const notesRef = useRef<Note[]>([]);
@@ -439,7 +471,7 @@ export default function App() {
            throw new Error(`⚠️ GAS側で読み込まれたシート（${data.sheetName}）が指定したシート（${targetSheet}）と異なります。GASの【新しいデプロイ】が正しく行われているか確認してください。`);
         }
 
-        const serverNotes: Note[] = data.notes;
+        const serverNotes: Note[] = data.notes.map(normalizeNoteItem);
         const mergedMap: { [id: string]: Note } = {};
 
         // Merge maps
@@ -461,7 +493,7 @@ export default function App() {
           }
         });
 
-        const mergedList = Object.values(mergedMap).sort((a, b) => b.updatedAt - a.updatedAt);
+        const mergedList = Object.values(mergedMap).map(normalizeNoteItem).sort((a, b) => b.updatedAt - a.updatedAt);
         
         setNotes(mergedList);
         triggerLocalSave(mergedList, activeId);
@@ -520,7 +552,7 @@ export default function App() {
            throw new Error(`⚠️ GAS側で読み込まれたシート（${data.sheetName}）が指定したシート（${targetSheet}）と異なります。GASの【新しいデプロイ】が正しく行われているか確認してください。`);
         }
 
-        const serverNotes: Note[] = data.notes;
+        const serverNotes: Note[] = data.notes.map(normalizeNoteItem);
         setNotes(serverNotes);
         if (serverNotes.length > 0) {
           setActiveId(serverNotes[0].id);
@@ -607,7 +639,8 @@ export default function App() {
       if (stored) {
         const data = JSON.parse(stored);
         if (data.notes && data.notes.length > 0) {
-          setNotes(data.notes);
+          const normalized = data.notes.map(normalizeNoteItem);
+          setNotes(normalized);
           // 起動時は常にダッシュボードを表示
           setActiveId(null);
         } else {
@@ -3276,7 +3309,7 @@ const renderMarkdownToElements = (contentStr: string) => {
                         ${showSourceMemo 
                           ? "bg-blue-900/30 border-blue-500/30 text-blue-300 hover:bg-blue-900/50" 
                           : "bg-transparent border-[var(--border2)] text-[var(--subtle)] hover:text-white hover:bg-[var(--border)]"}`}
-                      title="元の記事本文の表示切り替え"
+                      title="元の記事本文(I列)の表示切り替え"
                     >
                       <FileText className={`w-3.5 h-3.5 flex-shrink-0 ${showSourceMemo ? "text-blue-400" : "text-[var(--subtle)]"}`} />
                       <span>記事全文</span>
@@ -3377,7 +3410,10 @@ const renderMarkdownToElements = (contentStr: string) => {
                   <div className="mx-auto mt-6 md:mt-8 w-[99%] max-w-3xl p-4 bg-[#0d1117] border border-[#30363d] rounded-lg animate-in fade-in flex flex-col shrink-0 max-h-[58vh] print:hidden">
                     <div className="text-xs text-gray-400 font-semibold mb-3 flex flex-shrink-0 items-center justify-between border-b border-[#30363d] pb-2">
                       <div className="flex items-center gap-3">
-                        <FileText className="w-4 h-4 text-gray-400" />
+                        <div className="flex items-center gap-1.5 text-blue-400 font-medium">
+                          <FileText className="w-4 h-4" />
+                          <span>記事全文 (I列)</span>
+                        </div>
                         <div className="flex items-center gap-1 bg-[#161b22] p-0.5 rounded border border-[#30363d]">
                           <span className="text-gray-500 px-1">文字:</span>
                           <button 
