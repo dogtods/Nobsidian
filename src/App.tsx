@@ -203,8 +203,10 @@ export default function App() {
     const saved = localStorage.getItem("cn_auto_sync_enabled_v2");
     return saved !== null ? JSON.parse(saved) : false;
   });
+  const autoSyncRef = useRef(autoSync);
 
   useEffect(() => {
+    autoSyncRef.current = autoSync;
     localStorage.setItem("cn_auto_sync_enabled_v2", JSON.stringify(autoSync));
   }, [autoSync]);
 
@@ -606,7 +608,7 @@ export default function App() {
   };
 
   const pushNoteToServer = async (note: Note) => {
-    if (!autoSync) return;
+    if (!autoSyncRef.current) return;
     const url = getApiUrl();
     if (!url || url.includes("YOUR_") || url.includes("YOUR_GAS_URL")) return;
     updateSyncStatus("syncing", "保存中...");
@@ -619,7 +621,7 @@ export default function App() {
   };
 
   const pushDeleteToServer = async (id: string) => {
-    if (!autoSync) return;
+    if (!autoSyncRef.current) return;
     const url = getApiUrl();
     if (!url || url.includes("YOUR_") || url.includes("YOUR_GAS_URL")) return;
     try {
@@ -664,17 +666,6 @@ export default function App() {
     } catch (e) {
       loadDefaultNotes();
     }
-
-    // Attempt server sync on startup ONLY if autoSync is enabled
-    try {
-      const savedAutoSync = localStorage.getItem("cn_auto_sync_enabled_v2");
-      const isAutoSyncOn = savedAutoSync !== null ? JSON.parse(savedAutoSync) : false;
-      if (isAutoSyncOn) {
-        setTimeout(() => {
-          syncFromServer();
-        }, 1200);
-      }
-    } catch {}
 
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -763,7 +754,7 @@ export default function App() {
       triggerLocalSave(finalUpdatedRange, finalUpdatedRange[0]?.id || null);
 
       // Auto-save/sync to Google Sheet if API is set up and autoSync is enabled
-      if (autoSync) {
+      if (autoSyncRef.current) {
         const url = getApiUrl();
         if (url && !url.includes("YOUR_") && !url.includes("YOUR_GAS_URL")) {
           apiPost({ action: "saveAll", notes: finalUpdatedRange })
@@ -2458,7 +2449,7 @@ const renderMarkdownToElements = (contentStr: string) => {
     setNotes(updatedList);
     setEditingFolder(null);
     triggerLocalSave(updatedList, activeId);
-    if (autoSync) {
+    if (autoSyncRef.current) {
       apiPost({ action: "saveAll", notes: updatedList })
         .then(() => toast("フォルダ名を変更し、クラウドへ同期しました"))
         .catch((e) => toast("更新保存エラー: " + e.message));
@@ -2540,7 +2531,7 @@ const renderMarkdownToElements = (contentStr: string) => {
             triggerLocalSave(finalUpdatedList, activeId);
             return finalUpdatedList;
           });
-          if (autoSync) {
+          if (autoSyncRef.current) {
             await apiPost({ action: "saveAll", notes: finalUpdatedList });
             toast("AI一括カテゴリフォルダ分類が完了し、クラウドへ保存しました ✦");
           } else {
@@ -2798,7 +2789,7 @@ const renderMarkdownToElements = (contentStr: string) => {
           triggerLocalSave(nextState, activeId);
           return nextState;
         });
-        if (autoSync) {
+        if (autoSyncRef.current) {
           apiPost({ action: "saveNote", note: nextState.find(n => n.id === freshNote.id)! }).catch(err => {
             console.warn("Intermediate server sync mismatch:", err);
           });
