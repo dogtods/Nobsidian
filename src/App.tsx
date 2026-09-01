@@ -132,27 +132,26 @@ const LS_KEY = "cn_notes_cache";
 const normalizeNoteItem = (n: Note): Note => {
   const rawText = (n.rawContent || n.columnJ || "").trim();
   const summaryText = (n.summary || "").trim();
-  let content = (n.content || "").trim();
+  
+  // N列は無視し、常にE列（AI要約・ハイライト）をベースにする。
+  let content = summaryText;
 
-  // N列の代わりに、常にE列（AI要約・ハイライト）をフロントエンドのメイン画面に表示する
-  if (summaryText) {
-    content = summaryText;
-    if (!content.startsWith("#") && !content.startsWith("【")) {
-      content = `# ${n.title}\n\n${summaryText}`;
-    }
-    if (n.dateStr && !content.includes(n.dateStr)) {
-      content += `\n\n---\n**日付:** ${n.dateStr}`;
-    }
-  } else if (!content && rawText) {
+  if (content && !content.startsWith("#") && !content.startsWith("【")) {
+    content = `# ${n.title}\n\n${content}`;
+  }
+  if (content && n.dateStr && !content.includes(n.dateStr)) {
+    content += `\n\n---\n**日付:** ${n.dateStr}`;
+  }
+  if (!content && rawText) {
     content = rawText;
   }
 
   return {
     ...n,
-    content: content || n.content || "",
+    content: content,  // フロントエンド用にはそのままE列由来のテキストをセット
+    summary: content,  // E列へ上書き保存されるように同じ内容をセット
     columnJ: rawText,
     rawContent: rawText,
-    summary: summaryText || n.summary || ""
   };
 };
 
@@ -705,11 +704,13 @@ export default function App() {
       return;
     }
 
+    const contentVal = bodyContent || `# ${formattedTitle}\n\n`;
+
     const newN: Note = {
       id: Math.random().toString(36).substring(2, 9) + Date.now().toString(36),
       title: formattedTitle,
-      content: bodyContent || `# ${formattedTitle}\n\n`,
-      summary: "",
+      content: contentVal,
+      summary: contentVal, // E列用に同期
       keywords: keywordMetadata,
       sourceUrl: "",
       createdAt: Date.now(),
@@ -730,7 +731,7 @@ export default function App() {
       id: Math.random().toString(36).substring(2, 9) + Date.now().toString(36),
       title: title,
       content: content,
-      summary: "",
+      summary: content, // E列用に同期
       keywords: folder ? `[folder:${folder}]` : "",
       sourceUrl: sourceUrl || "",
       createdAt: timestamp || Date.now(),
@@ -837,6 +838,7 @@ export default function App() {
     const updated: Note = {
       ...active,
       content: val,
+      summary: val, // E列（summary）にも同じ内容を反映して保存させる
       updatedAt: Date.now()
     };
 
@@ -1779,12 +1781,13 @@ const renderMarkdownToElements = (contentStr: string) => {
                 .join("\n");
             }
             
-            let newContent = current.content;
+            let baseText = resultItem.summary || current.summary;
+            let newContent = baseText;
             if (linkStr) {
-              const existingLinks = current.content.match(/\[\[(.*?)\]\]/g) || [];
+              const existingLinks = baseText.match(/\[\[(.*?)\]\]/g) || [];
               const newLinks = linkStr.split('\n').filter(l => !existingLinks.includes(l));
               if (newLinks.length > 0) {
-                newContent = current.content + "\n\n" + newLinks.join('\n');
+                newContent = baseText + "\n\n" + newLinks.join('\n');
               }
             }
             if (resultItem.visual_structure) {
@@ -1805,7 +1808,7 @@ const renderMarkdownToElements = (contentStr: string) => {
             newNotesList[targetIndex] = {
               ...current,
               content: newContent,
-              summary: resultItem.summary || current.summary,
+              summary: newContent, // 常に完全同期
               keywords: newKeywords,
               updatedAt: Date.now()
             };
@@ -2035,10 +2038,12 @@ const renderMarkdownToElements = (contentStr: string) => {
         const kwsStr = resultObj.keywords.join(", ");
         const updatedKw = folder !== "未分類" ? `${kwsStr}, [folder:${folder}]` : kwsStr;
 
+        const newSummary = needSummary ? (resultObj.summary || "") : active.summary;
         const updated = {
           ...active,
           keywords: updatedKw,
-          summary: needSummary ? (resultObj.summary || "") : active.summary,
+          summary: newSummary,
+          content: newSummary, // E列用に同期
           updatedAt: Date.now()
         };
 
@@ -2053,6 +2058,7 @@ const renderMarkdownToElements = (contentStr: string) => {
         const updated = {
           ...active,
           summary: resultObj.summary,
+          content: resultObj.summary, // E列用に同期
           updatedAt: Date.now()
         };
 
