@@ -36,14 +36,14 @@ const props = PropertiesService.getScriptProperties();
 
 // システム設定のデフォルト値
 const DEFAULT_CONFIG = {
-  GEMINI_MODEL: 'gemini-2.5-flash',
+  GEMINI_MODEL: 'gemini-flash-lite-latest',
   GEMINI_MAX_TOKENS: 8000,
   GEMINI_TEMPERATURE: 0.1,
 
   OUTPUT_MODE: 'json',
   MAX_INPUT_CHARS: 15000,
-  SKIP_GEMINI_FOR_SHORT_ARTICLES: 'false',
-  SHORT_ARTICLE_THRESHOLD: 50,
+  SKIP_GEMINI_FOR_SHORT_ARTICLES: 'true',
+  SHORT_ARTICLE_THRESHOLD: 400,
 
   SYSTEM_PERSONA: 'あなたは客観的かつ論理的な「ビジネスリサーチ・アナリスト」です。',
 
@@ -1066,14 +1066,14 @@ function buildHighQualityFallbackFields(rawContent, fallbackTitle, fallbackDate)
   const tags = extractCategoryFromText(rawContent, cleanTitle);
 
   const keywordList = tags && tags !== "一般" && tags !== "未分類"
-    ? `- [[${tags}]]: 本記事の主要な主題分野\n- [[産業動向]]: 業界および市場における最新の進展\n- [[実務対応]]: 関連基準や制度変更に伴う企業対応`
-    : `- [[産業動向]]: 業界および市場における最新の進展\n- [[サステナビリティ]]: 企業の持続可能性と環境対応\n- [[情報開示]]: 制度変更に伴う実務・経営対応`;
+    ? `- [[${tags}]]: 本記事の主要な関連分野\n- [[産業動向]]: 業界・市場における進展\n- [[実務対応]]: 関連基準や制度変更に伴う対応`
+    : `- [[産業動向]]: 業界・市場における最新の進展\n- [[情報開示]]: 制度変更に伴う実務・経営対応`;
 
   const highlights = 
     `### ${cleanTitle}\n\n` +
     `【要約】\n${summaryText}\n\n` +
     `【具体的数値・事実】\n${factSentences.join("\n")}\n\n` +
-    `【市場・実務への影響】\n・関連市場および業界における実務対応や事業機会・リスク動向に留意。\n・今後の規制動向や開示基準の進展に合わせた体制整備が重要。\n\n` +
+    `【市場・実務への影響】\n・(※AI解析に失敗したため自動抽出をスキップしました。元記事をご確認ください)\n\n` +
     `【キーワード】\n${keywordList}`;
 
   let targetDate = fallbackDate || "";
@@ -1151,7 +1151,11 @@ function buildSheetFieldsFromStructuredResult(result, rawContent, fallbackTitle,
 function analyzeText(content, persona, syncPrompt, apiKey, model, outputMode, title, pubDate) {
   if (outputMode !== 'free') {
     const structured = callGeminiStructuredAnalysis(content, pubDate, title, persona, syncPrompt, apiKey, model);
-    return buildSheetFieldsFromStructuredResult(structured, content, title, pubDate);
+    if (structured) {
+      return buildSheetFieldsFromStructuredResult(structured, content, title, pubDate);
+    } else {
+      Logger.log("[Fallback] 構造化出力(Structured Output)に失敗したため、フリーテキストモードでリトライします。");
+    }
   }
   const rawText = callGeminiFree(content, persona, syncPrompt, apiKey, model);
   return buildSheetFieldsFromFreeText(rawText, content, title, pubDate);
@@ -1170,7 +1174,11 @@ function analyzeFile(file, apiKey, model, persona, syncPrompt, outputMode) {
 
   if (outputMode !== 'free') {
     const structured = callGeminiStructuredFileAnalysis(file, pubDate, fileBaseName, persona, syncPrompt, apiKey, model);
-    return buildSheetFieldsFromStructuredResult(structured, fileBaseName, fileBaseName, pubDate);
+    if (structured) {
+      return buildSheetFieldsFromStructuredResult(structured, fileBaseName, fileBaseName, pubDate);
+    } else {
+      Logger.log("[Fallback] ファイルの構造化出力に失敗したため、フリーテキストモードでリトライします。");
+    }
   }
   const rawText = callGeminiFreeFile(file, apiKey, model, persona, syncPrompt);
   return buildSheetFieldsFromFreeText(rawText, fileBaseName, fileBaseName, pubDate);
@@ -1366,14 +1374,19 @@ function handleGetNotes(targetSheetName, targetSsUrl) {
 
     let content = editedContent;
     if (!content.trim()) {
-      if (rawAll.trim()) {
+      if (highlights.trim()) {
+        content = highlights;
+        if (!content.startsWith("#") && !content.startsWith("【")) {
+          content = `# ${title}\n\n${highlights}`;
+        }
+        if (dateStr && !content.includes(dateStr)) content += `\n\n---\n**日付:** ${dateStr}`;
+        if (sourceUrl && !content.includes(sourceUrl)) content += `\n**リンク:** [${sourceUrl}](${sourceUrl})`;
+      } else if (rawAll.trim()) {
         content = rawAll;
-      } else if (highlights.trim()) {
-        content = `# ${title}\n\n${highlights}`;
-        if (dateStr) content += `\n\n---\n**日付:** ${dateStr}`;
-        if (sourceUrl) content += `\n**リンク:** [${sourceUrl}](${sourceUrl})`;
       }
     }
+
+    const fullArticleText = rawAll.trim() || metaInfo.trim() || "";
 
     return {
       id: id,
@@ -1385,7 +1398,7 @@ function handleGetNotes(targetSheetName, targetSsUrl) {
       updatedAt: uAt,
       sourceUrl: sourceUrl,
       timeline: timeline,
-      columnJ: metaInfo,
+      columnJ: fullArticleText,
       rawContent: rawAll,
       metaInfo: metaInfo,
       dateStr: dateStr,

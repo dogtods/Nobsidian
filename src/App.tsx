@@ -3269,14 +3269,14 @@ const renderMarkdownToElements = (contentStr: string) => {
                     <span className="hidden sm:inline">末尾に貼り付け</span>
                   </button>
 
-                  {activeNote.columnJ && activeNote.columnJ.trim() !== "" && (
+                  {(activeNote.columnJ || activeNote.rawContent) && (activeNote.columnJ || activeNote.rawContent)!.trim() !== "" && (
                     <button
                       onClick={() => setShowSourceMemo(!showSourceMemo)}
                       className={`p-1 px-2.5 border text-xs font-medium rounded-md cursor-pointer flex items-center gap-1.5 transition-all
                         ${showSourceMemo 
                           ? "bg-blue-900/30 border-blue-500/30 text-blue-300 hover:bg-blue-900/50" 
                           : "bg-transparent border-[var(--border2)] text-[var(--subtle)] hover:text-white hover:bg-[var(--border)]"}`}
-                      title="元の記事本文(J列)の表示切り替え"
+                      title="元の記事本文の表示切り替え"
                     >
                       <FileText className={`w-3.5 h-3.5 flex-shrink-0 ${showSourceMemo ? "text-blue-400" : "text-[var(--subtle)]"}`} />
                       <span>記事全文</span>
@@ -3373,7 +3373,7 @@ const renderMarkdownToElements = (contentStr: string) => {
             {/* CONTENT SPLIT EDITOR PANE */}
             <div className="flex-1 flex overflow-hidden relative print:overflow-visible print:bg-white print:border-none print:m-0 print:p-0">
               <div className="flex-1 flex flex-col overflow-hidden relative print:overflow-visible print:bg-white print:border-none print:m-0 print:p-0">
-                {showSourceMemo && activeNote.columnJ && (
+                {showSourceMemo && (activeNote.columnJ || activeNote.rawContent) && (
                   <div className="mx-auto mt-6 md:mt-8 w-[99%] max-w-3xl p-4 bg-[#0d1117] border border-[#30363d] rounded-lg animate-in fade-in flex flex-col shrink-0 max-h-[58vh] print:hidden">
                     <div className="text-xs text-gray-400 font-semibold mb-3 flex flex-shrink-0 items-center justify-between border-b border-[#30363d] pb-2">
                       <div className="flex items-center gap-3">
@@ -3430,8 +3430,9 @@ const renderMarkdownToElements = (contentStr: string) => {
                       <div className="flex items-center gap-2">
                         <button
                           onClick={async () => {
-                            if (activeNote.columnJ) {
-                              await copyToClipboard(activeNote.columnJ, "記事全文をコピーしました");
+                            const fullTxt = activeNote.columnJ || activeNote.rawContent || "";
+                            if (fullTxt) {
+                              await copyToClipboard(fullTxt, "記事全文をコピーしました");
                             }
                           }}
                           className="p-1 px-2.5 bg-transparent border border-[#30363d] text-xs text-gray-400 hover:text-white hover:bg-[#30363d] font-medium rounded-md cursor-pointer flex items-center gap-1.5 transition-all"
@@ -3447,7 +3448,7 @@ const renderMarkdownToElements = (contentStr: string) => {
                       className={`${sourceMemoFontSize} text-[var(--text)] whitespace-pre-wrap overflow-y-auto custom-scrollbar pr-2 flex-1 select-text`}
                       style={{ fontFamily: "var(--font-sans)", lineHeight: sourceMemoLineHeight }}
                     >
-                      {activeNote.columnJ}
+                      {activeNote.columnJ || activeNote.rawContent}
                     </div>
                   </div>
                 )}
