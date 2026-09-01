@@ -134,18 +134,14 @@ const normalizeNoteItem = (n: Note): Note => {
   const summaryText = (n.summary || "").trim();
   let content = (n.content || "").trim();
 
-  // E列（AI要約・ハイライト）が存在し、かつ content が未設定か、または rawContent（I列全文）と同一の場合、
-  // ユーザーが各記事を開いて読むメイン画面に E列 の要約を美しく表示する
-  if (summaryText && (!content || content === rawText)) {
+  // N列の代わりに、常にE列（AI要約・ハイライト）をフロントエンドのメイン画面に表示する
+  if (summaryText) {
     content = summaryText;
     if (!content.startsWith("#") && !content.startsWith("【")) {
       content = `# ${n.title}\n\n${summaryText}`;
     }
     if (n.dateStr && !content.includes(n.dateStr)) {
       content += `\n\n---\n**日付:** ${n.dateStr}`;
-    }
-    if (n.sourceUrl && !content.includes(n.sourceUrl)) {
-      content += `\n**リンク:** [${n.sourceUrl}](${n.sourceUrl})`;
     }
   } else if (!content && rawText) {
     content = rawText;
@@ -3772,7 +3768,7 @@ const renderMarkdownToElements = (contentStr: string) => {
             <div className="p-1 px-8 border-t border-[var(--border)] text-[10px] text-[var(--muted)] flex gap-4 select-none items-center">
               <span>作成日: {new Date(activeNote.createdAt).toLocaleString("ja-JP")}</span>
               <span>更新日: {new Date(activeNote.updatedAt).toLocaleString("ja-JP")}</span>
-              <span className="ml-auto md:ml-0 md:hidden">
+              <span className="ml-auto md:ml-0 flex items-center">
                 {activeNote.sourceUrl ? (
                   <a
                     href={activeNote.sourceUrl}
@@ -3783,7 +3779,7 @@ const renderMarkdownToElements = (contentStr: string) => {
                     🔗 {activeNote.sourceUrl.split('.').pop()?.split('?')[0].toUpperCase().substring(0, 4) || 'LINK'}
                   </a>
                 ) : (
-                  <span className="text-[var(--purple)] bg-[#a371f710] border border-[#a371f720] px-1.5 py-0.5 rounded">📱 左右スワイプで記事読込</span>
+                  <span className="md:hidden text-[var(--purple)] bg-[#a371f710] border border-[#a371f720] px-1.5 py-0.5 rounded">📱 左右スワイプで記事読込</span>
                 )}
               </span>
               <span className="ml-auto hidden md:inline">文字数: {activeNote.content.length} 文字</span>
