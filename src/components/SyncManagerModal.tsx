@@ -117,17 +117,42 @@ export default function SyncManagerModal({
         </div>
 
         {/* Auto Sync Toggle */}
-        <div className="bg-[#0d1117] border border-[#30363d] rounded-xl p-3.5 flex items-center justify-between text-xs">
-          <label className="flex items-center gap-2.5 cursor-pointer select-none w-full">
+        <div className={`border rounded-xl p-4 transition-all ${
+          autoSync 
+            ? "bg-[#1f6feb10] border-[#1f6feb44]" 
+            : "bg-[#0d1117] border-[#30363d]"
+        }`}>
+          <label className="flex items-start gap-3 cursor-pointer select-none">
             <input
               type="checkbox"
               checked={autoSync}
               onChange={(e) => setAutoSync(e.target.checked)}
-              className="rounded bg-[#161b22] border-[#30363d] text-[var(--blue)] focus:ring-0 cursor-pointer w-4 h-4"
+              className="mt-0.5 rounded bg-[#161b22] border-[#30363d] text-[var(--blue)] focus:ring-0 cursor-pointer w-4 h-4"
             />
-            <div className="flex flex-col">
-              <span className="font-bold text-white text-xs">編集時の自動同期（リアルタイム保存）を有効にする</span>
-              <span className="text-[10px] text-[var(--subtle)]">チェック中のみ、ノートの作成・編集時に自動でGoogleスプレッドシートへ同期します。</span>
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-white text-xs">
+                  自動同期（起動時・編集時のクラウド連携）を有効にする
+                </span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  autoSync 
+                    ? "bg-blue-500/20 text-[var(--blue)] border border-blue-500/30" 
+                    : "bg-gray-700/40 text-gray-300 border border-gray-600/30"
+                }`}>
+                  {autoSync ? "⚡ 自動同期 ON" : "🔒 手動同期のみ (OFF)"}
+                </span>
+              </div>
+              <p className="text-[11px] text-[var(--subtle)] leading-relaxed">
+                {autoSync ? (
+                  <span className="text-blue-300">
+                    アプリ起動時や、ノート作成・編集・削除時に、スプレッドシートへ自動でリアルタイム同期・保存されます。
+                  </span>
+                ) : (
+                  <span className="text-gray-300">
+                    勝手にスプレッドシートと同期しません。下のボタン（①〜③）をクリックした時のみ手動で同期・保存・読込が実行されます。
+                  </span>
+                )}
+              </p>
             </div>
           </label>
         </div>

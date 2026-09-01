@@ -198,14 +198,14 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState<"synced" | "syncing" | "offline" | "error">("offline");
   const [syncLabel, setSyncLabel] = useState("オフライン");
 
-  // Auto sync state
+  // Auto sync state (Defaults to false so it won't automatically sync without explicit user preference)
   const [autoSync, setAutoSync] = useState<boolean>(() => {
-    const saved = localStorage.getItem("cn_auto_sync_enabled");
-    return saved !== null ? JSON.parse(saved) : true;
+    const saved = localStorage.getItem("cn_auto_sync_enabled_v2");
+    return saved !== null ? JSON.parse(saved) : false;
   });
 
   useEffect(() => {
-    localStorage.setItem("cn_auto_sync_enabled", JSON.stringify(autoSync));
+    localStorage.setItem("cn_auto_sync_enabled_v2", JSON.stringify(autoSync));
   }, [autoSync]);
 
   // AI results box state within the editor helper panel
@@ -665,10 +665,16 @@ export default function App() {
       loadDefaultNotes();
     }
 
-    // Attempt server sync on startup
-    setTimeout(() => {
-      syncFromServer();
-    }, 1200);
+    // Attempt server sync on startup ONLY if autoSync is enabled
+    try {
+      const savedAutoSync = localStorage.getItem("cn_auto_sync_enabled_v2");
+      const isAutoSyncOn = savedAutoSync !== null ? JSON.parse(savedAutoSync) : false;
+      if (isAutoSyncOn) {
+        setTimeout(() => {
+          syncFromServer();
+        }, 1200);
+      }
+    } catch {}
 
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -2452,9 +2458,13 @@ const renderMarkdownToElements = (contentStr: string) => {
     setNotes(updatedList);
     setEditingFolder(null);
     triggerLocalSave(updatedList, activeId);
-    apiPost({ action: "saveAll", notes: updatedList })
-      .then(() => toast("フォルダ名を変更しました"))
-      .catch((e) => toast("更新保存エラー: " + e.message));
+    if (autoSync) {
+      apiPost({ action: "saveAll", notes: updatedList })
+        .then(() => toast("フォルダ名を変更し、クラウドへ同期しました"))
+        .catch((e) => toast("更新保存エラー: " + e.message));
+    } else {
+      toast("フォルダ名を変更しました（手動同期モード）");
+    }
   };
 
   const autoOrganizeWithAIPipeline = async () => {
@@ -2530,9 +2540,12 @@ const renderMarkdownToElements = (contentStr: string) => {
             triggerLocalSave(finalUpdatedList, activeId);
             return finalUpdatedList;
           });
-          // Bulk save via saveAll is risky but since we are replacing all, we can keep saveAll or call saveNote sequentially. Let's stick to saveAll but with the accurate finalUpdatedList.
-          await apiPost({ action: "saveAll", notes: finalUpdatedList });
-          toast("AI一括カテゴリフォルダ分類が完了しました ✦");
+          if (autoSync) {
+            await apiPost({ action: "saveAll", notes: finalUpdatedList });
+            toast("AI一括カテゴリフォルダ分類が完了し、クラウドへ保存しました ✦");
+          } else {
+            toast("AI一括カテゴリフォルダ分類が完了しました（手動同期モード） ✦");
+          }
         } catch (e: any) {
           toast("AIフォルダ自動化エラー: " + e.message);
         } finally {
@@ -2785,9 +2798,11 @@ const renderMarkdownToElements = (contentStr: string) => {
           triggerLocalSave(nextState, activeId);
           return nextState;
         });
-        apiPost({ action: "saveNote", note: nextState.find(n => n.id === freshNote.id)! }).catch(err => {
-          console.warn("Intermediate server sync mismatch:", err);
-        });
+        if (autoSync) {
+          apiPost({ action: "saveNote", note: nextState.find(n => n.id === freshNote.id)! }).catch(err => {
+            console.warn("Intermediate server sync mismatch:", err);
+          });
+        }
 
 
         // 1件毎の冷却スリープ（AI時のみ）
@@ -2873,11 +2888,21 @@ const renderMarkdownToElements = (contentStr: string) => {
               <input
                 type="checkbox"
                 checked={autoSync}
-                onChange={(e) => setAutoSync(e.target.checked)}
+                onChange={(e) => {
+                  const val = e.target.checked;
+                  setAutoSync(val);
+                  if (val) {
+                    toast("クラウド自動同期を有効化しました ✦");
+                  } else {
+                    toast("手動同期モードに切り替えました（勝手な同期は行われません） 🔒");
+                  }
+                }}
                 className="rounded bg-[#0d1117] border-[#30363d] text-[var(--blue)] focus:ring-0 cursor-pointer w-3.5 h-3.5"
-                title="チェック時のみ、編集時に自動同期します"
+                title={autoSync ? "自動同期が有効です。チェックを外すと勝手な同期を停止します。" : "チェックを入れると編集時に自動でスプレッドシートへ同期します。"}
               />
-              <span>編集時の自動同期</span>
+              <span className={autoSync ? "text-[var(--blue)] font-medium" : "text-gray-400"}>
+                {autoSync ? "クラウド自動同期: ON" : "自動同期: OFF (手動)"}
+              </span>
             </label>
           </div>
 
