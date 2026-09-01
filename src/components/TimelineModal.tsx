@@ -71,12 +71,11 @@ export default function TimelineModal({
   const folders = useMemo(() => {
     const list = filteredNotes
       .filter(n => {
-        const folderName = n.keywords?.match(/\[folder:(.+?)\]/)?.[1] || "未分類";
+        const folderName = n.keywords || "未分類";
         return true;
       })
       .map(n => {
-        const match = n.keywords?.match(/\[folder:(.+?)\]/);
-        return match ? match[1] : "未分類";
+        return n.keywords || "未分類";
       });
     return ["all", ...new Set(list)].filter(Boolean);
   }, [filteredNotes]);
@@ -194,9 +193,8 @@ export default function TimelineModal({
     const timelineItemsList: TimelineItem[] = [];
 
     filteredNotes.forEach(note => {
-      const folderName = note.keywords?.match(/\[folder:(.+?)\]/)?.[1] || "未分類";
-      // Exclude 99* folder check removed
-
+      const folderName = note.keywords || "未分類";
+      
       // Extract strictly if Column L timeline data exists
       if (note.timeline && note.timeline.trim() !== "") {
         const lines = note.timeline.split(/\r?\n/);

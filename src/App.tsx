@@ -3772,8 +3772,21 @@ const renderMarkdownToElements = (contentStr: string) => {
             <div className="p-1 px-8 border-t border-[var(--border)] text-[10px] text-[var(--muted)] flex gap-4 select-none items-center">
               <span>作成日: {new Date(activeNote.createdAt).toLocaleString("ja-JP")}</span>
               <span>更新日: {new Date(activeNote.updatedAt).toLocaleString("ja-JP")}</span>
-              <span className="md:hidden text-[var(--purple)] bg-[#a371f710] border border-[#a371f720] px-1.5 py-0.5 rounded">📱 左右スワイプで記事読込</span>
-              <span className="ml-auto">文字数: {activeNote.content.length} 文字</span>
+              <span className="ml-auto md:ml-0 md:hidden">
+                {activeNote.sourceUrl ? (
+                  <a
+                    href={activeNote.sourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[var(--blue)] bg-blue-900/30 border border-blue-500/30 px-1.5 py-0.5 rounded flex items-center hover:bg-blue-900/50 transition-colors"
+                  >
+                    🔗 {activeNote.sourceUrl.split('.').pop()?.split('?')[0].toUpperCase().substring(0, 4) || 'LINK'}
+                  </a>
+                ) : (
+                  <span className="text-[var(--purple)] bg-[#a371f710] border border-[#a371f720] px-1.5 py-0.5 rounded">📱 左右スワイプで記事読込</span>
+                )}
+              </span>
+              <span className="ml-auto hidden md:inline">文字数: {activeNote.content.length} 文字</span>
               <span>リンク数: {getOutlinks(activeNote.content).length} 個</span>
             </div>
           </div>

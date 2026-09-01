@@ -12,13 +12,26 @@ export function extractWikiLinks(content: string): string[] {
   return matches.map(m => m.slice(2, -2).trim()).filter(t => t.length > 0);
 }
 
+// Extract keywords specifically from E column summary 【キーワード】 section
+export function extractKeywordsSectionLinks(summary: string): string[] {
+  if (!summary) return [];
+  const keywordSectionIdx = summary.indexOf("【キーワード】");
+  let targetText = summary;
+  if (keywordSectionIdx !== -1) {
+    targetText = summary.substring(keywordSectionIdx);
+  }
+  return extractWikiLinks(targetText);
+}
+
 // Extract folder/category name from keywords: e.g. [folder:Folder Name] or plain category name (e.g. "太陽光発電", "環境")
 export function getFolderFromKeywords(keywordsStr: string): string {
   if (!keywordsStr || typeof keywordsStr !== "string") return "未分類";
   const trimmed = keywordsStr.trim();
   if (!trimmed) return "未分類";
+
   const match = trimmed.match(/\[folder:(.+?)\]/i);
   if (match) return match[1].trim();
+
   // Strip wikilinks: [[Category]] -> Category
   let clean = trimmed.replace(/^\[\[|\]\]$/g, '').trim();
   // Strip hashtags: #Category -> Category
@@ -26,6 +39,17 @@ export function getFolderFromKeywords(keywordsStr: string): string {
   // If multiple words or tags separated by comma, slash, bullet, or newline, take primary
   const first = clean.split(/[,、\/\n・]/)[0].trim();
   return first || "未分類";
+}
+
+// Helper to get effective date from K column (dateStr) or fallback to createdAt
+export function getNoteDateMillis(note: Note): number {
+  if (note.dateStr) {
+    const parsed = new Date(note.dateStr.replace(/\//g, "-"));
+    if (!isNaN(parsed.getTime())) {
+      return parsed.getTime();
+    }
+  }
+  return note.createdAt;
 }
 
 // Convert timestamp to YYYY-MM-DD format
@@ -57,12 +81,12 @@ export function getFilteredNotes(notes: Note[], filterStart: string, filterEnd: 
   const endTime = filterEnd ? new Date(filterEnd + "T23:59:59").getTime() : null;
 
   return notes.filter(n => {
-    if (startTime && n.createdAt < startTime) return false;
-    if (endTime && n.createdAt > endTime) return false;
+    const dTime = getNoteDateMillis(n);
+    if (startTime && dTime < startTime) return false;
+    if (endTime && dTime > endTime) return false;
     
     // Convert keywords to folder name to check if excluded
     const folderName = getFolderFromKeywords(n.keywords);
-
     return true;
   });
 }
@@ -83,18 +107,20 @@ export function parseHeatmapData(notes: Note[], filterStart: string, filterEnd: 
   const excludedSet = new Set((excludedKeywords || []).map(k => k.toLowerCase()));
 
   filtered.forEach(note => {
-    const dStr = isWeekly ? getMondayOfDate(note.createdAt) : formatDateStr(note.createdAt);
+    const dTime = getNoteDateMillis(note);
+    const dStr = isWeekly ? getMondayOfDate(dTime) : formatDateStr(dTime);
     allDatesSet.add(dStr);
 
     if (!dateWiseKeywordCounts[dStr]) {
       dateWiseKeywordCounts[dStr] = {};
     }
 
-    const allLinks = extractWikiLinks(note.content);
+    const allLinks = extractKeywordsSectionLinks(note.summary || "");
     const keywords = allLinks.filter(kw => {
       const cleanKw = kw.trim().toLowerCase();
       return !existingTitlesSet.has(cleanKw) && !excludedSet.has(cleanKw);
     });
+
     keywords.forEach(kw => {
       allKeywordsSet.add(kw);
       dateWiseKeywordCounts[dStr][kw] = (dateWiseKeywordCounts[dStr][kw] || 0) + 1;
@@ -122,6 +148,7 @@ export function parseHeatmapData(notes: Note[], filterStart: string, filterEnd: 
     if (b === "Unknown") return -1;
     return new Date(a).getTime() - new Date(b).getTime();
   });
+
   if (sortedDates.length === 0) {
     // Fallback if empty to keep SVG initialized
     const today = isWeekly ? getMondayOfDate(Date.now()) : formatDateStr(Date.now());
@@ -156,8 +183,8 @@ export function parseCoOccurData(notes: Note[], filterStart: string, filterEnd: 
   const excludedSet = new Set((excludedKeywords || []).map(k => k.toLowerCase()));
 
   filtered.forEach(note => {
-    // Unique wikilinks in this single note
-    const allLinks = Array.from(new Set(extractWikiLinks(note.content)));
+    // Unique wikilinks in this single note (extracting from summary)
+    const allLinks = Array.from(new Set(extractKeywordsSectionLinks(note.summary || "")));
     const links = allLinks.filter(kw => {
       const cleanKw = kw.trim().toLowerCase();
       return !existingTitlesSet.has(cleanKw) && !excludedSet.has(cleanKw);
@@ -221,18 +248,20 @@ export function parseStreamData(notes: Note[], filterStart: string, filterEnd: s
   const excludedSet = new Set((excludedKeywords || []).map(k => k.toLowerCase()));
 
   filtered.forEach(note => {
-    const dStr = isWeekly ? getMondayOfDate(note.createdAt) : formatDateStr(note.createdAt);
+    const dTime = getNoteDateMillis(note);
+    const dStr = isWeekly ? getMondayOfDate(dTime) : formatDateStr(dTime);
     allDatesSet.add(dStr);
 
     if (!dateWiseKeywordCounts[dStr]) {
       dateWiseKeywordCounts[dStr] = {};
     }
 
-    const allLinks = extractWikiLinks(note.content);
+    const allLinks = extractKeywordsSectionLinks(note.summary || "");
     const keywords = allLinks.filter(kw => {
       const cleanKw = kw.trim().toLowerCase();
       return !existingTitlesSet.has(cleanKw) && !excludedSet.has(cleanKw);
     });
+
     keywords.forEach(kw => {
       allKeywordsSet.add(kw);
       dateWiseKeywordCounts[dStr][kw] = (dateWiseKeywordCounts[dStr][kw] || 0) + 1;
@@ -259,6 +288,7 @@ export function parseStreamData(notes: Note[], filterStart: string, filterEnd: s
     if (b === "Unknown") return -1;
     return new Date(a).getTime() - new Date(b).getTime();
   });
+
   if (sortedDates.length === 0) {
     sortedDates = [isWeekly ? getMondayOfDate(Date.now()) : formatDateStr(Date.now())];
   }
@@ -284,37 +314,33 @@ export function parseStreamData(notes: Note[], filterStart: string, filterEnd: s
  */
 export function parseBubbleData(notes: Note[], filterStart: string, filterEnd: string, excludedKeywords: string[] = [], isWeekly: boolean = false, excludedCategories: string[] = []): BubblePoint[] {
   const filtered = getFilteredNotes(notes, filterStart, filterEnd);
-
   const bubblePointsMap: { [key: string]: BubblePoint } = {};
+  
   const existingTitlesSet = new Set(notes.map(n => n.title.trim().toLowerCase()));
   const excludedSet = new Set((excludedKeywords || []).map(k => k.toLowerCase()));
   const excludedCatSet = new Set((excludedCategories || []).map(c => c.toLowerCase()));
 
   filtered.forEach(note => {
-    const dStr = isWeekly ? getMondayOfDate(note.createdAt) : formatDateStr(note.createdAt);
+    const dTime = getNoteDateMillis(note);
+    const dStr = isWeekly ? getMondayOfDate(dTime) : formatDateStr(dTime);
+    
+    // We are asked to plot Column D counts by date. So category is just Column D (getFolderFromKeywords).
     const category = getFolderFromKeywords(note.keywords);
-
+    
     if (excludedCatSet.has(category.toLowerCase())) {
       return;
     }
 
-    const allLinks = extractWikiLinks(note.content);
-    const keywords = allLinks.filter(kw => {
-      const cleanKw = kw.trim().toLowerCase();
-      return !existingTitlesSet.has(cleanKw) && !excludedSet.has(cleanKw);
-    });
-    keywords.forEach(kw => {
-      const uniqueKey = `${dStr}|${category}|${kw}`;
-      if (!bubblePointsMap[uniqueKey]) {
-        bubblePointsMap[uniqueKey] = {
-          date: dStr,
-          category,
-          keyword: kw,
-          count: 0
-        };
-      }
-      bubblePointsMap[uniqueKey].count += 1;
-    });
+    const uniqueKey = `${dStr}|${category}|${category}`;
+    if (!bubblePointsMap[uniqueKey]) {
+      bubblePointsMap[uniqueKey] = {
+        date: dStr,
+        category,
+        keyword: category, // setting keyword equal to category for plotting
+        count: 0
+      };
+    }
+    bubblePointsMap[uniqueKey].count += 1;
   });
 
   return Object.values(bubblePointsMap).sort((a, b) => {
