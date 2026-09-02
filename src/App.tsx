@@ -4376,6 +4376,7 @@ const renderMarkdownToElements = (contentStr: string) => {
           excludedKeywords={excludedKeywords}
           onExcludeKeyword={handleExcludeKeyword}
           onIncludeKeyword={handleIncludeKeyword}
+          focusNote={activeNote}
         />
       )}
 
@@ -4389,6 +4390,7 @@ const renderMarkdownToElements = (contentStr: string) => {
           excludedKeywords={excludedKeywords}
           onExcludeKeyword={handleExcludeKeyword}
           onIncludeKeyword={handleIncludeKeyword}
+          focusNote={activeNote}
         />
       )}
 
@@ -4403,6 +4405,7 @@ const renderMarkdownToElements = (contentStr: string) => {
           onExcludeKeyword={handleExcludeKeyword}
           onIncludeKeyword={handleIncludeKeyword}
           onCopy={copyToClipboard}
+          focusNote={activeNote}
         />
       )}
 
@@ -4419,6 +4422,7 @@ const renderMarkdownToElements = (contentStr: string) => {
           excludedCategories={excludedCategories}
           onExcludeCategory={handleExcludeCategory}
           onIncludeCategory={handleIncludeCategory}
+          focusNote={activeNote}
         />
       )}
 
@@ -4444,6 +4448,7 @@ const renderMarkdownToElements = (contentStr: string) => {
             setMode("preview");
           }}
           toast={toast}
+          focusNote={activeNote}
         />
       )}
 

@@ -6,7 +6,7 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import * as d3 from "d3";
 import { Note } from "../types";
-import { parseStreamData, formatDateStr } from "../utils/graphDataParser";
+import { parseStreamData, formatDateStr, extractNoteKeywords } from "../utils/graphDataParser";
 import { getStoredPrompt } from "./PromptSettingsModal";
 
 interface StreamModalProps {
@@ -19,6 +19,7 @@ interface StreamModalProps {
   onExcludeKeyword?: (kw: string) => void;
   onIncludeKeyword?: (kw: string) => void;
   onCopy?: (text: string, msg: string) => void;
+  focusNote?: Note | null;
 }
 
 export default function StreamModal({
@@ -30,13 +31,32 @@ export default function StreamModal({
   excludedKeywords = [],
   onExcludeKeyword,
   onIncludeKeyword,
-  onCopy
+  onCopy,
+  focusNote
 }: StreamModalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [isWeekly, setIsWeekly] = useState(false);
   const [wordLimit, setWordLimit] = useState(12);
   const [selectedAnalysisKeywords, setSelectedAnalysisKeywords] = useState<string[]>([]);
+
+  // Extract keywords of the focused note if provided
+  const noteKeywords = useMemo(() => {
+    return focusNote ? extractNoteKeywords(focusNote) : [];
+  }, [focusNote]);
+
+  const [isFocusedMode, setIsFocusedMode] = useState<boolean>(() => {
+    return Boolean(focusNote && noteKeywords.length > 0);
+  });
+
+  // Re-sync focus mode if focusNote changes
+  useEffect(() => {
+    if (focusNote && noteKeywords.length > 0) {
+      setIsFocusedMode(true);
+    } else {
+      setIsFocusedMode(false);
+    }
+  }, [focusNote, noteKeywords.length]);
 
   const [tooltip, setTooltip] = useState<{ show: boolean; x: number; y: number; name: string; color: string }>({
     show: false,
@@ -46,10 +66,11 @@ export default function StreamModal({
     color: ""
   });
 
-  // Calculate the full potential set of stream words/keywords (up to 60 keywords)
+  // Calculate the stream words/keywords (using focusKeywords if in focused mode)
   const allStreamData = useMemo(() => {
-    return parseStreamData(notes, filterStart, filterEnd, 60, excludedKeywords, isWeekly);
-  }, [notes, filterStart, filterEnd, excludedKeywords, isWeekly]);
+    const activeFocusKws = (isFocusedMode && noteKeywords.length > 0) ? noteKeywords : undefined;
+    return parseStreamData(notes, filterStart, filterEnd, 60, excludedKeywords, isWeekly, activeFocusKws);
+  }, [notes, filterStart, filterEnd, excludedKeywords, isWeekly, isFocusedMode, noteKeywords]);
 
   // Extract active list based on wordLimit
   const activeSeries = useMemo(() => {
@@ -290,6 +311,45 @@ export default function StreamModal({
             ✕
           </div>
         </div>
+
+        {/* Focus Note Banner */}
+        {focusNote && (
+          <div className="px-6 py-2 bg-[#1f293d] border-b border-[#388bfd44] flex flex-wrap items-center justify-between gap-3 text-xs shrink-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="px-2.5 py-0.5 rounded-full bg-[#388bfd33] text-[#58a6ff] font-bold border border-[#388bfd66] text-[11px] flex items-center gap-1">
+                📌 この記事のキーワード推移
+              </span>
+              <span className="text-[var(--bright)] font-semibold max-w-[240px] sm:max-w-md truncate" title={focusNote.title}>
+                {focusNote.title}
+              </span>
+              <span className="text-[var(--muted)] text-[11px]">
+                ({noteKeywords.length}個のキーワード)
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="flex bg-[#161b22] border border-[var(--border2)] rounded-md p-0.5 text-xs">
+                <button
+                  onClick={() => setIsFocusedMode(true)}
+                  disabled={noteKeywords.length === 0}
+                  className={`px-3 py-1 font-semibold rounded cursor-pointer transition-all ${
+                    isFocusedMode ? "bg-[#388bfd33] text-[#58a6ff] font-bold border border-[#388bfd55]" : "text-[var(--subtle)] hover:bg-[#ffffff08]"
+                  }`}
+                >
+                  記事キーワード ({noteKeywords.length})
+                </button>
+                <button
+                  onClick={() => setIsFocusedMode(false)}
+                  className={`px-3 py-1 font-semibold rounded cursor-pointer transition-all ${
+                    !isFocusedMode ? "bg-[var(--border)] text-[var(--bright)] font-bold" : "text-[var(--subtle)] hover:bg-[#ffffff08]"
+                  }`}
+                >
+                  全体トレンド
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Dynamic Controls Bar */}
         <div className="p-3 px-6 bg-[#161b22] border-b border-[var(--border)] flex flex-wrap gap-4 items-center shrink-0 text-xs">

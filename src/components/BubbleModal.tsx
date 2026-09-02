@@ -3,10 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import * as d3 from "d3";
 import { Note } from "../types";
-import { parseBubbleData } from "../utils/graphDataParser";
+import { parseBubbleData, extractNoteKeywords, getFolderFromKeywords } from "../utils/graphDataParser";
 
 interface BubbleModalProps {
   isOpen: boolean;
@@ -20,6 +20,7 @@ interface BubbleModalProps {
   excludedCategories?: string[];
   onExcludeCategory?: (cat: string) => void;
   onIncludeCategory?: (cat: string) => void;
+  focusNote?: Note | null;
 }
 
 export default function BubbleModal({
@@ -33,12 +34,36 @@ export default function BubbleModal({
   onIncludeKeyword,
   excludedCategories = [],
   onExcludeCategory,
-  onIncludeCategory
+  onIncludeCategory,
+  focusNote
 }: BubbleModalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [isWeekly, setIsWeekly] = useState(false);
   const [excludeExpanded, setExcludeExpanded] = useState(false);
+
+  // Extract keywords & category of the focused note if provided
+  const noteKeywords = useMemo(() => {
+    return focusNote ? extractNoteKeywords(focusNote) : [];
+  }, [focusNote]);
+
+  const noteCategory = useMemo(() => {
+    return focusNote ? getFolderFromKeywords(focusNote.keywords) : undefined;
+  }, [focusNote]);
+
+  const [isFocusedMode, setIsFocusedMode] = useState<boolean>(() => {
+    return Boolean(focusNote && (noteKeywords.length > 0 || noteCategory));
+  });
+
+  // Re-sync focus mode if focusNote changes
+  useEffect(() => {
+    if (focusNote && (noteKeywords.length > 0 || noteCategory)) {
+      setIsFocusedMode(true);
+    } else {
+      setIsFocusedMode(false);
+    }
+  }, [focusNote, noteKeywords.length, noteCategory]);
+
   const [tooltip, setTooltip] = useState<{ show: boolean; x: number; y: number; date: string; category: string; keyword: string; count: number; color: string }>({
     show: false,
     x: 0,
@@ -53,8 +78,10 @@ export default function BubbleModal({
   useEffect(() => {
     if (!isOpen || !svgRef.current || !containerRef.current) return;
 
-    // Fetch dynamic bubble data parsed with isWeekly option and excluded lists
-    const rawData = parseBubbleData(notes, filterStart, filterEnd, excludedKeywords, isWeekly, excludedCategories);
+    // Fetch dynamic bubble data parsed with focus filters if active
+    const activeFocusKws = (isFocusedMode && noteKeywords.length > 0) ? noteKeywords : undefined;
+    const activeFocusCat = isFocusedMode ? noteCategory : undefined;
+    const rawData = parseBubbleData(notes, filterStart, filterEnd, excludedKeywords, isWeekly, excludedCategories, activeFocusKws, activeFocusCat);
 
     // Extract axes dimensions
     const dates = Array.from(new Set(rawData.map(d => d.date))).sort((a,b) => new Date(a).getTime() - new Date(b).getTime());
@@ -76,7 +103,7 @@ export default function BubbleModal({
         .attr("text-anchor", "middle")
         .attr("fill", "var(--muted)")
         .style("font-size", "14px")
-        .text("指定した期間に WikiLink キーワードを含むノートがありません");
+        .text("指定した条件に一致するキーワードを含むノートがありません");
       return;
     }
 
@@ -235,7 +262,7 @@ export default function BubbleModal({
       .delay((_, i) => i * 15)
       .attr("r", d => radiusScale(d.count));
 
-  }, [isOpen, notes, filterStart, filterEnd, excludedKeywords, excludedCategories, isWeekly]);
+  }, [isOpen, notes, filterStart, filterEnd, excludedKeywords, excludedCategories, isWeekly, isFocusedMode, noteKeywords, noteCategory]);
 
   if (!isOpen) return null;
 
@@ -281,6 +308,49 @@ export default function BubbleModal({
           </div>
         </div>
       </div>
+
+      {/* Focus Note Banner */}
+      {focusNote && (
+        <div className="px-6 md:px-8 py-2 bg-[#1f293d] border-b border-[#388bfd44] flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="px-2.5 py-0.5 rounded-full bg-[#388bfd33] text-[#58a6ff] font-bold border border-[#388bfd66] text-[11px] flex items-center gap-1">
+              📌 この記事にフォーカス
+            </span>
+            <span className="text-[var(--bright)] font-semibold max-w-[240px] sm:max-w-md truncate" title={focusNote.title}>
+              {focusNote.title}
+            </span>
+            {noteCategory && (
+              <span className="px-2 py-0.5 rounded bg-[#388bfd22] text-[#79c0ff] border border-[#388bfd33] text-[10px]">
+                📁 {noteCategory}
+              </span>
+            )}
+            <span className="text-[var(--muted)] text-[11px]">
+              ({noteKeywords.length}個のキーワード)
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="flex bg-[#161b22] border border-[var(--border2)] rounded-md p-0.5 text-xs">
+              <button
+                onClick={() => setIsFocusedMode(true)}
+                className={`px-3 py-1 font-semibold rounded cursor-pointer transition-all ${
+                  isFocusedMode ? "bg-[#388bfd33] text-[#58a6ff] font-bold border border-[#388bfd55]" : "text-[var(--subtle)] hover:bg-[#ffffff08]"
+                }`}
+              >
+                記事フォーカス
+              </button>
+              <button
+                onClick={() => setIsFocusedMode(false)}
+                className={`px-3 py-1 font-semibold rounded cursor-pointer transition-all ${
+                  !isFocusedMode ? "bg-[var(--border)] text-[var(--bright)] font-bold" : "text-[var(--subtle)] hover:bg-[#ffffff08]"
+                }`}
+              >
+                全体バブル
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Excluded Keywords and Categories Management Panel */}
       {hasExcludes ? (

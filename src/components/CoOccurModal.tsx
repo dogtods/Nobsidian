@@ -6,7 +6,7 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import * as d3 from "d3";
 import { Note, CoOccurNode, CoOccurEdge } from "../types";
-import { parseCoOccurData, getFolderFromKeywords, extractWikiLinks } from "../utils/graphDataParser";
+import { parseCoOccurData, getFolderFromKeywords, extractWikiLinks, extractNoteKeywords } from "../utils/graphDataParser";
 
 interface CoOccurModalProps {
   isOpen: boolean;
@@ -17,6 +17,7 @@ interface CoOccurModalProps {
   excludedKeywords?: string[];
   onExcludeKeyword?: (kw: string) => void;
   onIncludeKeyword?: (kw: string) => void;
+  focusNote?: Note | null;
 }
 
 export default function CoOccurModal({
@@ -27,11 +28,30 @@ export default function CoOccurModal({
   filterEnd,
   excludedKeywords = [],
   onExcludeKeyword,
-  onIncludeKeyword
+  onIncludeKeyword,
+  focusNote
 }: CoOccurModalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const simulationRef = useRef<d3.Simulation<any, any> | null>(null);
+
+  // Extract keywords of the focused note if provided
+  const noteKeywords = useMemo(() => {
+    return focusNote ? extractNoteKeywords(focusNote) : [];
+  }, [focusNote]);
+
+  const [isFocusedMode, setIsFocusedMode] = useState<boolean>(() => {
+    return Boolean(focusNote && noteKeywords.length > 0);
+  });
+
+  // Re-sync focus mode if focusNote changes
+  useEffect(() => {
+    if (focusNote && noteKeywords.length > 0) {
+      setIsFocusedMode(true);
+    } else {
+      setIsFocusedMode(false);
+    }
+  }, [focusNote, noteKeywords.length]);
   
   // States to empower "Invisible connections / correlation" discoveries
   const [metricMode, setMetricMode] = useState<"cooccur" | "correlation">("correlation");
@@ -90,10 +110,11 @@ export default function CoOccurModal({
     setMinLinkScore(mode === "correlation" ? 0.12 : 2);
   };
 
-  // 3. Extract the full raw co-occurrence data
+  // 3. Extract the raw co-occurrence data (using focusKeywords if focused mode is active)
   const rawGraphData = useMemo(() => {
-    return parseCoOccurData(notes, filterStart, filterEnd, 60, excludedKeywords);
-  }, [notes, filterStart, filterEnd, excludedKeywords]);
+    const activeFocusKws = (isFocusedMode && noteKeywords.length > 0) ? noteKeywords : undefined;
+    return parseCoOccurData(notes, filterStart, filterEnd, 60, excludedKeywords, activeFocusKws);
+  }, [notes, filterStart, filterEnd, excludedKeywords, isFocusedMode, noteKeywords]);
 
   // 4. Transform and enrich Graph edges with Jaccard Similarity (Correlation index)
   const enrichedGraphData = useMemo(() => {
@@ -484,6 +505,45 @@ export default function CoOccurModal({
             ✕
           </div>
         </div>
+
+        {/* Focus Note Banner */}
+        {focusNote && (
+          <div className="px-6 py-2 bg-[#1f293d] border-b border-[#388bfd44] flex flex-wrap items-center justify-between gap-3 text-xs shrink-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="px-2.5 py-0.5 rounded-full bg-[#388bfd33] text-[#58a6ff] font-bold border border-[#388bfd66] text-[11px] flex items-center gap-1">
+                📌 この記事の共起関係
+              </span>
+              <span className="text-[var(--bright)] font-semibold max-w-[240px] sm:max-w-md truncate" title={focusNote.title}>
+                {focusNote.title}
+              </span>
+              <span className="text-[var(--muted)] text-[11px]">
+                ({noteKeywords.length}個のキーワード)
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="flex bg-[#161b22] border border-[var(--border2)] rounded-md p-0.5 text-xs">
+                <button
+                  onClick={() => setIsFocusedMode(true)}
+                  disabled={noteKeywords.length === 0}
+                  className={`px-3 py-1 font-semibold rounded cursor-pointer transition-all ${
+                    isFocusedMode ? "bg-[#388bfd33] text-[#58a6ff] font-bold border border-[#388bfd55]" : "text-[var(--subtle)] hover:bg-[#ffffff08]"
+                  }`}
+                >
+                  記事の共起 ({noteKeywords.length})
+                </button>
+                <button
+                  onClick={() => setIsFocusedMode(false)}
+                  className={`px-3 py-1 font-semibold rounded cursor-pointer transition-all ${
+                    !isFocusedMode ? "bg-[var(--border)] text-[var(--bright)] font-bold" : "text-[var(--subtle)] hover:bg-[#ffffff08]"
+                  }`}
+                >
+                  全体共起
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Dynamic Interactive Controller Bar */}
         <div className="p-3 px-6 bg-[#161b22] border-b border-[var(--border)] flex flex-wrap gap-4 items-center shrink-0 text-xs">

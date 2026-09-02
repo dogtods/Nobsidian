@@ -3,10 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import * as d3 from "d3";
 import { Note } from "../types";
-import { parseHeatmapData } from "../utils/graphDataParser";
+import { parseHeatmapData, extractNoteKeywords } from "../utils/graphDataParser";
 
 interface HeatmapModalProps {
   isOpen: boolean;
@@ -17,6 +17,7 @@ interface HeatmapModalProps {
   excludedKeywords?: string[];
   onExcludeKeyword?: (kw: string) => void;
   onIncludeKeyword?: (kw: string) => void;
+  focusNote?: Note | null;
 }
 
 export default function HeatmapModal({
@@ -27,12 +28,32 @@ export default function HeatmapModal({
   filterEnd,
   excludedKeywords = [],
   onExcludeKeyword,
-  onIncludeKeyword
+  onIncludeKeyword,
+  focusNote
 }: HeatmapModalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [isWeekly, setIsWeekly] = useState(false);
   const [excludeExpanded, setExcludeExpanded] = useState(false);
+
+  // Extract keywords of the focused note if provided
+  const noteKeywords = useMemo(() => {
+    return focusNote ? extractNoteKeywords(focusNote) : [];
+  }, [focusNote]);
+
+  const [isFocusedMode, setIsFocusedMode] = useState<boolean>(() => {
+    return Boolean(focusNote && noteKeywords.length > 0);
+  });
+
+  // Re-sync focus mode if focusNote changes
+  useEffect(() => {
+    if (focusNote && noteKeywords.length > 0) {
+      setIsFocusedMode(true);
+    } else {
+      setIsFocusedMode(false);
+    }
+  }, [focusNote, noteKeywords.length]);
+
   const [tooltip, setTooltip] = useState<{ show: boolean; x: number; y: number; title: string; keyword: string; value: number }>({
     show: false,
     x: 0,
@@ -45,8 +66,9 @@ export default function HeatmapModal({
   useEffect(() => {
     if (!isOpen || !svgRef.current || !containerRef.current) return;
 
-    // Fetch real parsed note data with excludedKeywords and isWeekly flag
-    const data = parseHeatmapData(notes, filterStart, filterEnd, 15, excludedKeywords, isWeekly);
+    // Fetch real parsed note data with focus keywords if active
+    const activeFocusKws = (isFocusedMode && noteKeywords.length > 0) ? noteKeywords : undefined;
+    const data = parseHeatmapData(notes, filterStart, filterEnd, 15, excludedKeywords, isWeekly, activeFocusKws);
 
     const container = containerRef.current;
     // Adapt width and height dynamically based on dates and keywords count to enable perfect scrollability
@@ -66,7 +88,7 @@ export default function HeatmapModal({
         .attr("text-anchor", "middle")
         .attr("fill", "var(--muted)")
         .style("font-size", "14px")
-        .text("指定した期間に WikiLink キーワードを含むノートがありません");
+        .text("指定した期間に該当するキーワードを含むノートがありません");
       return;
     }
 
@@ -213,7 +235,7 @@ export default function HeatmapModal({
       .delay((_, i) => i * 3)
       .attr("opacity", 1);
 
-  }, [isOpen, notes, filterStart, filterEnd, excludedKeywords, isWeekly]);
+  }, [isOpen, notes, filterStart, filterEnd, excludedKeywords, isWeekly, isFocusedMode, noteKeywords]);
 
   if (!isOpen) return null;
 
@@ -257,6 +279,45 @@ export default function HeatmapModal({
           </div>
         </div>
       </div>
+
+      {/* Focus Note Banner */}
+      {focusNote && (
+        <div className="px-6 md:px-8 py-2 bg-[#1f293d] border-b border-[#388bfd44] flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="px-2.5 py-0.5 rounded-full bg-[#388bfd33] text-[#58a6ff] font-bold border border-[#388bfd66] text-[11px] flex items-center gap-1">
+              📌 この記事にフォーカス
+            </span>
+            <span className="text-[var(--bright)] font-semibold max-w-[280px] sm:max-w-md truncate" title={focusNote.title}>
+              {focusNote.title}
+            </span>
+            <span className="text-[var(--muted)] text-[11px]">
+              ({noteKeywords.length}個のキーワード)
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="flex bg-[#161b22] border border-[var(--border2)] rounded-md p-0.5 text-xs">
+              <button
+                onClick={() => setIsFocusedMode(true)}
+                disabled={noteKeywords.length === 0}
+                className={`px-3 py-1 font-semibold rounded cursor-pointer transition-all ${
+                  isFocusedMode ? "bg-[#388bfd33] text-[#58a6ff] font-bold border border-[#388bfd55]" : "text-[var(--subtle)] hover:bg-[#ffffff08]"
+                }`}
+              >
+                記事キーワード ({noteKeywords.length})
+              </button>
+              <button
+                onClick={() => setIsFocusedMode(false)}
+                className={`px-3 py-1 font-semibold rounded cursor-pointer transition-all ${
+                  !isFocusedMode ? "bg-[var(--border)] text-[var(--bright)] font-bold" : "text-[var(--subtle)] hover:bg-[#ffffff08]"
+                }`}
+              >
+                全体Top15
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Excluded Keywords Management Panel */}
       {excludedKeywords && excludedKeywords.length > 0 ? (

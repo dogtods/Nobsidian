@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Note, TimelineItem } from "../types";
-import { getFilteredNotes } from "../utils/graphDataParser";
+import { getFilteredNotes, extractNoteKeywords } from "../utils/graphDataParser";
 import { 
   Calendar, 
   Clock, 
@@ -22,6 +22,7 @@ interface TimelineModalProps {
   toast: (msg: string) => void;
   filterStart?: string;
   filterEnd?: string;
+  focusNote?: Note | null;
 }
 
 export default function TimelineModal({
@@ -32,6 +33,7 @@ export default function TimelineModal({
   toast,
   filterStart = "",
   filterEnd = "",
+  focusNote
 }: TimelineModalProps) {
   const [items, setItems] = useState<TimelineItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -39,6 +41,24 @@ export default function TimelineModal({
   const [viewMode, setViewMode] = useState<"card" | "table">("card");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+
+  // Extract keywords of the focused note if provided
+  const noteKeywords = useMemo(() => {
+    return focusNote ? extractNoteKeywords(focusNote) : [];
+  }, [focusNote]);
+
+  const [isFocusedMode, setIsFocusedMode] = useState<boolean>(() => {
+    return Boolean(focusNote);
+  });
+
+  // Re-sync focus mode if focusNote changes
+  useEffect(() => {
+    if (focusNote) {
+      setIsFocusedMode(true);
+    } else {
+      setIsFocusedMode(false);
+    }
+  }, [focusNote]);
 
   // Derive filtered notes based on global date filter
   const filteredNotes = useMemo(() => {
@@ -280,6 +300,24 @@ export default function TimelineModal({
   const filteredItems = useMemo(() => {
     let result = items.filter(item => !hiddenIds.has(item.id));
 
+    // Focus Note filter if active
+    if (isFocusedMode && focusNote) {
+      result = result.filter(item => {
+        // Direct match with this note
+        if (item.noteId === focusNote.id) return true;
+        // Or event/title contains any keyword from this note
+        if (noteKeywords.length > 0) {
+          const lowerEvent = item.event.toLowerCase();
+          const lowerTitle = item.noteTitle.toLowerCase();
+          return noteKeywords.some(kw => {
+            const lkw = kw.toLowerCase();
+            return lowerEvent.includes(lkw) || lowerTitle.includes(lkw);
+          });
+        }
+        return false;
+      });
+    }
+
     // Text search
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -305,7 +343,7 @@ export default function TimelineModal({
     });
 
     return result;
-  }, [items, searchQuery, selectedFolder, sortOrder, hiddenIds]);
+  }, [items, searchQuery, selectedFolder, sortOrder, hiddenIds, isFocusedMode, focusNote, noteKeywords]);
 
   const clearTimelineCache = () => {
     if (window.confirm("抽出した年表キャッシュを消去し、初期化しますか？")) {
@@ -338,6 +376,44 @@ export default function TimelineModal({
             <X className="w-4 h-4" />
           </button>
         </div>
+
+        {/* Focus Note Banner */}
+        {focusNote && (
+          <div className="px-4 py-2 bg-[#1f293d] border-b border-[#388bfd44] flex flex-wrap items-center justify-between gap-3 text-xs shrink-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="px-2.5 py-0.5 rounded-full bg-[#388bfd33] text-[#58a6ff] font-bold border border-[#388bfd66] text-[11px] flex items-center gap-1">
+                📌 この記事の関連年表
+              </span>
+              <span className="text-gray-100 font-semibold max-w-[240px] sm:max-w-md truncate" title={focusNote.title}>
+                {focusNote.title}
+              </span>
+              <span className="text-gray-400 text-[11px]">
+                (記事本体 + 関連キーワード {noteKeywords.length}件)
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="flex bg-[#161b22] border border-[#30363d] rounded-md p-0.5 text-xs">
+                <button
+                  onClick={() => setIsFocusedMode(true)}
+                  className={`px-3 py-1 font-semibold rounded cursor-pointer transition-all ${
+                    isFocusedMode ? "bg-[#388bfd33] text-[#58a6ff] font-bold border border-[#388bfd55]" : "text-gray-400 hover:bg-[#ffffff08]"
+                  }`}
+                >
+                  記事・関連年表 ({filteredItems.length})
+                </button>
+                <button
+                  onClick={() => setIsFocusedMode(false)}
+                  className={`px-3 py-1 font-semibold rounded cursor-pointer transition-all ${
+                    !isFocusedMode ? "bg-[#21262d] text-gray-200 font-bold" : "text-gray-400 hover:bg-[#ffffff08]"
+                  }`}
+                >
+                  全体年表 ({items.length})
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Action Controls Toolbar */}
         <div className="p-4 bg-[#0d1117] border-b border-[#2d333b] flex flex-wrap gap-3 items-center justify-between">
