@@ -142,9 +142,6 @@ const normalizeNoteItem = (n: Note): Note => {
   if (content && n.dateStr && !content.includes(n.dateStr)) {
     content += `\n\n---\n**日付:** ${n.dateStr}`;
   }
-  if (!content && rawText) {
-    content = rawText;
-  }
 
   return {
     ...n,

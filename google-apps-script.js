@@ -1381,8 +1381,6 @@ function handleGetNotes(targetSheetName, targetSsUrl) {
         }
         if (dateStr && !content.includes(dateStr)) content += `\n\n---\n**日付:** ${dateStr}`;
         if (sourceUrl && !content.includes(sourceUrl)) content += `\n**リンク:** [${sourceUrl}](${sourceUrl})`;
-      } else if (rawAll.trim()) {
-        content = rawAll;
       }
     }
 
@@ -1427,10 +1425,10 @@ function saveNote(note, targetSheetName, targetSsUrl) {
 
       const updatedRow = [
         note.id,
-        note.title || currentRow[1] || "",
+        note.title !== undefined && note.title !== "" ? note.title : (currentRow[1] || ""),
         note.sourceUrl !== undefined ? note.sourceUrl : (currentRow[2] || ""),
-        note.keywords || currentRow[3] || "",
-        note.summary || currentRow[4] || "",
+        note.keywords !== undefined ? note.keywords : (currentRow[3] || ""),
+        note.summary !== undefined ? note.summary : (currentRow[4] || ""),
         currentRow[5] || (note.createdAt ? new Date(note.createdAt) : new Date()),
         note.processed !== undefined ? note.processed : (currentRow[6] || 'false'),
         note.nobsidian !== undefined ? note.nobsidian : (currentRow[7] || ''),
@@ -1439,7 +1437,7 @@ function saveNote(note, targetSheetName, targetSsUrl) {
         currentRow[10] || note.dateStr || "",
         note.timeline !== undefined ? note.timeline : (currentRow[11] || ""),
         currentRow[12] || note.source || "web_app",
-        note.content || "",
+        note.content !== undefined ? note.content : (currentRow[13] || ""),
         new Date()
       ];
 
