@@ -134,8 +134,8 @@ const normalizeNoteItem = (n: Note): Note => {
   const summaryText = (n.summary || "").trim();
   const existingContent = (n.content || "").trim();
   
-  // ユーザーが編集・追記したcontentがあれば最優先で維持し、なければE列（要約・ハイライト）、さらに無ければI列(生記事)をベースにする
-  let content = existingContent || summaryText;
+  // N列は無視し、常にE列（AI要約・ハイライト）をベースにする。
+  let content = summaryText;
 
   if (content && !content.startsWith("#") && !content.startsWith("【")) {
     content = `# ${n.title}\n\n${content}`;
@@ -2644,6 +2644,7 @@ const renderMarkdownToElements = (contentStr: string) => {
             updatedNotesState = updatedNotesState.map(n => n.id === freshNote.id ? {
               ...n,
               content: currentContent,
+              summary: currentContent,
               updatedAt: Date.now()
             } : n);
 
@@ -2769,6 +2770,7 @@ const renderMarkdownToElements = (contentStr: string) => {
               updatedNotesState = updatedNotesState.map(n => n.id === freshNote.id ? {
                 ...n,
                 content: currentContent,
+                summary: currentContent,
                 updatedAt: Date.now()
               } : n);
 
