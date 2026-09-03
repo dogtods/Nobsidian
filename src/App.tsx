@@ -128,25 +128,19 @@ const getApiUrl = () => {
 };
 const LS_KEY = "cn_notes_cache";
 
-// E列(要約・ハイライト)と I列(生記事全文)の表示先を確実に分離・正規化するヘルパー
+// E列（要約・ハイライト）をメモ書き画面（プレビュー・編集）に忠実に配置するヘルパー
+// 勝手な見出し(#)や日付(---\n**日付:**)の付加は行わず、E列テキストそのものを保持する
 const normalizeNoteItem = (n: Note): Note => {
   const rawText = (n.rawContent || n.columnJ || "").trim();
-  const summaryText = (n.summary || "").trim();
-  
-  // N列は無視し、常にE列（AI要約・ハイライト）をベースにする。
-  let content = summaryText;
-
-  if (content && !content.startsWith("#") && !content.startsWith("【")) {
-    content = `# ${n.title}\n\n${content}`;
-  }
-  if (content && n.dateStr && !content.includes(n.dateStr)) {
-    content += `\n\n---\n**日付:** ${n.dateStr}`;
-  }
+  // E列の内容を最優先とし、未設定の場合はcontent（メモ書き内容）を参照
+  const memoText = (n.summary !== undefined && n.summary !== "") 
+    ? n.summary 
+    : (n.content || "");
 
   return {
     ...n,
-    content: content,  // フロントエンド用にはそのままE列由来のテキストをセット
-    summary: content,  // E列へ上書き保存されるように同じ内容をセット
+    content: memoText,  // メモ書き画面（エディタ・プレビュー）にE列をそのまま配置
+    summary: memoText,  // E列の内容を保持
     columnJ: rawText,
     rawContent: rawText,
   };

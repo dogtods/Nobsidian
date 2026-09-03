@@ -135,6 +135,7 @@ export default function ImportModal({
   const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
   const [optimizeTitle, setOptimizeTitle] = useState(false);
   const [overwriteBatch, setOverwriteBatch] = useState(false);
+  const [isClearingN, setIsClearingN] = useState(false);
 
   // File / URL direct import state
   const [importUrl, setImportUrl] = useState("");
@@ -287,6 +288,36 @@ export default function ImportModal({
     setIsCopiedSyncSave(true);
     onSaveToast("統合版GASコードをコピーしました！");
     setTimeout(() => setIsCopiedSyncSave(false), 3000);
+  };
+
+  const handleClearColumnN = async () => {
+    const cleaned = sanitizeGasUrl(gasUrl);
+    if (!cleaned) {
+      onSaveToast("GAS WebアプリURLを設定してください");
+      return;
+    }
+    if (!window.confirm("スプレッドシートのN列（過去に誤って複製されたデータ）を一括クリアしますか？\n※E列（要約・ハイライト）や元記事データは一切削除されず安全に保持されます。")) {
+      return;
+    }
+    setIsClearingN(true);
+    try {
+      const targetSheet = externalSyncSheetName.trim() || "Notes";
+      const targetSsUrlVal = extractSheetUrl.trim();
+      const res = await fetchGasPost(cleaned, {
+        action: "clearColumnN",
+        sheetName: targetSheet,
+        targetSsUrl: targetSsUrlVal
+      });
+      if (res?.success) {
+        onSaveToast(res.message || "N列のデータをクリアしました！");
+      } else {
+        onSaveToast("N列クリアに失敗しました: " + (res?.error || "不明なエラー"));
+      }
+    } catch (e: any) {
+      onSaveToast("エラー: " + (e.message || "クリアに失敗しました"));
+    } finally {
+      setIsClearingN(false);
+    }
   };
 
   // Handle External Sync Execution (STEP 1)
@@ -1053,6 +1084,15 @@ export default function ImportModal({
                   >
                     {isCopiedSyncSave ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
                     <span>{isCopiedSyncSave ? "コピー完了" : "📋 GASコピー"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleClearColumnN}
+                    disabled={isClearingN}
+                    className="flex items-center gap-1 px-2.5 py-1 text-[10.5px] rounded font-medium bg-red-500/10 text-red-300 border border-red-500/30 hover:bg-red-500/20 transition cursor-pointer disabled:opacity-50"
+                    title="誤ってN列に複製されたデータを一括クリアします（E列のメモは保持されます）"
+                  >
+                    {isClearingN ? <Loader2 className="w-3 h-3 animate-spin" /> : <span>🧹 N列誤複製クリア</span>}
                   </button>
                   <button
                     type="button"

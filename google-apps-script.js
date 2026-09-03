@@ -1295,6 +1295,8 @@ function processApiRequest(e) {
     } else if (action === "markHighlightsProcessed") {
       const rowIndices = typeof postData.rowIndices === "string" ? JSON.parse(postData.rowIndices) : postData.rowIndices;
       result = markHighlightsProcessed(postData.sourceSsId, postData.sheetName, rowIndices);
+    } else if (action === "clearColumnN") {
+      result = clearColumnN(targetSheet, targetSsUrl);
     } else if (action === "saveToDrive" || action === "exportToDrive") {
       result = saveToDrive(postData);
     } else {
@@ -1372,17 +1374,9 @@ function handleGetNotes(targetSheetName, targetSsUrl) {
     const source = String(row[12] || "");
     const editedContent = String(row[13] || "");
 
-    let content = editedContent;
-    if (!content.trim()) {
-      if (highlights.trim()) {
-        content = highlights;
-        if (!content.startsWith("#") && !content.startsWith("【")) {
-          content = `# ${title}\n\n${highlights}`;
-        }
-        if (dateStr && !content.includes(dateStr)) content += `\n\n---\n**日付:** ${dateStr}`;
-        if (sourceUrl && !content.includes(sourceUrl)) content += `\n**リンク:** [${sourceUrl}](${sourceUrl})`;
-      }
-    }
+    // メモ書き画面（プレビュー・編集）はスプレッドシートのE列（highlights / 要約・ハイライト）そのものを忠実に配置
+    // 勝手な見出し付加(#)や日付・リンクの追記、N列への複製は行わない
+    const content = highlights.trim() !== "" ? highlights : editedContent;
 
     const fullArticleText = rawAll.trim() || metaInfo.trim() || "";
 
@@ -1423,12 +1417,15 @@ function saveNote(note, targetSheetName, targetSsUrl) {
       const currentCols = Math.max(15, sheet.getLastColumn());
       const currentRow = sheet.getRange(rowNum, 1, 1, currentCols).getValues()[0];
 
+      // メモ書き画面（プレビュー・編集）の内容をスプレッドシートのE列（row[4]）に保存
+      const eVal = note.summary !== undefined ? note.summary : (note.content !== undefined ? note.content : (currentRow[4] || ""));
+
       const updatedRow = [
         note.id,
         note.title !== undefined && note.title !== "" ? note.title : (currentRow[1] || ""),
         note.sourceUrl !== undefined ? note.sourceUrl : (currentRow[2] || ""),
         note.keywords !== undefined ? note.keywords : (currentRow[3] || ""),
-        note.summary !== undefined ? note.summary : (currentRow[4] || ""),
+        eVal, // E列: メモ書き画面（プレビュー・編集）の内容を保存
         currentRow[5] || (note.createdAt ? new Date(note.createdAt) : new Date()),
         note.processed !== undefined ? note.processed : (currentRow[6] || 'false'),
         note.nobsidian !== undefined ? note.nobsidian : (currentRow[7] || ''),
@@ -1437,7 +1434,7 @@ function saveNote(note, targetSheetName, targetSsUrl) {
         currentRow[10] || note.dateStr || "",
         note.timeline !== undefined ? note.timeline : (currentRow[11] || ""),
         currentRow[12] || note.source || "web_app",
-        note.content !== undefined ? note.content : (currentRow[13] || ""),
+        currentRow[13] || "", // N列: E列の内容を勝手に複製しない！既存値をそのまま維持
         new Date()
       ];
 
@@ -1446,12 +1443,14 @@ function saveNote(note, targetSheetName, targetSsUrl) {
     }
   }
 
+  // 新規ノート保存時もE列に保存し、N列への複製は行わない
+  const eVal = note.summary !== undefined ? note.summary : (note.content || "");
   const newRow = [
     note.id,
     note.title || "",
     note.sourceUrl || "",
     note.keywords || "",
-    note.summary || "",
+    eVal, // E列: メモ書き画面の内容
     note.createdAt ? new Date(note.createdAt) : new Date(),
     note.processed || 'false',
     note.nobsidian || '',
@@ -1460,7 +1459,7 @@ function saveNote(note, targetSheetName, targetSsUrl) {
     note.dateStr || "",
     note.timeline || "",
     note.source || "web_app",
-    note.content || "",
+    "", // N列: E列を勝手に複製しない（空のまま）
     new Date()
   ];
   sheet.appendRow(newRow);
@@ -1498,13 +1497,14 @@ function saveAll(notes, targetSheetName, targetSsUrl) {
   if (notes && notes.length > 0) {
     const rows = notes.map(n => {
       const exist = existingMap.get(String(n.id));
+      const eVal = n.summary !== undefined ? n.summary : (n.content !== undefined ? n.content : (exist ? exist[4] || "" : ""));
       if (exist) {
         return [
           n.id,
           n.title || exist[1] || "",
           n.sourceUrl !== undefined ? n.sourceUrl : (exist[2] || ""),
           n.keywords || exist[3] || "",
-          n.summary || exist[4] || "",
+          eVal, // E列: メモ書き画面（プレビュー・編集）の内容
           exist[5] || (n.createdAt ? new Date(n.createdAt) : new Date()),
           n.processed !== undefined ? n.processed : (exist[6] || 'false'),
           n.nobsidian !== undefined ? n.nobsidian : (exist[7] || ''),
@@ -1513,7 +1513,7 @@ function saveAll(notes, targetSheetName, targetSsUrl) {
           exist[10] || n.dateStr || "",
           n.timeline !== undefined ? n.timeline : (exist[11] || ""),
           exist[12] || n.source || "web_app",
-          n.content || "",
+          exist[13] || "", // N列: E列を複製しない！既存の値を維持
           new Date()
         ];
       }
@@ -1522,7 +1522,7 @@ function saveAll(notes, targetSheetName, targetSsUrl) {
         n.title || "",
         n.sourceUrl || "",
         n.keywords || "",
-        n.summary || "",
+        eVal, // E列: メモ書き画面の内容
         n.createdAt ? new Date(n.createdAt) : new Date(),
         n.processed || 'false',
         n.nobsidian || '',
@@ -1531,7 +1531,7 @@ function saveAll(notes, targetSheetName, targetSsUrl) {
         n.dateStr || "",
         n.timeline || "",
         n.source || "web_app",
-        n.content || "",
+        "", // N列: E列を複製しない（空のまま）
         new Date()
       ];
     });
@@ -1543,6 +1543,16 @@ function saveAll(notes, targetSheetName, targetSsUrl) {
   }
 
   return { success: true, count: notes ? notes.length : 0, sheetName: sheet.getName() };
+}
+
+// ---- N列（過去に誤って複製されたデータ）の一括クリア関数 ----
+function clearColumnN(targetSheetName, targetSsUrl) {
+  const sheet = getSheet(targetSheetName, targetSsUrl);
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    sheet.getRange(2, 14, lastRow - 1, 1).clearContent();
+  }
+  return { success: true, message: `シート「${sheet.getName()}」のN列（誤複製データ）をクリアしました。` };
 }
 
 // ====================================================================
