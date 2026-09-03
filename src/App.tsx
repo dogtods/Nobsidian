@@ -247,6 +247,7 @@ export default function App() {
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
   const [externalExportTarget, setExternalExportTarget] = useState<{ type: 'single' } | { type: 'folder'; folderName: string } | null>(null);
   const [showSourceMemo, setShowSourceMemo] = useState(false);
+  const [showSummaryMemo, setShowSummaryMemo] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [isExtractingStructure, setIsExtractingStructure] = useState(false);
   const [sourceMemoFontSize, setSourceMemoFontSize] = useState<"text-base" | "text-lg" | "text-xl">("text-base");
@@ -3325,6 +3326,19 @@ const renderMarkdownToElements = (contentStr: string) => {
                     <span className="hidden sm:inline">末尾に貼り付け</span>
                   </button>
 
+                  {activeNote.summary && activeNote.summary.trim() !== "" && (
+                    <button
+                      onClick={() => setShowSummaryMemo(!showSummaryMemo)}
+                      className={`p-1 px-2.5 border text-xs font-medium rounded-md cursor-pointer flex items-center gap-1.5 transition-all
+                        ${showSummaryMemo 
+                          ? "bg-purple-900/30 border-purple-500/30 text-purple-300 hover:bg-purple-900/50" 
+                          : "bg-transparent border-[var(--border2)] text-[var(--subtle)] hover:text-white hover:bg-[var(--border)]"}`}
+                      title="AI要約(E列)の表示切り替え"
+                    >
+                      <Sparkles className={`w-3.5 h-3.5 flex-shrink-0 ${showSummaryMemo ? "text-purple-400" : "text-[var(--subtle)]"}`} />
+                      <span>AI要約</span>
+                    </button>
+                  )}
                   {(activeNote.columnJ || activeNote.rawContent) && (activeNote.columnJ || activeNote.rawContent)!.trim() !== "" && (
                     <button
                       onClick={() => setShowSourceMemo(!showSourceMemo)}
@@ -3508,6 +3522,38 @@ const renderMarkdownToElements = (contentStr: string) => {
                       style={{ fontFamily: "var(--font-sans)", lineHeight: sourceMemoLineHeight }}
                     >
                       {activeNote.columnJ || activeNote.rawContent}
+                    </div>
+                  </div>
+                )}
+
+                {showSummaryMemo && activeNote.summary && (
+                  <div className="mx-auto mt-6 md:mt-8 w-[99%] max-w-3xl p-4 bg-[#0d1117] border border-[#30363d] rounded-lg animate-in fade-in flex flex-col shrink-0 max-h-[58vh] print:hidden">
+                    <div className="text-xs text-gray-400 font-semibold mb-3 flex flex-shrink-0 items-center justify-between border-b border-[#30363d] pb-2">
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1.5 text-purple-400 font-medium">
+                          <Sparkles className="w-4 h-4" />
+                          <span>AI要約 (E列)</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={async () => {
+                            await copyToClipboard(activeNote.summary || "", "AI要約をコピーしました");
+                          }}
+                          className="p-1 px-2.5 bg-transparent border border-[#30363d] text-xs text-gray-400 hover:text-white hover:bg-[#30363d] font-medium rounded-md cursor-pointer flex items-center gap-1.5 transition-all"
+                          title="要約をコピー"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>コピー</span>
+                        </button>
+                        <button onClick={() => setShowSummaryMemo(false)} className="hover:text-gray-200 cursor-pointer p-1">✕</button>
+                      </div>
+                    </div>
+                    <div 
+                      className={`text-[var(--text)] whitespace-pre-wrap overflow-y-auto custom-scrollbar pr-2 flex-1 select-text text-sm`}
+                      style={{ fontFamily: "var(--font-sans)", lineHeight: "1.6" }}
+                    >
+                      {activeNote.summary}
                     </div>
                   </div>
                 )}
