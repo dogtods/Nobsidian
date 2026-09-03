@@ -134,8 +134,7 @@ const normalizeNoteItem = (n: Note): Note => {
   const summaryText = (n.summary || "").trim();
   const existingContent = (n.content || "").trim();
   
-  // N列は無視し、常にE列（AI要約・ハイライト）をベースにする。
-  let content = summaryText;
+  let content = existingContent || summaryText;
 
   if (content && !content.startsWith("#") && !content.startsWith("【")) {
     content = `# ${n.title}\n\n${content}`;
@@ -149,8 +148,8 @@ const normalizeNoteItem = (n: Note): Note => {
 
   return {
     ...n,
-    content: content,  // フロントエンド表示用
-    summary: content,  // E列・N列双方へ確実に最新内容が保存されるよう同期
+    content: content,
+    summary: summaryText,
     columnJ: rawText,
     rawContent: rawText,
   };
@@ -840,7 +839,6 @@ export default function App() {
     const updated: Note = {
       ...active,
       content: val,
-      summary: val, // E列（summary）にも同じ内容を反映して保存させる
       updatedAt: Date.now()
     };
 
@@ -1810,7 +1808,6 @@ const renderMarkdownToElements = (contentStr: string) => {
             newNotesList[targetIndex] = {
               ...current,
               content: newContent,
-              summary: newContent, // 常に完全同期
               keywords: newKeywords,
               updatedAt: Date.now()
             };
@@ -1952,7 +1949,6 @@ const renderMarkdownToElements = (contentStr: string) => {
       const updated: Note = {
         ...active,
         content: newContent,
-        summary: newContent,
         updatedAt: Date.now()
       };
       let newList: Note[] = [];
@@ -2644,7 +2640,6 @@ const renderMarkdownToElements = (contentStr: string) => {
             updatedNotesState = updatedNotesState.map(n => n.id === freshNote.id ? {
               ...n,
               content: currentContent,
-              summary: currentContent,
               updatedAt: Date.now()
             } : n);
 
@@ -2770,7 +2765,6 @@ const renderMarkdownToElements = (contentStr: string) => {
               updatedNotesState = updatedNotesState.map(n => n.id === freshNote.id ? {
                 ...n,
                 content: currentContent,
-                summary: currentContent,
                 updatedAt: Date.now()
               } : n);
 
@@ -3775,7 +3769,6 @@ const renderMarkdownToElements = (contentStr: string) => {
                               const updated: Note = {
                                 ...active,
                                 content: nextContent,
-                                summary: nextContent,
                                 updatedAt: Date.now()
                               };
                               let newList: Note[] = [];
