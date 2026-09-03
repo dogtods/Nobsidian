@@ -132,9 +132,10 @@ const LS_KEY = "cn_notes_cache";
 const normalizeNoteItem = (n: Note): Note => {
   const rawText = (n.rawContent || n.columnJ || "").trim();
   const summaryText = (n.summary || "").trim();
+  const existingContent = (n.content || "").trim();
   
-  // N列は無視し、常にE列（AI要約・ハイライト）をベースにする。
-  let content = summaryText;
+  // ユーザーが編集・追記したcontentがあれば最優先で維持し、なければE列（要約・ハイライト）、さらに無ければI列(生記事)をベースにする
+  let content = existingContent || summaryText;
 
   if (content && !content.startsWith("#") && !content.startsWith("【")) {
     content = `# ${n.title}\n\n${content}`;
@@ -148,8 +149,8 @@ const normalizeNoteItem = (n: Note): Note => {
 
   return {
     ...n,
-    content: content,  // フロントエンド用にはそのままE列由来のテキストをセット
-    summary: content,  // E列へ上書き保存されるように同じ内容をセット
+    content: content,  // フロントエンド表示用
+    summary: content,  // E列・N列双方へ確実に最新内容が保存されるよう同期
     columnJ: rawText,
     rawContent: rawText,
   };
@@ -638,8 +639,12 @@ export default function App() {
         if (data.notes && data.notes.length > 0) {
           const normalized = data.notes.map(normalizeNoteItem);
           setNotes(normalized);
-          // 起動時は常にダッシュボードを表示
-          setActiveId(null);
+          // 画面更新（リロード）時は前回開いていたノートを復元、なければダッシュボードを表示
+          if (data.activeId && normalized.some(n => n.id === data.activeId)) {
+            setActiveId(data.activeId);
+          } else {
+            setActiveId(null);
+          }
         } else {
           loadDefaultNotes();
         }
@@ -1930,21 +1935,24 @@ const renderMarkdownToElements = (contentStr: string) => {
         return toast("テキストが入力されていません");
       }
 
-      const updated = {
+      const newContent = active.content.trim() + "\n\n" + (() => {
+        const trimmed = text.trim();
+        const mermaidKeywords = ['graph', 'flowchart', 'sequenceDiagram', 'classDiagram', 'stateDiagram', 'erDiagram', 'journey', 'gantt', 'pie', 'quadrantChart', 'xychart-beta', 'timeline'];
+        const lines = trimmed.split('\n');
+        const firstLine = lines[0].toLowerCase();
+        const secondLine = lines.length > 1 ? lines[1].toLowerCase() : "";
+        const isMermaid = mermaidKeywords.some(kw => firstLine.includes(kw) || secondLine.includes(kw)) || trimmed.startsWith('%%{init');
+        
+        if (isMermaid && !trimmed.includes('```mermaid')) {
+          return "```mermaid\n" + trimmed + "\n```\n";
+        }
+        return text;
+      })();
+
+      const updated: Note = {
         ...active,
-        content: active.content.trim() + "\n\n" + (() => {
-          const trimmed = text.trim();
-          const mermaidKeywords = ['graph', 'flowchart', 'sequenceDiagram', 'classDiagram', 'stateDiagram', 'erDiagram', 'journey', 'gantt', 'pie', 'quadrantChart', 'xychart-beta', 'timeline'];
-          const lines = trimmed.split('\n');
-          const firstLine = lines[0].toLowerCase();
-          const secondLine = lines.length > 1 ? lines[1].toLowerCase() : "";
-          const isMermaid = mermaidKeywords.some(kw => firstLine.includes(kw) || secondLine.includes(kw)) || trimmed.startsWith('%%{init');
-          
-          if (isMermaid && !trimmed.includes('```mermaid')) {
-            return "```mermaid\n" + trimmed + "\n```\n";
-          }
-          return text;
-        })(),
+        content: newContent,
+        summary: newContent,
         updatedAt: Date.now()
       };
       let newList: Note[] = [];
@@ -1953,6 +1961,7 @@ const renderMarkdownToElements = (contentStr: string) => {
         triggerLocalSave(newList, active.id);
         return newList;
       });
+      scheduleDelayedSave(updated);
       toast("内容を末尾に追記しました ✦");
     } catch (e: any) {
       console.error(e);
@@ -3760,17 +3769,20 @@ const renderMarkdownToElements = (contentStr: string) => {
                           onClick={() => {
                             const active = getActiveNote();
                             if (active) {
-                              const updated = {
+                              const nextContent = active.content + "\n\n" + (aiResults.visual_structure.includes('```mermaid') ? aiResults.visual_structure : "```mermaid\n" + aiResults.visual_structure.trim() + "\n```");
+                              const updated: Note = {
                                 ...active,
-                                content: active.content + "\n\n" + (aiResults.visual_structure.includes('```mermaid') ? aiResults.visual_structure : "```mermaid\n" + aiResults.visual_structure.trim() + "\n```"),
+                                content: nextContent,
+                                summary: nextContent,
                                 updatedAt: Date.now()
                               };
                               let newList: Note[] = [];
-      setNotes(prev => {
-        newList = prev.map(n => n.id === active.id ? updated : n);
-        triggerLocalSave(newList, active.id);
-        return newList;
-      });
+                              setNotes(prev => {
+                                newList = prev.map(n => n.id === active.id ? updated : n);
+                                triggerLocalSave(newList, active.id);
+                                return newList;
+                              });
+                              scheduleDelayedSave(updated);
                               toast("図解（Mermaid）を本文末尾に追記しました ✦");
                             }
                           }}
