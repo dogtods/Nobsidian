@@ -1351,11 +1351,23 @@ function handleGetNotes(targetSheetName, targetSsUrl) {
     }
 
     let uAt = cAt;
+    let colORaw = "";
     if (row[14] instanceof Date) {
       uAt = row[14].getTime();
+      const tz = Session.getScriptTimeZone() || "Asia/Tokyo";
+      const h = row[14].getHours();
+      const m = row[14].getMinutes();
+      const s = row[14].getSeconds();
+      if (h === 0 && m === 0 && s === 0) {
+        colORaw = Utilities.formatDate(row[14], tz, "yyyy/MM/dd");
+      } else {
+        colORaw = Utilities.formatDate(row[14], tz, "yyyy/MM/dd HH:mm:ss");
+      }
     } else if (row[14] !== "" && !isNaN(Number(row[14])) && Number(row[14]) > 0) {
       uAt = Number(row[14]);
+      colORaw = String(row[14]);
     } else if (row[14]) {
+      colORaw = String(row[14]).trim();
       const parsed = Date.parse(row[14]);
       if (!isNaN(parsed)) uAt = parsed;
     }
@@ -1407,7 +1419,8 @@ function handleGetNotes(targetSheetName, targetSsUrl) {
       dateStr: dateStr,
       source: source,
       processed: row[6],
-      nobsidian: row[7]
+      nobsidian: row[7],
+      columnO: colORaw
     };
   }).filter(n => n.title.trim() !== "" || n.content.trim() !== "");
 
@@ -1487,8 +1500,12 @@ function saveNote(note, targetSheetName, targetSsUrl) {
       if (note.timeline !== undefined) {
         sheet.getRange(rowNum, 12).setValue(note.timeline);
       }
-      // O列（更新日時: 15列目）
-      sheet.getRange(rowNum, 15).setValue(new Date());
+      // O列（更新日時 / 分類情報: 15列目）
+      if (note.columnO !== undefined && note.columnO !== "") {
+        sheet.getRange(rowNum, 15).setValue(note.columnO);
+      } else {
+        sheet.getRange(rowNum, 15).setValue(new Date());
+      }
 
       // 即時反映のために変更をフラッシュ
       SpreadsheetApp.flush();
@@ -1514,7 +1531,7 @@ function saveNote(note, targetSheetName, targetSsUrl) {
     note.timeline || "",
     note.source || "web_app",
     "", // N列: E列を勝手に複製しない（空のまま）
-    new Date()
+    (note.columnO !== undefined && note.columnO !== "") ? note.columnO : new Date()
   ];
   sheet.appendRow(newRow);
   SpreadsheetApp.flush();
@@ -1591,7 +1608,7 @@ function saveAll(notes, targetSheetName, targetSsUrl) {
         n.timeline || "",
         n.source || "web_app",
         "", // N列: E列を複製しない（空のまま）
-        new Date()
+        (n.columnO !== undefined && n.columnO !== "") ? n.columnO : new Date()
       ];
     });
 

@@ -44,6 +44,7 @@ import { Note, FolderRelation } from "./types";
 import { getStoredPrompt, DEFAULT_PROMPTS } from "./components/PromptSettingsModal";
 import {
   getFolderFromKeywords,
+  getFolderFromColumnO,
   formatDateStr,
   extractWikiLinks,
   parseHeatmapData,
@@ -158,6 +159,7 @@ const normalizeNoteItem = (n: Note): Note => {
     summary: memoText,  // E列の内容を保持
     columnJ: rawText,
     rawContent: rawText,
+    columnO: n.columnO !== undefined ? n.columnO : "",
   };
 };
 
@@ -379,7 +381,28 @@ export default function App() {
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const getFolder = (note: Note) => getFolderFromKeywords(note.keywords);
+  const [folderColumnSource, setFolderColumnSource] = useState<"D" | "O">(() => {
+    try {
+      return (localStorage.getItem("cn_folder_column_source") as "D" | "O") || "D";
+    } catch {
+      return "D";
+    }
+  });
+
+  const handleFolderColumnChange = (col: "D" | "O") => {
+    setFolderColumnSource(col);
+    try {
+      localStorage.setItem("cn_folder_column_source", col);
+    } catch {}
+    toast(col === "D" ? "フォルダリストを「D列（カテゴリ・タグ）」基準に切り替えました ✦" : "フォルダリストを「O列（15列目）」基準に切り替えました ✦");
+  };
+
+  const getFolder = (note: Note) => {
+    if (folderColumnSource === "O") {
+      return getFolderFromColumnO(note);
+    }
+    return getFolderFromKeywords(note.keywords);
+  };
 
   // Local Saving (Dual-layer persistence via IndexedDB and LocalStorage)
   const triggerLocalSave = (updatedNotes: Note[], activeNoteId: string | null) => {
@@ -1020,6 +1043,23 @@ export default function App() {
     if (!active) return;
 
     const newFolder = val.trim();
+
+    if (folderColumnSource === "O") {
+      const updated = {
+        ...active,
+        columnO: newFolder,
+        updatedAt: Date.now()
+      };
+      let newList: Note[] = [];
+      setNotes(prev => {
+        newList = prev.map(n => n.id === active.id ? updated : n);
+        triggerLocalSave(newList, active.id);
+        return newList;
+      });
+      scheduleDelayedSave(updated);
+      return;
+    }
+
     let kws = active.keywords || "";
 
     if (kws.includes("[folder:")) {
@@ -2632,12 +2672,20 @@ const renderMarkdownToElements = (contentStr: string) => {
     const trimmedNewName = newName.trim();
     const updatedList = notes.map(n => {
       if (getFolder(n) === oldName) {
-        const reKeywords = n.keywords.replace(`[folder:${oldName}]`, `[folder:${trimmedNewName}]`);
-        return {
-          ...n,
-          keywords: reKeywords,
-          updatedAt: Date.now()
-        };
+        if (folderColumnSource === "O") {
+          return {
+            ...n,
+            columnO: trimmedNewName,
+            updatedAt: Date.now()
+          };
+        } else {
+          const reKeywords = n.keywords.replace(`[folder:${oldName}]`, `[folder:${trimmedNewName}]`);
+          return {
+            ...n,
+            keywords: reKeywords,
+            updatedAt: Date.now()
+          };
+        }
       }
       return n;
     });
@@ -3286,27 +3334,63 @@ const renderMarkdownToElements = (contentStr: string) => {
           )}
         </div>
 
-        {/* Category lists elements */}
-        <div className="px-3 py-1.5 flex items-center justify-between border-b border-[var(--border)] bg-[#11141a] text-[10px] text-[var(--muted)] font-semibold select-none shrink-0 border-t">
-          <span>フォルダリスト ({sortedFolders.length}個)</span>
-          <div className="flex gap-2 items-center">
-            <button
-              type="button"
-              onClick={collapseAllFolders}
-              className="text-gray-400 hover:text-white hover:underline transition-colors cursor-pointer bg-transparent border-0 p-0 text-[10px] font-semibold"
-              title="全てのフォルダを折りたたむ"
-            >
-              一括たたむ
-            </button>
-            <span className="opacity-30">|</span>
-            <button
-              type="button"
-              onClick={expandAllFolders}
-              className="text-gray-400 hover:text-white hover:underline transition-colors cursor-pointer bg-transparent border-0 p-0 text-[10px] font-semibold"
-              title="全てのフォルダを展開する"
-            >
-              一括展開
-            </button>
+        {/* Category lists elements & Column selection */}
+        <div className="px-3 py-2 border-b border-[var(--border)] bg-[#11141a] select-none shrink-0 border-t flex flex-col gap-1.5">
+          <div className="flex items-center justify-between text-[10px] text-[var(--muted)] font-semibold">
+            <span className="flex items-center gap-1.5 text-gray-300 font-bold">
+              <Folder className="w-3.5 h-3.5 text-[var(--blue)] shrink-0" />
+              <span>フォルダリスト ({sortedFolders.length}個)</span>
+            </span>
+            <div className="flex gap-1.5 items-center text-[10px]">
+              <button
+                type="button"
+                onClick={collapseAllFolders}
+                className="text-gray-400 hover:text-white hover:underline transition-colors cursor-pointer bg-transparent border-0 p-0 font-medium"
+                title="全てのフォルダを折りたたむ"
+              >
+                一括たたむ
+              </button>
+              <span className="opacity-30">|</span>
+              <button
+                type="button"
+                onClick={expandAllFolders}
+                className="text-gray-400 hover:text-white hover:underline transition-colors cursor-pointer bg-transparent border-0 p-0 font-medium"
+                title="全てのフォルダを展開する"
+              >
+                一括展開
+              </button>
+            </div>
+          </div>
+
+          {/* D列 / O列 フォルダ基準列切り替えボタン */}
+          <div className="flex items-center justify-between gap-1 pt-0.5">
+            <span className="text-[10px] text-gray-400 font-medium shrink-0">基準列:</span>
+            <div className="flex bg-[#0d1117] p-0.5 rounded border border-[#30363d] text-[10px] font-semibold">
+              <button
+                type="button"
+                onClick={() => handleFolderColumnChange("D")}
+                className={`px-2 py-0.5 rounded cursor-pointer transition-all flex items-center gap-1 ${
+                  folderColumnSource === "D"
+                    ? "bg-[#58a6ff2b] text-[var(--blue)] font-bold shadow-sm"
+                    : "text-gray-400 hover:text-gray-200"
+                }`}
+                title="スプレッドシートのD列（カテゴリ・タグ）を元にフォルダリストを分類します"
+              >
+                <span>D列 (カテゴリ)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleFolderColumnChange("O")}
+                className={`px-2 py-0.5 rounded cursor-pointer transition-all flex items-center gap-1 ${
+                  folderColumnSource === "O"
+                    ? "bg-[#58a6ff2b] text-[var(--blue)] font-bold shadow-sm"
+                    : "text-gray-400 hover:text-gray-200"
+                }`}
+                title="スプレッドシートのO列（15列目: 更新日・ロット・情報）を元にフォルダリストを分類します"
+              >
+                <span>O列 (15列目)</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -3548,14 +3632,17 @@ const renderMarkdownToElements = (contentStr: string) => {
                       </button>
                     </div>
 
-                    <div className="flex items-center gap-1 mt-0.5 text-[var(--muted)]">
+                    <div className="flex items-center gap-1.5 mt-0.5 text-[var(--muted)]">
                       <span className="scale-90 text-[10px]">📁</span>
                       <input
                         className="bg-transparent border-0 text-[11px] text-[var(--muted)] outline-none w-full placeholder:text-[var(--muted)]/50 focus:text-white"
-                        placeholder="フォルダ名 (空欄で未分類)"
+                        placeholder={`フォルダ名 (${folderColumnSource}列基準: 空欄で未分類)`}
                         value={getFolder(activeNote) === "未分類" ? "" : getFolder(activeNote)}
                         onChange={(e) => handleNoteFolderChange(e.target.value)}
                       />
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#21262d] text-gray-400 font-mono shrink-0" title={`現在は${folderColumnSource}列を基準にフォルダを分類しています`}>
+                        {folderColumnSource}列
+                      </span>
                     </div>
                   </div>
                 </div>

@@ -82,6 +82,41 @@ export function getFolderFromKeywords(keywordsStr: string): string {
   return first || "未分類";
 }
 
+// Extract folder name from Column O (15th column / updated_at / custom info)
+export function getFolderFromColumnO(note: Note): string {
+  if (note.columnO && typeof note.columnO === "string" && note.columnO.trim() !== "") {
+    const trimmed = note.columnO.trim();
+    // 1. Check if it's formatted like [folder:XYZ]
+    const match = trimmed.match(/\[folder:(.+?)\]/i);
+    if (match) return match[1].trim();
+
+    // 2. Check if it's a date or timestamp like "2026/09/05 12:34:56" or "2026-09-05"
+    const dateMatch = trimmed.match(/^(\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2})/);
+    if (dateMatch) {
+      return dateMatch[1].replace(/-/g, "/");
+    }
+
+    // 3. Strip wikilinks: [[Category]] -> Category
+    let clean = trimmed.replace(/^\[\[|\]\]$/g, '').trim();
+    clean = clean.replace(/^#/, '').trim();
+    const first = clean.split(/[,、\/\n・]/)[0].trim();
+    return first || "未分類";
+  }
+
+  // Fallback: If columnO is empty, check if note has updatedAt timestamp
+  if (note.updatedAt && note.updatedAt > 0) {
+    const d = new Date(note.updatedAt);
+    if (!isNaN(d.getTime())) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}/${m}/${day}`;
+    }
+  }
+
+  return "未分類";
+}
+
 // Helper to extract normalized YYYY-MM-DD string from a note (西暦・月・日)
 export function getNoteYMD(note: Note): string {
   // 1. Check K column (dateStr)
