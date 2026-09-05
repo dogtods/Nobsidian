@@ -1407,37 +1407,80 @@ function saveNote(note, targetSheetName, targetSsUrl) {
   const lastRow = sheet.getLastRow();
 
   if (lastRow >= 2) {
-    const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues().flat().map(String);
-    const idx = ids.indexOf(String(note.id));
+    // A〜C列（ID, タイトル, URL）をまとめて取得して高速＆確実にマッチング
+    const headerData = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
+    let idx = -1;
 
+    // 1. まずIDで照合
+    const noteIdStr = String(note.id || "").trim();
+    if (noteIdStr) {
+      for (let i = 0; i < headerData.length; i++) {
+        if (String(headerData[i][0] || "").trim() === noteIdStr) {
+          idx = i;
+          break;
+        }
+      }
+    }
+
+    // 2. IDで見つからない場合、タイトル（B列）でフォールバック照合
+    if (idx === -1 && note.title) {
+      const targetTitle = String(note.title).trim().toLowerCase();
+      if (targetTitle) {
+        for (let i = 0; i < headerData.length; i++) {
+          if (String(headerData[i][1] || "").trim().toLowerCase() === targetTitle) {
+            idx = i;
+            break;
+          }
+        }
+      }
+    }
+
+    // 3. タイトルでも見つからずURLがある場合、URL（C列）でフォールバック照合
+    if (idx === -1 && note.sourceUrl) {
+      const targetUrl = String(note.sourceUrl).trim().toLowerCase();
+      if (targetUrl) {
+        for (let i = 0; i < headerData.length; i++) {
+          if (String(headerData[i][2] || "").trim().toLowerCase() === targetUrl) {
+            idx = i;
+            break;
+          }
+        }
+      }
+    }
+
+    // 既存行が見つかった場合
     if (idx !== -1) {
       const rowNum = idx + 2;
-      const currentCols = Math.max(15, sheet.getLastColumn());
-      const currentRow = sheet.getRange(rowNum, 1, 1, currentCols).getValues()[0];
 
-      // メモ書き画面（プレビュー・編集）の内容をスプレッドシートのE列（row[4]）に保存
-      const eVal = note.summary !== undefined ? note.summary : (note.content !== undefined ? note.content : (currentRow[4] || ""));
+      // もしA列（ID）が空だった場合は、次回以降の高速照合のためにnote.idを書き込む
+      if (!headerData[idx][0] || String(headerData[idx][0]).trim() === "") {
+        sheet.getRange(rowNum, 1).setValue(note.id);
+      }
 
-      const updatedRow = [
-        note.id,
-        note.title !== undefined && note.title !== "" ? note.title : (currentRow[1] || ""),
-        note.sourceUrl !== undefined ? note.sourceUrl : (currentRow[2] || ""),
-        note.keywords !== undefined ? note.keywords : (currentRow[3] || ""),
-        eVal, // E列: メモ書き画面（プレビュー・編集）の内容を保存
-        currentRow[5] || (note.createdAt ? new Date(note.createdAt) : new Date()),
-        note.processed !== undefined ? note.processed : (currentRow[6] || 'false'),
-        note.nobsidian !== undefined ? note.nobsidian : (currentRow[7] || ''),
-        currentRow[8] || note.rawContent || "",
-        currentRow[9] || note.metaInfo || note.columnJ || "",
-        currentRow[10] || note.dateStr || "",
-        note.timeline !== undefined ? note.timeline : (currentRow[11] || ""),
-        currentRow[12] || note.source || "web_app",
-        currentRow[13] || "", // N列: E列の内容を勝手に複製しない！既存値をそのまま維持
-        new Date()
-      ];
+      // メモ書き画面（プレビュー・編集）の内容をスプレッドシートのE列（5列目）に直接ピンポイント保存
+      const eVal = note.summary !== undefined ? note.summary : (note.content !== undefined ? note.content : "");
+      sheet.getRange(rowNum, 5).setValue(eVal);
 
-      sheet.getRange(rowNum, 1, 1, 15).setValues([updatedRow]);
-      return { success: true, action: "updated", id: note.id };
+      // タイトル・URL・キーワード・年表も更新
+      if (note.title !== undefined && note.title !== "") {
+        sheet.getRange(rowNum, 2).setValue(note.title);
+      }
+      if (note.sourceUrl !== undefined) {
+        sheet.getRange(rowNum, 3).setValue(note.sourceUrl);
+      }
+      if (note.keywords !== undefined) {
+        sheet.getRange(rowNum, 4).setValue(note.keywords);
+      }
+      if (note.timeline !== undefined) {
+        sheet.getRange(rowNum, 12).setValue(note.timeline);
+      }
+      // O列（更新日時: 15列目）
+      sheet.getRange(rowNum, 15).setValue(new Date());
+
+      // 即時反映のために変更をフラッシュ
+      SpreadsheetApp.flush();
+
+      return { success: true, action: "updated", id: note.id, row: rowNum, message: "E列を更新しました" };
     }
   }
 
@@ -1461,7 +1504,8 @@ function saveNote(note, targetSheetName, targetSsUrl) {
     new Date()
   ];
   sheet.appendRow(newRow);
-  return { success: true, action: "created", id: note.id };
+  SpreadsheetApp.flush();
+  return { success: true, action: "created", id: note.id, message: "新規行を作成しE列を保存しました" };
 }
 
 // ---- ノート削除 ----
@@ -1475,6 +1519,7 @@ function deleteNote(id, targetSheetName, targetSsUrl) {
   if (idx === -1) return { success: false, error: "該当IDのメモが見つかりません: " + id };
 
   sheet.deleteRow(idx + 2);
+  SpreadsheetApp.flush();
   return { success: true, deletedId: id };
 }
 
@@ -1484,21 +1529,24 @@ function saveAll(notes, targetSheetName, targetSsUrl) {
   const lastRow = sheet.getLastRow();
 
   const existingMap = new Map();
+  const existingTitleMap = new Map();
   if (lastRow > 1) {
     const numCols = Math.max(15, sheet.getLastColumn());
     const data = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
     data.forEach(r => {
-      if (r[0]) existingMap.set(String(r[0]), r);
+      if (r[0]) existingMap.set(String(r[0]).trim(), r);
+      if (r[1]) existingTitleMap.set(String(r[1]).trim().toLowerCase(), r);
     });
   }
 
   if (notes && notes.length > 0) {
     const rows = notes.map(n => {
-      const exist = existingMap.get(String(n.id));
+      const noteTitleKey = n.title ? String(n.title).trim().toLowerCase() : "";
+      const exist = existingMap.get(String(n.id).trim()) || (noteTitleKey ? existingTitleMap.get(noteTitleKey) : null);
       const eVal = n.summary !== undefined ? n.summary : (n.content !== undefined ? n.content : (exist ? exist[4] || "" : ""));
       if (exist) {
         return [
-          n.id,
+          n.id || exist[0] || "",
           n.title || exist[1] || "",
           n.sourceUrl !== undefined ? n.sourceUrl : (exist[2] || ""),
           n.keywords || exist[3] || "",
@@ -1538,6 +1586,7 @@ function saveAll(notes, targetSheetName, targetSsUrl) {
       sheet.getRange(2, 1, lastRow - 1, Math.max(15, sheet.getLastColumn())).clearContent();
     }
     sheet.getRange(2, 1, rows.length, 15).setValues(rows);
+    SpreadsheetApp.flush();
   }
 
   return { success: true, count: notes ? notes.length : 0, sheetName: sheet.getName() };

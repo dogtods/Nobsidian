@@ -33,7 +33,9 @@ import {
   X,
   Clipboard,
   Volume2,
-  Square
+  Square,
+  Save,
+  Check
 } from "lucide-react";
 
 import { Note, FolderRelation } from "./types";
@@ -188,6 +190,8 @@ export default function App() {
   // Sync statuses
   const [syncStatus, setSyncStatus] = useState<"synced" | "syncing" | "offline" | "error">("offline");
   const [syncLabel, setSyncLabel] = useState("オフライン");
+  const [isSavingNote, setIsSavingNote] = useState(false);
+  const [hasPendingSave, setHasPendingSave] = useState(false);
 
   // Auto sync state (Defaults to false so it won't automatically sync without explicit user preference)
   const [autoSync, setAutoSync] = useState<boolean>(() => {
@@ -598,16 +602,45 @@ export default function App() {
     }
   };
 
-  const pushNoteToServer = async (note: Note) => {
-    if (!autoSyncRef.current) return;
+  const pushNoteToServer = async (note: Note, isExplicit = false) => {
+    if (!isExplicit && !autoSyncRef.current) {
+      setHasPendingSave(false);
+      return;
+    }
     const url = getApiUrl();
-    if (!url || url.includes("YOUR_") || url.includes("YOUR_GAS_URL")) return;
-    updateSyncStatus("syncing", "保存中...");
+    if (!url || url.includes("YOUR_") || url.includes("YOUR_GAS_URL")) {
+      setHasPendingSave(false);
+      if (isExplicit) {
+        toast("GASのURLが設定されていません。「設定⚙」からURLを入力してください。");
+      }
+      return;
+    }
+
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    setHasPendingSave(false);
+    setIsSavingNote(true);
+    updateSyncStatus("syncing", "E列へ保存中...");
     try {
-      await apiPost({ action: "saveNote", note });
-      updateSyncStatus("synced", "同期済");
-    } catch {
+      const res = await apiPost({ action: "saveNote", note });
+      if (res && res.error) {
+        throw new Error(res.error);
+      }
+      setIsSavingNote(false);
+      updateSyncStatus("synced", "E列同期済");
+      if (isExplicit) {
+        toast("スプレッドシート（E列）に即時反映しました ✦");
+      }
+    } catch (err: any) {
+      setIsSavingNote(false);
       updateSyncStatus("error", "保存エラー");
+      if (isExplicit) {
+        toast("保存エラー: " + (err.message || "通信に失敗しました"));
+      } else {
+        console.error("Auto-sync pushNoteToServer failed:", err);
+      }
     }
   };
 
@@ -813,10 +846,37 @@ export default function App() {
 
   // Editor Change functions
   const scheduleDelayedSave = (note: Note) => {
+    setHasPendingSave(true);
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      pushNoteToServer(note);
-    }, 1500);
+      pushNoteToServer(note, false);
+    }, 800);
+  };
+
+  const flushPendingSave = async (isExplicit = false) => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    const active = getActiveNote();
+    if (active) {
+      await pushNoteToServer(active, isExplicit);
+    }
+  };
+
+  const handleEditorBlur = () => {
+    if (saveTimerRef.current) {
+      flushPendingSave(false);
+    }
+  };
+
+  const selectNote = (id: string | null) => {
+    if (saveTimerRef.current) {
+      flushPendingSave(false);
+    }
+    setActiveId(id);
+    setAiPanelOpen(false);
+    setSidebarOpen(false);
   };
 
   const handleNoteContentChange = (val: string) => {
@@ -966,6 +1026,13 @@ export default function App() {
   };
 
   const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Ctrl+S / Cmd+S: 即時スプレッドシート（E列）保存
+    if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S")) {
+      e.preventDefault();
+      flushPendingSave(true);
+      return;
+    }
+
     if (!suggest.show) return;
 
     if (e.key === "ArrowDown") {
@@ -983,6 +1050,18 @@ export default function App() {
       setSuggest(prev => ({ ...prev, show: false }));
     }
   };
+
+  // 全体ショートカット（エディタ外でもCtrl+Sで即時保存）
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S")) {
+        e.preventDefault();
+        flushPendingSave(true);
+      }
+    };
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [activeId, notes]);
 
   // Parsing WikiLinks and raw elements inside Markdown Renderer
   const handleWikiLinkClick = (targetTitle: string) => {
@@ -3084,9 +3163,7 @@ const renderMarkdownToElements = (contentStr: string) => {
                         <div
                           key={n.id}
                           onClick={() => {
-                            setActiveId(n.id);
-                            setAiPanelOpen(false);
-                            setSidebarOpen(false);
+                            selectNote(n.id);
                           }}
                           className={`note-item relative group flex items-center gap-2 p-2 px-3 text-xs border-l-2 cursor-pointer transition-all hover:bg-[#1c2128] ${
                             activeId === n.id ? "bg-[#1f2d3d] border-[var(--blue)] text-[var(--bright)] font-semibold" : "border-transparent text-[var(--subtle)]"
@@ -3220,7 +3297,10 @@ const renderMarkdownToElements = (contentStr: string) => {
                     className={`px-3 py-1 text-[11px] font-semibold border-0 rounded cursor-pointer transition-all ${
                       mode === "preview" ? "bg-[var(--border)] text-[var(--blue)] font-bold mb-0" : "text-[var(--subtle)] hover:bg-[#ffffff08]"
                     }`}
-                    onClick={() => setMode("preview")}
+                    onClick={() => {
+                      flushPendingSave(false);
+                      setMode("preview");
+                    }}
                   >
                     プレビュー
                   </button>
@@ -3233,6 +3313,40 @@ const renderMarkdownToElements = (contentStr: string) => {
                     編集
                   </button>
                 </div>
+
+                {/* E列保存 / 同期ステータスボタン */}
+                <button
+                  onClick={() => flushPendingSave(true)}
+                  disabled={isSavingNote}
+                  className={`p-1 px-2.5 border text-xs font-semibold rounded-md cursor-pointer flex items-center gap-1.5 transition-all ${
+                    isSavingNote
+                      ? "bg-blue-900/30 border-blue-500/40 text-blue-300"
+                      : hasPendingSave
+                      ? "bg-amber-900/30 border-amber-500/50 text-amber-300 hover:bg-amber-900/50 animate-pulse"
+                      : autoSync
+                      ? "bg-emerald-900/20 border-emerald-500/30 text-emerald-300 hover:bg-emerald-900/40"
+                      : "bg-[#1c2128] border-[var(--border2)] text-gray-300 hover:text-white hover:bg-[var(--border)]"
+                  }`}
+                  title="スプレッドシート（E列）に即座に反映します。ショートカット: Ctrl+S"
+                >
+                  {isSavingNote ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400" />
+                      <span>E列保存中...</span>
+                    </>
+                  ) : hasPendingSave ? (
+                    <>
+                      <Save className="w-3.5 h-3.5 text-amber-400" />
+                      <span>E列へ保存</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="hidden sm:inline">E列同期済</span>
+                      <span className="sm:hidden">保存</span>
+                    </>
+                  )}
+                </button>
 
                 <button
                   onClick={() => setIsFullScreen(!isFullScreen)}
@@ -3506,6 +3620,7 @@ const renderMarkdownToElements = (contentStr: string) => {
                     placeholder="ここにメモを書きましょう。&#10;[[ノート名]] と書くと自動的につながり（リンク）になります。"
                     value={activeNote.content}
                     onChange={(e) => handleNoteContentChange(e.target.value)}
+                    onBlur={handleEditorBlur}
                     onKeyDown={handleEditorKeyDown}
                   />
                 ) : (
