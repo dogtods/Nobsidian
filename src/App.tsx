@@ -57,6 +57,14 @@ import {
   compareNotesByDate
 } from "./utils/graphDataParser";
 import { fetchGasGet, fetchGasPost, sanitizeGasUrl } from "./utils/gasClient";
+import {
+  saveNotesLocally,
+  loadNotesLocally,
+  getStoredAutoSyncSync,
+  saveAutoSyncPreference,
+  loadAutoSyncPreferenceAsync,
+  LS_KEY
+} from "./utils/storage";
 
 // Import charts and config modals
 import HeatmapModal from "./components/HeatmapModal";
@@ -134,7 +142,6 @@ const getApiUrl = () => {
     return DEFAULT_API_URL;
   }
 };
-const LS_KEY = "cn_notes_cache";
 
 // E列（要約・ハイライト）をメモ書き画面（プレビュー・編集）に忠実に配置するヘルパー
 // 勝手な見出し(#)や日付(---\n**日付:**)の付加は行わず、E列テキストそのものを保持する
@@ -210,17 +217,31 @@ export default function App() {
   const [isSavingNote, setIsSavingNote] = useState(false);
   const [hasPendingSave, setHasPendingSave] = useState(false);
 
-  // Auto sync state (Defaults to false so it won't automatically sync without explicit user preference)
+  // Auto sync state (Persists in both LocalStorage and IndexedDB so it's never lost across reloads)
   const [autoSync, setAutoSync] = useState<boolean>(() => {
-    const saved = localStorage.getItem("cn_auto_sync_enabled_v2");
-    return saved !== null ? JSON.parse(saved) : false;
+    return getStoredAutoSyncSync();
   });
   const autoSyncRef = useRef(autoSync);
 
   useEffect(() => {
     autoSyncRef.current = autoSync;
-    localStorage.setItem("cn_auto_sync_enabled_v2", JSON.stringify(autoSync));
+    saveAutoSyncPreference(autoSync);
   }, [autoSync]);
+
+  const handleAutoSyncChange = (newVal: boolean) => {
+    setAutoSync(newVal);
+    autoSyncRef.current = newVal;
+    saveAutoSyncPreference(newVal);
+    if (newVal) {
+      toast("クラウド自動同期を有効化しました ✦");
+      const url = getApiUrl();
+      if (url && !url.includes("YOUR_") && !url.includes("YOUR_GAS_URL")) {
+        syncFromServer(true).catch(() => {});
+      }
+    } else {
+      toast("手動同期モードに切り替えました（勝手な同期は行われません） 🔒");
+    }
+  };
 
   // AI results box state within the editor helper panel
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
@@ -360,11 +381,9 @@ export default function App() {
 
   const getFolder = (note: Note) => getFolderFromKeywords(note.keywords);
 
-  // Local Saving
+  // Local Saving (Dual-layer persistence via IndexedDB and LocalStorage)
   const triggerLocalSave = (updatedNotes: Note[], activeNoteId: string | null) => {
-    try {
-      localStorage.setItem(LS_KEY, JSON.stringify({ notes: updatedNotes, activeId: activeNoteId }));
-    } catch (e) {}
+    saveNotesLocally(updatedNotes, activeNoteId).catch(() => {});
   };
 
   // Toast Helper
@@ -455,14 +474,14 @@ export default function App() {
     setSyncLabel(label);
   };
 
-  // Sync pull & push logic
-  const syncFromServer = async () => {
+  // Sync pull & push logic (supports background startup sync)
+  const syncFromServer = async (isBackground = false) => {
     const url = getApiUrl();
     if (!url || url.includes("YOUR_") || url.includes("YOUR_GAS_URL")) {
       updateSyncStatus("offline", "GAS未設定");
       return; // Added missing return to prevent immediately starting API requests
     }
-    updateSyncStatus("syncing", "同期中...");
+    updateSyncStatus("syncing", isBackground ? "自動同期中..." : "同期中...");
     
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
@@ -513,12 +532,20 @@ export default function App() {
         }
 
         updateSyncStatus("synced", "同期済");
-        toast("サーバーと同期が完了しました ✦");
+        if (isBackground) {
+          toast(`スプレッドシートから最新データ（全${serverNotes.length}件）を自動同期しました ✦`);
+        } else {
+          toast("サーバーと同期が完了しました ✦");
+        }
       }
     } catch (e: any) {
       updateSyncStatus("error", "エラー");
-      toast("同期エラー: " + e.message);
-      throw e;
+      if (!isBackground) {
+        toast("同期エラー: " + e.message);
+        throw e;
+      } else {
+        console.warn("Background auto-sync failed:", e);
+      }
     }
   };
 
@@ -670,45 +697,96 @@ export default function App() {
     } catch {}
   };
 
-  // Initialize and Boot
+  // Initialize and Boot (Restores from IndexedDB/LocalStorage, handles background auto-sync and mobile lifecycle)
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(LS_KEY);
-      if (stored) {
-        const data = JSON.parse(stored);
-        if (data.notes && data.notes.length > 0) {
-          const normalized = data.notes.map(normalizeNoteItem);
-          setNotes(normalized);
-          // 起動時は常にダッシュボードを表示
-          setActiveId(null);
-        } else {
-          loadDefaultNotes();
+    let isMounted = true;
+
+    const bootStorage = async () => {
+      let loadedNotes: Note[] = [];
+
+      // 1. Synchronous attempt from localStorage for immediate flicker-free display
+      try {
+        const stored = localStorage.getItem(LS_KEY);
+        if (stored) {
+          const data = JSON.parse(stored);
+          if (data && data.notes && Array.isArray(data.notes) && data.notes.length > 0) {
+            loadedNotes = data.notes.map(normalizeNoteItem);
+            setNotes(loadedNotes);
+            setActiveId(null);
+          }
         }
-      } else {
-        loadDefaultNotes();
+      } catch (e) {}
+
+      // 2. Asynchronous check in IndexedDB (primary source with no 5MB quota limit)
+      try {
+        const idbData = await loadNotesLocally();
+        if (isMounted && idbData && idbData.notes && Array.isArray(idbData.notes) && idbData.notes.length > 0) {
+          if (loadedNotes.length === 0 || idbData.notes.length >= loadedNotes.length) {
+            const normalized = idbData.notes.map(normalizeNoteItem);
+            setNotes(normalized);
+            setActiveId(null);
+            loadedNotes = normalized;
+          }
+        }
+      } catch (e) {}
+
+      // 3. Ensure autoSync state is synchronized from IndexedDB if localStorage was cleared on mobile
+      try {
+        const idbAutoSync = await loadAutoSyncPreferenceAsync();
+        if (isMounted && idbAutoSync !== null && idbAutoSync !== autoSyncRef.current) {
+          setAutoSync(idbAutoSync);
+          autoSyncRef.current = idbAutoSync;
+        }
+      } catch (e) {}
+
+      // 4. If autoSync is ON and GAS API URL is configured:
+      // Automatically pull latest notes from Google Sheets in the background!
+      const currentAutoSync = autoSyncRef.current;
+      const gasUrl = getApiUrl();
+      if (currentAutoSync && gasUrl && !gasUrl.includes("YOUR_") && !gasUrl.includes("YOUR_GAS_URL")) {
+        setTimeout(() => {
+          if (isMounted) {
+            syncFromServer(true).catch(() => {});
+          }
+        }, 600);
       }
+    };
 
-      setFilterStartDate(localStorage.getItem("cn_filter_start_date") || "");
-      setFilterEndDate(localStorage.getItem("cn_filter_end_date") || "");
-      
-      try {
-        const storedEx = localStorage.getItem("cn_excluded_keywords");
-        if (storedEx) {
-          setExcludedKeywords(JSON.parse(storedEx));
-        }
-      } catch (ex) {}
+    bootStorage();
 
-      try {
-        const storedCat = localStorage.getItem("cn_excluded_categories");
-        if (storedCat) {
-          setExcludedCategories(JSON.parse(storedCat));
+    setFilterStartDate(localStorage.getItem("cn_filter_start_date") || "");
+    setFilterEndDate(localStorage.getItem("cn_filter_end_date") || "");
+    
+    try {
+      const storedEx = localStorage.getItem("cn_excluded_keywords");
+      if (storedEx) {
+        setExcludedKeywords(JSON.parse(storedEx));
+      }
+    } catch (ex) {}
+
+    try {
+      const storedCat = localStorage.getItem("cn_excluded_categories");
+      if (storedCat) {
+        setExcludedCategories(JSON.parse(storedCat));
+      }
+    } catch (ex) {}
+
+    // Mobile screen close / app switch lifecycle handler:
+    // Flush any pending note edits immediately when the user closes their phone screen or switches tabs
+    const handleVisibilityOrPageHide = () => {
+      if (document.visibilityState === "hidden") {
+        if (saveTimerRef.current) {
+          flushPendingSave(false);
         }
-      } catch (ex) {}
-    } catch (e) {
-      loadDefaultNotes();
-    }
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityOrPageHide);
+    window.addEventListener("pagehide", handleVisibilityOrPageHide);
 
     return () => {
+      isMounted = false;
+      document.removeEventListener("visibilitychange", handleVisibilityOrPageHide);
+      window.removeEventListener("pagehide", handleVisibilityOrPageHide);
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
   }, []);
@@ -723,7 +801,6 @@ export default function App() {
     const fresh: Note[] = [];
     setNotes(fresh);
     setActiveId(null);
-    triggerLocalSave(fresh, null);
   };
 
   const getActiveNote = (): Note | undefined => {
@@ -2308,14 +2385,29 @@ const renderMarkdownToElements = (contentStr: string) => {
   };
 
   const collapseAllFolders = () => {
-    setCollapsedFolders({});
+    const nextCollapsed: { [f: string]: boolean } = {};
+    // Collect all folders from notes and sortedFolders, marking all as collapsed (true)
+    notes.forEach(n => {
+      const f = getFolder(n);
+      if (f) nextCollapsed[f] = true;
+    });
+    const { sortedFolders: currentFolders } = getCategorizedNotes();
+    currentFolders.forEach(folder => {
+      nextCollapsed[folder] = true;
+    });
+    setCollapsedFolders(nextCollapsed);
     toast("全てのフォルダを折りたたみました ✦");
   };
 
   const expandAllFolders = () => {
-    const { sortedFolders } = getCategorizedNotes();
     const nextCollapsed: { [f: string]: boolean } = {};
-    sortedFolders.forEach(folder => {
+    // Collect all folders and mark all as expanded (false)
+    notes.forEach(n => {
+      const f = getFolder(n);
+      if (f) nextCollapsed[f] = false;
+    });
+    const { sortedFolders: currentFolders } = getCategorizedNotes();
+    currentFolders.forEach(folder => {
       nextCollapsed[folder] = false;
     });
     setCollapsedFolders(nextCollapsed);
@@ -2984,16 +3076,10 @@ const renderMarkdownToElements = (contentStr: string) => {
                 type="checkbox"
                 checked={autoSync}
                 onChange={(e) => {
-                  const val = e.target.checked;
-                  setAutoSync(val);
-                  if (val) {
-                    toast("クラウド自動同期を有効化しました ✦");
-                  } else {
-                    toast("手動同期モードに切り替えました（勝手な同期は行われません） 🔒");
-                  }
+                  handleAutoSyncChange(e.target.checked);
                 }}
                 className="rounded bg-[#0d1117] border-[#30363d] text-[var(--blue)] focus:ring-0 cursor-pointer w-3.5 h-3.5"
-                title={autoSync ? "自動同期が有効です。チェックを外すと勝手な同期を停止します。" : "チェックを入れると編集時に自動でスプレッドシートへ同期します。"}
+                title={autoSync ? "自動同期が有効です。起動時および編集時に自動でスプレッドシートと同期します。" : "チェックを入れると起動時・編集時に自動でスプレッドシートへ同期します。"}
               />
               <span className={autoSync ? "text-[var(--blue)] font-medium" : "text-gray-400"}>
                 {autoSync ? "クラウド自動同期: ON" : "自動同期: OFF (手動)"}
@@ -3203,18 +3289,20 @@ const renderMarkdownToElements = (contentStr: string) => {
         {/* Category lists elements */}
         <div className="px-3 py-1.5 flex items-center justify-between border-b border-[var(--border)] bg-[#11141a] text-[10px] text-[var(--muted)] font-semibold select-none shrink-0 border-t">
           <span>フォルダリスト ({sortedFolders.length}個)</span>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
             <button
+              type="button"
               onClick={collapseAllFolders}
-              className="hover:text-white hover:underline transition-colors cursor-pointer bg-none border-none p-0 text-[10px] font-semibold"
+              className="text-gray-400 hover:text-white hover:underline transition-colors cursor-pointer bg-transparent border-0 p-0 text-[10px] font-semibold"
               title="全てのフォルダを折りたたむ"
             >
               一括たたむ
             </button>
             <span className="opacity-30">|</span>
             <button
+              type="button"
               onClick={expandAllFolders}
-              className="hover:text-white hover:underline transition-colors cursor-pointer bg-none border-none p-0 text-[10px] font-semibold"
+              className="text-gray-400 hover:text-white hover:underline transition-colors cursor-pointer bg-transparent border-0 p-0 text-[10px] font-semibold"
               title="全てのフォルダを展開する"
             >
               一括展開
@@ -4973,7 +5061,7 @@ const renderMarkdownToElements = (contentStr: string) => {
         syncStatus={syncStatus}
         syncLabel={syncLabel}
         autoSync={autoSync}
-        setAutoSync={setAutoSync}
+        setAutoSync={handleAutoSyncChange}
       />
 
       {/* Batch Folder Link progress modal */}
