@@ -84,13 +84,54 @@ export function getFolderFromKeywords(keywordsStr: string): string {
 
 // Helper to get effective date from K column (dateStr) or fallback to createdAt
 export function getNoteDateMillis(note: Note): number {
-  if (note.dateStr) {
-    const parsed = new Date(note.dateStr.replace(/\//g, "-"));
-    if (!isNaN(parsed.getTime())) {
-      return parsed.getTime();
+  if (note.dateStr && typeof note.dateStr === "string") {
+    const raw = note.dateStr.trim();
+    if (raw) {
+      if (!isNaN(Number(raw)) && Number(raw) > 100000) {
+        return Number(raw);
+      }
+      const clean = raw
+        .replace(/年|\./g, "-")
+        .replace(/月/g, "-")
+        .replace(/日/g, "")
+        .replace(/\//g, "-")
+        .trim();
+      const parsed = new Date(clean);
+      if (!isNaN(parsed.getTime())) {
+        return parsed.getTime();
+      }
+      const ymMatch = clean.match(/^(\d{4})-(\d{1,2})$/);
+      if (ymMatch) {
+        const d = new Date(parseInt(ymMatch[1], 10), parseInt(ymMatch[2], 10) - 1, 1);
+        if (!isNaN(d.getTime())) return d.getTime();
+      }
     }
   }
-  return note.createdAt;
+  if (note.createdAt && !isNaN(Number(note.createdAt)) && Number(note.createdAt) > 0) {
+    return Number(note.createdAt);
+  }
+  if (note.updatedAt && !isNaN(Number(note.updatedAt)) && Number(note.updatedAt) > 0) {
+    return Number(note.updatedAt);
+  }
+  return 0;
+}
+
+// Displayable formatted date for note: e.g. "2026/03/04"
+export function getNoteDisplayDate(note: Note): string {
+  if (note.dateStr && typeof note.dateStr === "string" && note.dateStr.trim()) {
+    return note.dateStr.trim();
+  }
+  const millis = getNoteDateMillis(note);
+  if (millis > 0) {
+    const d = new Date(millis);
+    if (!isNaN(d.getTime())) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}/${m}/${day}`;
+    }
+  }
+  return "";
 }
 
 // Convert timestamp to YYYY-MM-DD format

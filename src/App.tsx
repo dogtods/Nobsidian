@@ -35,7 +35,9 @@ import {
   Volume2,
   Square,
   Save,
-  Check
+  Check,
+  Calendar,
+  ArrowUpDown
 } from "lucide-react";
 
 import { Note, FolderRelation } from "./types";
@@ -48,7 +50,9 @@ import {
   parseCoOccurData,
   parseStreamData,
   parseBubbleData,
-  getFilteredNotes
+  getFilteredNotes,
+  getNoteDateMillis,
+  getNoteDisplayDate
 } from "./utils/graphDataParser";
 import { fetchGasGet, fetchGasPost, sanitizeGasUrl } from "./utils/gasClient";
 
@@ -186,6 +190,16 @@ export default function App() {
   // Date filters
   const [filterStartDate, setFilterStartDate] = useState("");
   const [filterEndDate, setFilterEndDate] = useState("");
+
+  // Note sorting mode ("date-desc" | "date-asc" | "updated-desc" | "title-asc")
+  const [noteSortMode, setNoteSortMode] = useState<"date-desc" | "date-asc" | "updated-desc" | "title-asc">(() => {
+    return (localStorage.getItem("cn_note_sort_mode") as any) || "date-desc";
+  });
+
+  const handleSortChange = (mode: "date-desc" | "date-asc" | "updated-desc" | "title-asc") => {
+    setNoteSortMode(mode);
+    localStorage.setItem("cn_note_sort_mode", mode);
+  };
 
   // Sync statuses
   const [syncStatus, setSyncStatus] = useState<"synced" | "syncing" | "offline" | "error">("offline");
@@ -2231,8 +2245,9 @@ const renderMarkdownToElements = (contentStr: string) => {
     const endMilli = filterEnd ? new Date(filterEnd + "T23:59:59").getTime() : null;
 
     const filtered = notes.filter(n => {
-      if (startMilli && n.createdAt < startMilli) return false;
-      if (endMilli && n.createdAt > endMilli) return false;
+      const noteDate = getNoteDateMillis(n);
+      if (startMilli && noteDate < startMilli) return false;
+      if (endMilli && noteDate > endMilli) return false;
       
       const folderName = getFolder(n);
       
@@ -2252,6 +2267,22 @@ const renderMarkdownToElements = (contentStr: string) => {
       const folder = getFolder(n);
       if (!groups[folder]) groups[folder] = [];
       groups[folder].push(n);
+    });
+
+    // Sort notes inside each group according to noteSortMode
+    Object.keys(groups).forEach(folder => {
+      groups[folder].sort((a, b) => {
+        if (noteSortMode === "date-desc") {
+          return getNoteDateMillis(b) - getNoteDateMillis(a);
+        } else if (noteSortMode === "date-asc") {
+          return getNoteDateMillis(a) - getNoteDateMillis(b);
+        } else if (noteSortMode === "updated-desc") {
+          return (b.updatedAt || 0) - (a.updatedAt || 0);
+        } else if (noteSortMode === "title-asc") {
+          return a.title.localeCompare(b.title, "ja");
+        }
+        return getNoteDateMillis(b) - getNoteDateMillis(a);
+      });
     });
 
     const sortedFolders = Object.keys(groups).sort((a, b) => {
@@ -3023,6 +3054,44 @@ const renderMarkdownToElements = (contentStr: string) => {
           </button>
         </div>
 
+        {/* Active date filter banner & sort selector */}
+        <div className="px-3 py-1.5 bg-[#11141a] border-b border-[var(--border)] flex items-center justify-between text-[11px] gap-2">
+          <div className="flex items-center gap-1.5 overflow-hidden">
+            <Calendar className="w-3 h-3 text-[var(--purple)] shrink-0" />
+            {filterStartDate || filterEndDate ? (
+              <div className="flex items-center gap-1 truncate">
+                <span className="text-purple-300 font-mono text-[10px] truncate" title={`期間フィルター: ${filterStartDate || '最古'} 〜 ${filterEndDate || '最新'}`}>
+                  {filterStartDate || "最古"} 〜 {filterEndDate || "最新"}
+                </span>
+                <button
+                  onClick={() => handleCommonDateFilterChange("", "")}
+                  className="text-gray-400 hover:text-red-400 transition-colors p-0.5 cursor-pointer text-[10px]"
+                  title="期間フィルターを解除して全期間を表示"
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <span className="text-[var(--muted)] text-[10px]">全期間</span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0">
+            <ArrowUpDown className="w-3 h-3 text-[var(--muted)]" />
+            <select
+              value={noteSortMode}
+              onChange={(e) => handleSortChange(e.target.value as any)}
+              className="bg-[#161b22] border border-[#30363d] text-[10px] text-gray-300 rounded px-1.5 py-0.5 outline-none cursor-pointer focus:border-[var(--purple)]"
+              title="ノートの並び順（ソート）"
+            >
+              <option value="date-desc">日付 (新→古)</option>
+              <option value="date-asc">日付 (古→新)</option>
+              <option value="updated-desc">更新日時</option>
+              <option value="title-asc">名前順</option>
+            </select>
+          </div>
+        </div>
+
         {/* Category lists elements */}
         <div className="px-3 py-1.5 flex items-center justify-between border-b border-[var(--border)] bg-[#11141a] text-[10px] text-[var(--muted)] font-semibold select-none shrink-0 border-t">
           <span>フォルダリスト ({sortedFolders.length}個)</span>
@@ -3159,6 +3228,7 @@ const renderMarkdownToElements = (contentStr: string) => {
                   <div className="flex flex-col pl-6">
                     {groupList.map(n => {
                       const isEmpty = !n.content || n.content.trim().length <= n.title.length + 5;
+                      const displayDate = getNoteDisplayDate(n);
                       return (
                         <div
                           key={n.id}
@@ -3175,6 +3245,11 @@ const renderMarkdownToElements = (contentStr: string) => {
                             <FileText className={`w-3.5 h-3.5 flex-shrink-0 ${activeId === n.id ? "text-[var(--blue)]" : "text-[var(--muted)]"}`} />
                           )}
                           <span className={`${isEmpty ? "text-[var(--muted)] italic" : ""} flex-1 truncate`}>{n.title}</span>
+                          {displayDate && (
+                            <span className="text-[10px] text-[var(--muted)] font-mono shrink-0 group-hover:opacity-0 transition-opacity">
+                              {displayDate.split(" ")[0]}
+                            </span>
+                          )}
                           <button
                             onClick={(e) => handleDeleteNote(n.id, e)}
                             className="absolute right-2 opacity-0 group-hover:opacity-100 hover:opacity-100 border-0 bg-transparent text-[var(--muted)] hover:text-[var(--red)] p-0.5 cursor-pointer"
@@ -4019,27 +4094,87 @@ const renderMarkdownToElements = (contentStr: string) => {
               </div>
 
               {/* CARD 2: Date filter context (col-span-4) */}
-              <div className="md:col-span-4 group hover:border-[#a371f744] bg-[#161b22] border border-[#30363d] rounded-xl p-5 relative overflow-hidden transition-all duration-300 flex flex-col justify-between min-h-[180px]">
+              <div className="md:col-span-4 group hover:border-[#a371f744] bg-[#161b22] border border-[#30363d] rounded-xl p-5 relative overflow-hidden transition-all duration-300 flex flex-col justify-between min-h-[220px]">
                 <div className="flex justify-between items-start">
                   <div>
-                    <span className="text-[10px] font-bold text-[var(--purple)] tracking-wider uppercase">Filter</span>
+                    <span className="text-[10px] font-bold text-[var(--purple)] tracking-wider uppercase">Filter & Sort</span>
                     <h2 className="text-lg font-bold text-white mt-1">対象期間・最適化</h2>
                   </div>
-                  <span className="text-lg opacity-40 group-hover:opacity-100 group-hover:scale-110 transition-all">📅</span>
+                  <div className="flex items-center gap-1.5">
+                    {filterStartDate || filterEndDate ? (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-900/40 border border-purple-500/40 text-purple-300 font-semibold">
+                        指定中
+                      </span>
+                    ) : (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#21262d] border border-[#30363d] text-gray-400">
+                        全期間
+                      </span>
+                    )}
+                    <span className="text-lg opacity-40 group-hover:opacity-100 group-hover:scale-110 transition-all">📅</span>
+                  </div>
                 </div>
                 
-                <div className="my-3 space-y-1.5 flex-1 flex flex-col justify-center">
-                  <div className="flex items-center justify-between text-xs bg-[#0d1117] p-2 rounded border border-[#30363d]">
-                    <span className="text-[var(--muted)]">開始日:</span>
-                    <span className="font-semibold font-mono text-white">{filterStartDate || "未設定 (最古)"}</span>
+                {/* Direct Date Input Fields & Sort */}
+                <div className="my-2.5 space-y-2 flex-1 flex flex-col justify-center">
+                  <div className="flex items-center justify-between text-xs bg-[#0d1117] p-1.5 px-2.5 rounded-lg border border-[#30363d] focus-within:border-[var(--purple)] transition-all">
+                    <span className="text-[var(--muted)] text-[11px] shrink-0 w-14">開始日:</span>
+                    <input
+                      type="date"
+                      value={filterStartDate}
+                      onChange={(e) => handleCommonDateFilterChange(e.target.value, filterEndDate)}
+                      className="w-full bg-transparent text-xs text-white font-mono outline-none cursor-pointer text-right [color-scheme:dark]"
+                    />
+                    {filterStartDate && (
+                      <button
+                        onClick={() => handleCommonDateFilterChange("", filterEndDate)}
+                        className="ml-2 text-gray-500 hover:text-white text-xs cursor-pointer"
+                        title="開始日をクリア"
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
-                  <div className="flex items-center justify-between text-xs bg-[#0d1117] p-2 rounded border border-[#30363d]">
-                    <span className="text-[var(--muted)]">終了日:</span>
-                    <span className="font-semibold font-mono text-white">{filterEndDate || "未設定 (最新)"}</span>
+
+                  <div className="flex items-center justify-between text-xs bg-[#0d1117] p-1.5 px-2.5 rounded-lg border border-[#30363d] focus-within:border-[var(--purple)] transition-all">
+                    <span className="text-[var(--muted)] text-[11px] shrink-0 w-14">終了日:</span>
+                    <input
+                      type="date"
+                      value={filterEndDate}
+                      onChange={(e) => handleCommonDateFilterChange(filterStartDate, e.target.value)}
+                      className="w-full bg-transparent text-xs text-white font-mono outline-none cursor-pointer text-right [color-scheme:dark]"
+                    />
+                    {filterEndDate && (
+                      <button
+                        onClick={() => handleCommonDateFilterChange(filterStartDate, "")}
+                        className="ml-2 text-gray-500 hover:text-white text-xs cursor-pointer"
+                        title="終了日をクリア"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Sort Mode Dropdown */}
+                  <div className="flex items-center justify-between text-xs bg-[#0d1117] p-1.5 px-2.5 rounded-lg border border-[#30363d] focus-within:border-[var(--purple)] transition-all">
+                    <span className="text-[var(--muted)] text-[11px] shrink-0 flex items-center gap-1">
+                      <ArrowUpDown className="w-3 h-3 text-purple-400" />
+                      <span>並び順:</span>
+                    </span>
+                    <select
+                      value={noteSortMode}
+                      onChange={(e) => handleSortChange(e.target.value as any)}
+                      className="bg-transparent text-xs text-gray-200 outline-none cursor-pointer text-right [color-scheme:dark]"
+                    >
+                      <option value="date-desc" className="bg-[#161b22] text-white">📅 日付 (新しい順)</option>
+                      <option value="date-asc" className="bg-[#161b22] text-white">📅 日付 (古い順)</option>
+                      <option value="updated-desc" className="bg-[#161b22] text-white">🕒 最終更新 (新しい順)</option>
+                      <option value="title-asc" className="bg-[#161b22] text-white">🔤 タイトル五十音順</option>
+                    </select>
                   </div>
                 </div>
                 
-                <div className="flex gap-2 mt-2">
+                {/* Preset period buttons */}
+                <div className="flex gap-1.5 mt-1">
                   <button
                     onClick={() => {
                       const today = new Date();
@@ -4050,7 +4185,7 @@ const renderMarkdownToElements = (contentStr: string) => {
                       handleCommonDateFilterChange(todayStr, todayStr);
                       toast("期間を「今日」に設定しました");
                     }}
-                    className="flex-1 text-center py-1.5 bg-transparent hover:bg-[var(--border)] border border-[#30363d] text-xs font-semibold rounded-lg text-[var(--subtle)] hover:text-white transition-colors cursor-pointer"
+                    className="flex-1 text-center py-1.5 bg-transparent hover:bg-[var(--border)] border border-[#30363d] text-[11px] font-semibold rounded-lg text-[var(--subtle)] hover:text-white transition-colors cursor-pointer"
                     title="今日だけをフィルタ表示"
                   >
                     今日
@@ -4068,28 +4203,54 @@ const renderMarkdownToElements = (contentStr: string) => {
                       handleCommonDateFilterChange(`${yyyy1}-${mm1}-${dd1}`, `${yyyy2}-${mm2}-${dd2}`);
                       toast("期間を「過去1週間」に設定しました");
                     }}
-                    className="flex-1 text-center py-1.5 bg-transparent hover:bg-[var(--border)] border border-[#30363d] text-xs font-semibold rounded-lg text-[var(--subtle)] hover:text-white transition-colors cursor-pointer"
+                    className="flex-1 text-center py-1.5 bg-transparent hover:bg-[var(--border)] border border-[#30363d] text-[11px] font-semibold rounded-lg text-[var(--subtle)] hover:text-white transition-colors cursor-pointer"
                     title="今日までの1週間をフィルタ表示"
                   >
-                    過去1週間
+                    過去7日
+                  </button>
+                  <button
+                    onClick={() => {
+                      const today = new Date();
+                      const pastMonth = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+                      const yyyy1 = pastMonth.getFullYear();
+                      const mm1 = String(pastMonth.getMonth() + 1).padStart(2, "0");
+                      const dd1 = String(pastMonth.getDate()).padStart(2, "0");
+                      const yyyy2 = today.getFullYear();
+                      const mm2 = String(today.getMonth() + 1).padStart(2, "0");
+                      const dd2 = String(today.getDate()).padStart(2, "0");
+                      handleCommonDateFilterChange(`${yyyy1}-${mm1}-${dd1}`, `${yyyy2}-${mm2}-${dd2}`);
+                      toast("期間を「過去30日」に設定しました");
+                    }}
+                    className="flex-1 text-center py-1.5 bg-transparent hover:bg-[var(--border)] border border-[#30363d] text-[11px] font-semibold rounded-lg text-[var(--subtle)] hover:text-white transition-colors cursor-pointer"
+                    title="今日までの30日間をフィルタ表示"
+                  >
+                    過去30日
                   </button>
                   <button
                     onClick={() => {
                       handleCommonDateFilterChange("", "");
-                      toast("期間フィルタをリセットしました");
+                      toast("期間フィルタを解除しました（全期間表示）");
                     }}
-                    className="flex-1 text-center py-1.5 bg-transparent hover:bg-[var(--border)] border border-[#30363d] text-xs font-semibold rounded-lg text-[var(--subtle)] hover:text-white transition-colors cursor-pointer"
+                    className="flex-1 text-center py-1.5 bg-transparent hover:bg-[var(--border)] border border-[#30363d] text-[11px] font-semibold rounded-lg text-[var(--subtle)] hover:text-white transition-colors cursor-pointer"
                     title="期間フィルタを解除して全期間を表示"
                   >
                     リセット
                   </button>
                 </div>
-                <button
-                  onClick={() => setIsSettingsOpen(true)}
-                  className="w-full text-center py-1.5 bg-transparent hover:bg-[var(--border)] border border-[#30363d] text-xs font-semibold rounded-lg text-[var(--subtle)] hover:text-white transition-colors cursor-pointer mt-2"
-                >
-                  詳細に期間を設定 ⚙
-                </button>
+
+                {/* Column reference explanatory notice */}
+                <div className="text-[10px] text-[var(--muted)] border-t border-[#30363d] pt-2 mt-2 flex items-center justify-between">
+                  <span>
+                    ※ 参照列: <strong className="text-purple-300 font-semibold">K列（発行日・記事日付）</strong>
+                    <span className="text-[9px] text-gray-500 ml-1">（空欄時はF列登録日）</span>
+                  </span>
+                  <button
+                    onClick={() => setIsSettingsOpen(true)}
+                    className="text-[10px] text-[var(--blue)] hover:underline cursor-pointer shrink-0 ml-1"
+                  >
+                    詳細 ⚙
+                  </button>
+                </div>
               </div>
 
               {/* CARD 3: AI Quick Auto Organize category (col-span-4) */}
