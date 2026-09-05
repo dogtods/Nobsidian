@@ -1340,6 +1340,8 @@ function handleGetNotes(targetSheetName, targetSsUrl) {
   const data = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
 
   const notes = data.map((row, idx) => {
+    const actualRowNum = idx + 2;
+
     let cAt = Date.now();
     if (row[5] instanceof Date) {
       cAt = row[5].getTime();
@@ -1372,7 +1374,8 @@ function handleGetNotes(targetSheetName, targetSsUrl) {
       if (!isNaN(parsed)) uAt = parsed;
     }
 
-    const id = String(row[0] || ("note_" + (Date.now() + idx)));
+    // A列が空の場合は、ランダムなミリ秒ではなく、安定した row_X 形式を使用（リロード時の再採番揺れを完全防止）
+    const id = (row[0] && String(row[0]).trim() !== "") ? String(row[0]).trim() : ("row_" + actualRowNum);
     const title = String(row[1] || "");
     const sourceUrl = String(row[2] || "");
     const tags = String(row[3] || "");
@@ -1405,6 +1408,7 @@ function handleGetNotes(targetSheetName, targetSsUrl) {
 
     return {
       id: id,
+      rowIndex: actualRowNum,
       title: title,
       content: content,
       summary: highlights,
@@ -1433,54 +1437,91 @@ function saveNote(note, targetSheetName, targetSsUrl) {
   const lastRow = sheet.getLastRow();
 
   if (lastRow >= 2) {
+    const numRows = lastRow - 1;
     // A〜C列（ID, タイトル, URL）をまとめて取得して高速＆確実にマッチング
-    const headerData = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
-    let idx = -1;
+    const headerData = sheet.getRange(2, 1, numRows, 3).getValues();
+    let targetRowNum = -1;
 
-    // 1. まずIDで照合
-    const noteIdStr = String(note.id || "").trim();
-    if (noteIdStr) {
+    // 1. note.rowIndex が指定されている場合、その行を直接優先確認
+    if (note.rowIndex && Number(note.rowIndex) >= 2 && Number(note.rowIndex) <= lastRow) {
+      const candidateIdx = Number(note.rowIndex) - 2;
+      const candidateId = String(headerData[candidateIdx][0] || "").trim();
+      const candidateTitle = String(headerData[candidateIdx][1] || "").trim().toLowerCase();
+      const noteIdStr = String(note.id || "").trim();
+      const noteTitleStr = String(note.title || "").trim().toLowerCase();
+
+      // IDまたはタイトルが合致、またはrow_X形式で番号一致
+      if (
+        (candidateId && candidateId === noteIdStr) ||
+        (candidateTitle && candidateTitle === noteTitleStr) ||
+        noteIdStr === ("row_" + note.rowIndex) ||
+        (!candidateId && !candidateTitle)
+      ) {
+        targetRowNum = Number(note.rowIndex);
+      }
+    }
+
+    // 2. IDで全行照合（A列）
+    if (targetRowNum === -1 && note.id) {
+      const noteIdStr = String(note.id).trim();
       for (let i = 0; i < headerData.length; i++) {
-        if (String(headerData[i][0] || "").trim() === noteIdStr) {
-          idx = i;
+        const rowId = String(headerData[i][0] || "").trim();
+        if (rowId && rowId === noteIdStr) {
+          targetRowNum = i + 2;
           break;
         }
       }
     }
 
-    // 2. IDで見つからない場合、タイトル（B列）でフォールバック照合
-    if (idx === -1 && note.title) {
-      const targetTitle = String(note.title).trim().toLowerCase();
-      if (targetTitle) {
+    // 3. note.id が "row_N" 形式の場合、直接N行目を照合
+    if (targetRowNum === -1 && note.id && String(note.id).startsWith("row_")) {
+      const parsedNum = parseInt(String(note.id).replace("row_", ""), 10);
+      if (!isNaN(parsedNum) && parsedNum >= 2 && parsedNum <= lastRow) {
+        targetRowNum = parsedNum;
+      }
+    }
+
+    // 4. タイトル（B列）で照合（見出し記号や前後の空白を除去して柔軟に照合）
+    if (targetRowNum === -1 && note.title) {
+      const cleanTitle = function(t) {
+        return String(t || "").replace(/^[#\s\-\*\.]+/, "").trim().toLowerCase();
+      };
+      const targetClean = cleanTitle(note.title);
+      if (targetClean) {
         for (let i = 0; i < headerData.length; i++) {
-          if (String(headerData[i][1] || "").trim().toLowerCase() === targetTitle) {
-            idx = i;
+          const rowClean = cleanTitle(headerData[i][1]);
+          if (rowClean && rowClean === targetClean) {
+            targetRowNum = i + 2;
             break;
           }
         }
       }
     }
 
-    // 3. タイトルでも見つからずURLがある場合、URL（C列）でフォールバック照合
-    if (idx === -1 && note.sourceUrl) {
-      const targetUrl = String(note.sourceUrl).trim().toLowerCase();
+    // 5. URL（C列）で照合
+    if (targetRowNum === -1 && note.sourceUrl) {
+      const targetUrl = String(note.sourceUrl).trim().toLowerCase().replace(/\/$/, "");
       if (targetUrl) {
         for (let i = 0; i < headerData.length; i++) {
-          if (String(headerData[i][2] || "").trim().toLowerCase() === targetUrl) {
-            idx = i;
+          const rowUrl = String(headerData[i][2] || "").trim().toLowerCase().replace(/\/$/, "");
+          if (rowUrl && rowUrl === targetUrl) {
+            targetRowNum = i + 2;
             break;
           }
         }
       }
     }
 
-    // 既存行が見つかった場合
-    if (idx !== -1) {
-      const rowNum = idx + 2;
+    // 既存行が見つかった場合（その行をインプレースで確実に更新。新規行を末尾に追加しない！）
+    if (targetRowNum !== -1) {
+      const rowNum = targetRowNum;
+      const curRowIdx = rowNum - 2;
 
-      // もしA列（ID）が空だった場合は、次回以降の高速照合のためにnote.idを書き込む
-      if (!headerData[idx][0] || String(headerData[idx][0]).trim() === "") {
-        sheet.getRange(rowNum, 1).setValue(note.id);
+      // もしA列（ID）が空だった場合は、次回以降の確実な高速照合のためにnote.id（またはrow_X）を書き込む
+      const curIdVal = (curRowIdx >= 0 && curRowIdx < headerData.length) ? headerData[curRowIdx][0] : "";
+      const finalId = (curIdVal && String(curIdVal).trim() !== "") ? String(curIdVal).trim() : (note.id || ("row_" + rowNum));
+      if (!curIdVal || String(curIdVal).trim() === "") {
+        sheet.getRange(rowNum, 1).setValue(finalId);
       }
 
       // メモ書き画面（プレビュー・編集）の内容をスプレッドシートのE列（5列目）に直接ピンポイント保存
@@ -1510,14 +1551,23 @@ function saveNote(note, targetSheetName, targetSsUrl) {
       // 即時反映のために変更をフラッシュ
       SpreadsheetApp.flush();
 
-      return { success: true, action: "updated", id: note.id, row: rowNum, message: "E列を更新しました" };
+      return {
+        success: true,
+        action: "updated",
+        id: finalId,
+        row: rowNum,
+        rowIndex: rowNum,
+        updatedAt: Date.now(),
+        message: "E列を更新しました"
+      };
     }
   }
 
-  // 新規ノート保存時もE列に保存し、N列への複製は行わない
+  // 既存行が見つからなかった場合（真の新規ノートのみ末尾に行追加）
   const eVal = note.summary !== undefined ? note.summary : (note.content || "");
+  const newRowId = note.id || ("row_" + (lastRow + 1));
   const newRow = [
-    note.id,
+    newRowId,
     note.title || "",
     note.sourceUrl || "",
     note.keywords || "",
@@ -1535,7 +1585,15 @@ function saveNote(note, targetSheetName, targetSsUrl) {
   ];
   sheet.appendRow(newRow);
   SpreadsheetApp.flush();
-  return { success: true, action: "created", id: note.id, message: "新規行を作成しE列を保存しました" };
+  return {
+    success: true,
+    action: "created",
+    id: newRowId,
+    row: lastRow + 1,
+    rowIndex: lastRow + 1,
+    updatedAt: Date.now(),
+    message: "新規行を作成しE列を保存しました"
+  };
 }
 
 // ---- ノート削除 ----

@@ -148,10 +148,10 @@ const getApiUrl = () => {
 // 勝手な見出し(#)や日付(---\n**日付:**)の付加は行わず、E列テキストそのものを保持する
 const normalizeNoteItem = (n: Note): Note => {
   const rawText = (n.rawContent || n.columnJ || "").trim();
-  // E列の内容を最優先とし、未設定の場合はcontent（メモ書き内容）を参照
-  const memoText = (n.summary !== undefined && n.summary !== "") 
+  // E列の内容を最優先とし、未設定の場合のみcontent（メモ書き内容）を参照
+  const memoText = n.summary !== undefined 
     ? n.summary 
-    : (n.content || "");
+    : (n.content !== undefined ? n.content : "");
 
   return {
     ...n,
@@ -160,6 +160,7 @@ const normalizeNoteItem = (n: Note): Note => {
     columnJ: rawText,
     rawContent: rawText,
     columnO: n.columnO !== undefined ? n.columnO : "",
+    rowIndex: n.rowIndex,
   };
 };
 
@@ -524,32 +525,51 @@ export default function App() {
 
         const serverNotes: Note[] = data.notes.map(normalizeNoteItem);
         const mergedMap: { [id: string]: Note } = {};
+        const rowIndexMap: { [rowIndex: number]: string } = {};
 
-        // Merge maps
+        // Map server notes by id and rowIndex
         serverNotes.forEach(n => {
           mergedMap[n.id] = n;
+          if (n.rowIndex) {
+            rowIndexMap[n.rowIndex] = n.id;
+          }
         });
 
         let localHasNewerUpdates = false;
         // Use dynamically updated notesRef instead of stale capture to preserve newly imported notes
         const currentLocalNotes = notesRef.current;
         currentLocalNotes.forEach(localNote => {
-          const serverNote = mergedMap[localNote.id];
+          // Check matching server note by ID or by rowIndex
+          let matchedServerId = localNote.id;
+          if (!mergedMap[matchedServerId] && localNote.rowIndex && rowIndexMap[localNote.rowIndex]) {
+            matchedServerId = rowIndexMap[localNote.rowIndex];
+          }
+
+          const serverNote = mergedMap[matchedServerId];
           if (!serverNote) {
             mergedMap[localNote.id] = localNote;
             localHasNewerUpdates = true;
           } else if (localNote.updatedAt > serverNote.updatedAt) {
-            mergedMap[localNote.id] = localNote;
+            // Local edits are newer: preserve local user content and merge metadata
+            mergedMap[matchedServerId] = {
+              ...serverNote,
+              ...localNote,
+              id: serverNote.id || localNote.id,
+              rowIndex: serverNote.rowIndex || localNote.rowIndex,
+              updatedAt: localNote.updatedAt
+            };
             localHasNewerUpdates = true;
           }
         });
 
-        const mergedList = Object.values(mergedMap).map(normalizeNoteItem).sort((a, b) => b.updatedAt - a.updatedAt);
+        const mergedList = Object.values(mergedMap).map(normalizeNoteItem);
         
         setNotes(mergedList);
         triggerLocalSave(mergedList, activeId);
         
-        if (localHasNewerUpdates) {
+        // バックグラウンド自動同期時はスプレッドシート全体の全消去・全上書き(saveAll)を行わない
+        // 手動同期でかつローカルに新規・更新ノートが存在する場合のみsaveAllを呼び出す
+        if (localHasNewerUpdates && !isBackground) {
           updateSyncStatus("syncing", "サーバーとアップロード同期中...");
           await apiPost({ action: "saveAll", notes: mergedList });
         }
@@ -691,9 +711,32 @@ export default function App() {
     setIsSavingNote(true);
     updateSyncStatus("syncing", "E列へ保存中...");
     try {
-      const res = await apiPost({ action: "saveNote", note });
+      const noteToSave: Note = {
+        ...note,
+        summary: note.summary !== undefined ? note.summary : note.content,
+        content: note.content,
+      };
+      const res = await apiPost({ action: "saveNote", note: noteToSave });
       if (res && res.error) {
         throw new Error(res.error);
+      }
+      // サーバーから返却された最新の rowIndex, id, updatedAt をローカルノートに反映
+      if (res && (res.action === "updated" || res.action === "created")) {
+        setNotes(prev => {
+          const updatedList = prev.map(n => {
+            if (n.id === note.id || (res.id && n.id === res.id)) {
+              return {
+                ...n,
+                id: res.id || n.id,
+                rowIndex: res.rowIndex || n.rowIndex,
+                updatedAt: res.updatedAt || n.updatedAt || Date.now(),
+              };
+            }
+            return n;
+          });
+          triggerLocalSave(updatedList, activeId);
+          return updatedList;
+        });
       }
       setIsSavingNote(false);
       updateSyncStatus("synced", "E列同期済");
@@ -730,12 +773,16 @@ export default function App() {
       // 1. Synchronous attempt from localStorage for immediate flicker-free display
       try {
         const stored = localStorage.getItem(LS_KEY);
+        const lastActiveId = localStorage.getItem("cn_last_active_id");
         if (stored) {
           const data = JSON.parse(stored);
           if (data && data.notes && Array.isArray(data.notes) && data.notes.length > 0) {
             loadedNotes = data.notes.map(normalizeNoteItem);
             setNotes(loadedNotes);
-            setActiveId(null);
+            const targetId = lastActiveId || data.activeId;
+            if (targetId && loadedNotes.some(n => n.id === targetId)) {
+              setActiveId(targetId);
+            }
           }
         }
       } catch (e) {}
@@ -743,12 +790,16 @@ export default function App() {
       // 2. Asynchronous check in IndexedDB (primary source with no 5MB quota limit)
       try {
         const idbData = await loadNotesLocally();
+        const lastActiveId = localStorage.getItem("cn_last_active_id");
         if (isMounted && idbData && idbData.notes && Array.isArray(idbData.notes) && idbData.notes.length > 0) {
           if (loadedNotes.length === 0 || idbData.notes.length >= loadedNotes.length) {
             const normalized = idbData.notes.map(normalizeNoteItem);
             setNotes(normalized);
-            setActiveId(null);
             loadedNotes = normalized;
+            const targetId = lastActiveId || idbData.activeId;
+            if (targetId && normalized.some(n => n.id === targetId)) {
+              setActiveId(targetId);
+            }
           }
         }
       } catch (e) {}
@@ -992,6 +1043,11 @@ export default function App() {
       flushPendingSave(false);
     }
     setActiveId(id);
+    if (id) {
+      try { localStorage.setItem("cn_last_active_id", id); } catch {}
+    } else {
+      try { localStorage.removeItem("cn_last_active_id"); } catch {}
+    }
     setAiPanelOpen(false);
     setSidebarOpen(false);
   };
@@ -3365,29 +3421,33 @@ const renderMarkdownToElements = (contentStr: string) => {
           {/* D列 / O列 フォルダ基準列切り替えボタン */}
           <div className="flex items-center justify-between gap-1 pt-0.5">
             <span className="text-[10px] text-gray-400 font-medium shrink-0">基準列:</span>
-            <div className="flex bg-[#0d1117] p-0.5 rounded border border-[#30363d] text-[10px] font-semibold">
+            <div className="flex bg-[#0d1117] p-0.5 rounded-md border border-[#30363d] text-[10px] font-semibold">
               <button
                 type="button"
+                id="btn-folder-col-d"
                 onClick={() => handleFolderColumnChange("D")}
-                className={`px-2 py-0.5 rounded cursor-pointer transition-all flex items-center gap-1 ${
+                className={`px-2 py-0.5 rounded transition-all flex items-center gap-1 cursor-pointer ${
                   folderColumnSource === "D"
-                    ? "bg-[#58a6ff2b] text-[var(--blue)] font-bold shadow-sm"
-                    : "text-gray-400 hover:text-gray-200"
+                    ? "bg-[#1f6feb] text-white shadow-sm font-bold"
+                    : "text-gray-400 hover:text-gray-200 hover:bg-[#161b22]"
                 }`}
                 title="スプレッドシートのD列（カテゴリ・タグ）を元にフォルダリストを分類します"
               >
+                {folderColumnSource === "D" && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>}
                 <span>D列 (カテゴリ)</span>
               </button>
               <button
                 type="button"
+                id="btn-folder-col-o"
                 onClick={() => handleFolderColumnChange("O")}
-                className={`px-2 py-0.5 rounded cursor-pointer transition-all flex items-center gap-1 ${
+                className={`px-2 py-0.5 rounded transition-all flex items-center gap-1 cursor-pointer ${
                   folderColumnSource === "O"
-                    ? "bg-[#58a6ff2b] text-[var(--blue)] font-bold shadow-sm"
-                    : "text-gray-400 hover:text-gray-200"
+                    ? "bg-[#1f6feb] text-white shadow-sm font-bold"
+                    : "text-gray-400 hover:text-gray-200 hover:bg-[#161b22]"
                 }`}
                 title="スプレッドシートのO列（15列目: 更新日・ロット・情報）を元にフォルダリストを分類します"
               >
+                {folderColumnSource === "O" && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>}
                 <span>O列 (15列目)</span>
               </button>
             </div>
