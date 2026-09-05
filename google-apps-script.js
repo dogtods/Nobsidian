@@ -1295,8 +1295,6 @@ function processApiRequest(e) {
     } else if (action === "markHighlightsProcessed") {
       const rowIndices = typeof postData.rowIndices === "string" ? JSON.parse(postData.rowIndices) : postData.rowIndices;
       result = markHighlightsProcessed(postData.sourceSsId, postData.sheetName, rowIndices);
-    } else if (action === "clearColumnN") {
-      result = clearColumnN(targetSheet, targetSsUrl);
     } else if (action === "saveToDrive" || action === "exportToDrive") {
       result = saveToDrive(postData);
     } else {
@@ -1543,16 +1541,6 @@ function saveAll(notes, targetSheetName, targetSsUrl) {
   }
 
   return { success: true, count: notes ? notes.length : 0, sheetName: sheet.getName() };
-}
-
-// ---- N列（過去に誤って複製されたデータ）の一括クリア関数 ----
-function clearColumnN(targetSheetName, targetSsUrl) {
-  const sheet = getSheet(targetSheetName, targetSsUrl);
-  const lastRow = sheet.getLastRow();
-  if (lastRow > 1) {
-    sheet.getRange(2, 14, lastRow - 1, 1).clearContent();
-  }
-  return { success: true, message: `シート「${sheet.getName()}」のN列（誤複製データ）をクリアしました。` };
 }
 
 // ====================================================================
