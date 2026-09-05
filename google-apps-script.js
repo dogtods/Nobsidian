@@ -1367,7 +1367,20 @@ function handleGetNotes(targetSheetName, targetSsUrl) {
     const highlights = String(row[4] || "");
     const rawAll = String(row[8] || "");
     const metaInfo = String(row[9] || "");
-    const dateStr = String(row[10] || "");
+    let dateStr = "";
+    if (row[10] instanceof Date) {
+      const tz = Session.getScriptTimeZone() || "Asia/Tokyo";
+      const h = row[10].getHours();
+      const m = row[10].getMinutes();
+      const s = row[10].getSeconds();
+      if (h === 0 && m === 0 && s === 0) {
+        dateStr = Utilities.formatDate(row[10], tz, "yyyy/MM/dd");
+      } else {
+        dateStr = Utilities.formatDate(row[10], tz, "yyyy/MM/dd HH:mm:ss");
+      }
+    } else {
+      dateStr = String(row[10] || "");
+    }
     const timeline = String(row[11] || "");
     const source = String(row[12] || "");
     const editedContent = String(row[13] || "");

@@ -6,7 +6,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
 import { Note, GraphNode, GraphLink, FolderRelation } from "../types";
-import { getFolderFromKeywords, formatDateStr, extractWikiLinks } from "../utils/graphDataParser";
+import { getFolderFromKeywords, formatDateStr, extractWikiLinks, getFilteredNotes } from "../utils/graphDataParser";
 import { DEFAULT_PROMPTS, getStoredPrompt } from "./PromptSettingsModal";
 
 interface KnowledgeGraphModalProps {
@@ -96,17 +96,7 @@ export default function KnowledgeGraphModal({
   const getFolder = (note: Note) => getFolderFromKeywords(note.keywords);
 
   const getFilteredNotesList = () => {
-    const startTime = filterStart ? new Date(filterStart + "T00:00:00").getTime() : null;
-    const endTime = filterEnd ? new Date(filterEnd + "T23:59:59").getTime() : null;
-
-    return notes.filter(n => {
-      if (startTime && n.createdAt < startTime) return false;
-      if (endTime && n.createdAt > endTime) return false;
-
-      const folderName = getFolder(n);
-
-      return true;
-    });
+    return getFilteredNotes(notes, filterStart, filterEnd);
   };
 
   // Graph data builds
@@ -1358,8 +1348,17 @@ applyHighlightRef.current = applyHighlight;
               {graphViewMode === "folder" ? `📁 ${popup.node.title}` : `◈ ${popup.node.title}`}
             </div>
             
-            <div className="text-[10px] text-[var(--blue)] mb-2">
-              {graphViewMode === "folder" ? `📝 ノート数: ${popup.node.noteCount}` : `🔗 被リンク数: ${popup.node.linkCount}`}
+            <div className="text-[10px] text-[var(--blue)] mb-2 flex flex-col gap-0.5">
+              <span>{graphViewMode === "folder" ? `📝 ノート数: ${popup.node.noteCount}` : `🔗 被リンク数: ${popup.node.linkCount}`}</span>
+              {graphViewMode !== "folder" && (() => {
+                const targetNote = notes.find(n => n.title.toLowerCase() === popup.node!.title.toLowerCase() || n.id === popup.node!.id);
+                return (
+                  <span className="text-[var(--subtle)] font-mono text-[9.5px] flex items-center gap-1">
+                    <span className="text-[var(--muted)]">記事発行日:</span>
+                    <span className="text-gray-200">{targetNote?.dateStr?.trim() || "未設定"}</span>
+                  </span>
+                );
+              })()}
             </div>
 
             {graphViewMode === "folder" && (

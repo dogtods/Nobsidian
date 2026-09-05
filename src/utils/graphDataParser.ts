@@ -82,54 +82,134 @@ export function getFolderFromKeywords(keywordsStr: string): string {
   return first || "未分類";
 }
 
-// Helper to get effective date from K column (dateStr) or fallback to createdAt
-export function getNoteDateMillis(note: Note): number {
+// Helper to extract normalized YYYY-MM-DD string from a note (西暦・月・日)
+export function getNoteYMD(note: Note): string {
+  // 1. Check K column (dateStr)
   if (note.dateStr && typeof note.dateStr === "string") {
     const raw = note.dateStr.trim();
     if (raw) {
+      // 1-a. Reiwa format: 令和8年8月24日 or R8/8/24
+      const reiwaMatch = raw.match(/(?:令和|R)\s*(\d{1,2})\s*年?\s*[\/\-\.月]\s*(\d{1,2})\s*[\/\-\.月日]?\s*(\d{1,2})?/i);
+      if (reiwaMatch) {
+        const y = 2018 + parseInt(reiwaMatch[1], 10);
+        const m = reiwaMatch[2].padStart(2, "0");
+        const d = (reiwaMatch[3] || "01").padStart(2, "0");
+        return `${y}-${m}-${d}`;
+      }
+
+      // 1-b. Japanese format: 2026年8月24日 or 2026年08月24日 (ignores time portion like 14:30)
+      const jpMatch = raw.match(/(\d{4})\s*年\s*(\d{1,2})\s*月(?:\s*(\d{1,2})\s*日?)?/);
+      if (jpMatch) {
+        const y = jpMatch[1];
+        const m = jpMatch[2].padStart(2, "0");
+        const d = (jpMatch[3] || "01").padStart(2, "0");
+        return `${y}-${m}-${d}`;
+      }
+
+      // 1-c. Slash, hyphen, dot format: 2026/08/24, 2026-8-24, 2026.8.24 (ignores time portion)
+      const numMatch = raw.match(/(\d{4})[\/\-\.](\d{1,2})(?:[\/\-\.](\d{1,2}))?/);
+      if (numMatch) {
+        const y = numMatch[1];
+        const m = numMatch[2].padStart(2, "0");
+        const d = (numMatch[3] || "01").padStart(2, "0");
+        return `${y}-${m}-${d}`;
+      }
+
+      // 1-d. Numeric millisecond timestamp
       if (!isNaN(Number(raw)) && Number(raw) > 100000) {
-        return Number(raw);
+        const d = new Date(Number(raw));
+        if (!isNaN(d.getTime())) {
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, "0");
+          const day = String(d.getDate()).padStart(2, "0");
+          return `${y}-${m}-${day}`;
+        }
       }
-      const clean = raw
-        .replace(/年|\./g, "-")
-        .replace(/月/g, "-")
-        .replace(/日/g, "")
-        .replace(/\//g, "-")
-        .trim();
-      const parsed = new Date(clean);
+
+      // 1-e. Date string (e.g. ISO string or "Mon Aug 24 2026...")
+      const parsed = new Date(raw);
       if (!isNaN(parsed.getTime())) {
-        return parsed.getTime();
-      }
-      const ymMatch = clean.match(/^(\d{4})-(\d{1,2})$/);
-      if (ymMatch) {
-        const d = new Date(parseInt(ymMatch[1], 10), parseInt(ymMatch[2], 10) - 1, 1);
-        if (!isNaN(d.getTime())) return d.getTime();
+        const y = parsed.getFullYear();
+        const m = String(parsed.getMonth() + 1).padStart(2, "0");
+        const day = String(parsed.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
       }
     }
   }
-  if (note.createdAt && !isNaN(Number(note.createdAt)) && Number(note.createdAt) > 0) {
-    return Number(note.createdAt);
-  }
-  if (note.updatedAt && !isNaN(Number(note.updatedAt)) && Number(note.updatedAt) > 0) {
-    return Number(note.updatedAt);
-  }
-  return 0;
-}
 
-// Displayable formatted date for note: e.g. "2026/03/04"
-export function getNoteDisplayDate(note: Note): string {
-  if (note.dateStr && typeof note.dateStr === "string" && note.dateStr.trim()) {
-    return note.dateStr.trim();
-  }
-  const millis = getNoteDateMillis(note);
-  if (millis > 0) {
-    const d = new Date(millis);
+  // 2. Fallback to createdAt
+  if (note.createdAt && !isNaN(Number(note.createdAt)) && Number(note.createdAt) > 0) {
+    const d = new Date(Number(note.createdAt));
     if (!isNaN(d.getTime())) {
       const y = d.getFullYear();
       const m = String(d.getMonth() + 1).padStart(2, "0");
       const day = String(d.getDate()).padStart(2, "0");
-      return `${y}/${m}/${day}`;
+      return `${y}-${m}-${day}`;
     }
+  }
+
+  // 3. Fallback to updatedAt
+  if (note.updatedAt && !isNaN(Number(note.updatedAt)) && Number(note.updatedAt) > 0) {
+    const d = new Date(Number(note.updatedAt));
+    if (!isNaN(d.getTime())) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    }
+  }
+
+  return "";
+}
+
+// Helper to get effective date in local midnight milliseconds based on YYYY-MM-DD
+export function getNoteDateMillis(note: Note): number {
+  const ymd = getNoteYMD(note);
+  if (ymd) {
+    const parts = ymd.split("-").map(Number);
+    if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+      const localDate = new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0);
+      return localDate.getTime();
+    }
+  }
+  return 0;
+}
+
+// Compare two notes by date (西暦・月・日のみで比較し、同一日の場合はタイトル五十音順でソート)
+export function compareNotesByDate(a: Note, b: Note, mode: "date-desc" | "date-asc"): number {
+  const ymdA = getNoteYMD(a);
+  const ymdB = getNoteYMD(b);
+  if (mode === "date-desc") {
+    if (ymdA && ymdB) {
+      const cmp = ymdB.localeCompare(ymdA);
+      if (cmp !== 0) return cmp;
+    } else if (ymdB) {
+      return 1;
+    } else if (ymdA) {
+      return -1;
+    }
+    return (a.title || "").localeCompare(b.title || "", "ja");
+  } else {
+    if (ymdA && ymdB) {
+      const cmp = ymdA.localeCompare(ymdB);
+      if (cmp !== 0) return cmp;
+    } else if (ymdA) {
+      return 1;
+    } else if (ymdB) {
+      return -1;
+    }
+    return (a.title || "").localeCompare(b.title || "", "ja");
+  }
+}
+
+// Displayable formatted date for note: e.g. "2026/08/24"
+export function getNoteDisplayDate(note: Note): string {
+  const ymd = getNoteYMD(note);
+  if (ymd) {
+    return ymd.replace(/-/g, "/");
+  }
+  if (note.dateStr && typeof note.dateStr === "string" && note.dateStr.trim()) {
+    return note.dateStr.trim();
   }
   return "";
 }
@@ -157,18 +237,23 @@ export function getMondayOfDate(timestamp: number): string {
   return `${y}-${m}-${dayStr}`;
 }
 
-// Main logic to filter notes based on dates
+// Main logic to filter notes based on dates (西暦・月・日単位で厳密に判定)
 export function getFilteredNotes(notes: Note[], filterStart: string, filterEnd: string): Note[] {
-  const startTime = filterStart ? new Date(filterStart + "T00:00:00").getTime() : null;
-  const endTime = filterEnd ? new Date(filterEnd + "T23:59:59").getTime() : null;
+  const startYMD = filterStart ? filterStart.trim() : "";
+  const endYMD = filterEnd ? filterEnd.trim() : "";
 
   return notes.filter(n => {
-    const dTime = getNoteDateMillis(n);
-    if (startTime && dTime < startTime) return false;
-    if (endTime && dTime > endTime) return false;
-    
-    // Convert keywords to folder name to check if excluded
-    const folderName = getFolderFromKeywords(n.keywords);
+    // 期間指定がない場合は全件表示
+    if (!startYMD && !endYMD) return true;
+
+    const noteYMD = getNoteYMD(n);
+    // 期間が指定されている場合、日付が取得できないノートは除外
+    if (!noteYMD) return false;
+
+    // 開始日・終了日（YYYY-MM-DD）による文字列比較（開始日・終了日が同日の場合はその日のみ完全一致）
+    if (startYMD && noteYMD < startYMD) return false;
+    if (endYMD && noteYMD > endYMD) return false;
+
     return true;
   });
 }

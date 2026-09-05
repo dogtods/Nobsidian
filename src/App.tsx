@@ -52,7 +52,9 @@ import {
   parseBubbleData,
   getFilteredNotes,
   getNoteDateMillis,
-  getNoteDisplayDate
+  getNoteDisplayDate,
+  getNoteYMD,
+  compareNotesByDate
 } from "./utils/graphDataParser";
 import { fetchGasGet, fetchGasPost, sanitizeGasUrl } from "./utils/gasClient";
 
@@ -190,6 +192,7 @@ export default function App() {
   // Date filters
   const [filterStartDate, setFilterStartDate] = useState("");
   const [filterEndDate, setFilterEndDate] = useState("");
+  const [isSidebarDateFilterOpen, setIsSidebarDateFilterOpen] = useState(false);
 
   // Note sorting mode ("date-desc" | "date-asc" | "updated-desc" | "title-asc")
   const [noteSortMode, setNoteSortMode] = useState<"date-desc" | "date-asc" | "updated-desc" | "title-asc">(() => {
@@ -2239,15 +2242,17 @@ const renderMarkdownToElements = (contentStr: string) => {
   const getCategorizedNotes = () => {
     const query = searchQuery.toLowerCase().trim();
     
-    const filterStart = filterStartDate;
-    const filterEnd = filterEndDate;
-    const startMilli = filterStart ? new Date(filterStart + "T00:00:00").getTime() : null;
-    const endMilli = filterEnd ? new Date(filterEnd + "T23:59:59").getTime() : null;
+    const startYMD = filterStartDate.trim();
+    const endYMD = filterEndDate.trim();
 
     const filtered = notes.filter(n => {
-      const noteDate = getNoteDateMillis(n);
-      if (startMilli && noteDate < startMilli) return false;
-      if (endMilli && noteDate > endMilli) return false;
+      // 日付フィルタ（西暦・月・日単位で厳密に判定）
+      if (startYMD || endYMD) {
+        const noteYMD = getNoteYMD(n);
+        if (!noteYMD) return false;
+        if (startYMD && noteYMD < startYMD) return false;
+        if (endYMD && noteYMD > endYMD) return false;
+      }
       
       const folderName = getFolder(n);
       
@@ -2269,19 +2274,17 @@ const renderMarkdownToElements = (contentStr: string) => {
       groups[folder].push(n);
     });
 
-    // Sort notes inside each group according to noteSortMode
+    // Sort notes inside each group according to noteSortMode (西暦・月・日単位でソート)
     Object.keys(groups).forEach(folder => {
       groups[folder].sort((a, b) => {
-        if (noteSortMode === "date-desc") {
-          return getNoteDateMillis(b) - getNoteDateMillis(a);
-        } else if (noteSortMode === "date-asc") {
-          return getNoteDateMillis(a) - getNoteDateMillis(b);
+        if (noteSortMode === "date-desc" || noteSortMode === "date-asc") {
+          return compareNotesByDate(a, b, noteSortMode);
         } else if (noteSortMode === "updated-desc") {
           return (b.updatedAt || 0) - (a.updatedAt || 0);
         } else if (noteSortMode === "title-asc") {
           return a.title.localeCompare(b.title, "ja");
         }
-        return getNoteDateMillis(b) - getNoteDateMillis(a);
+        return compareNotesByDate(a, b, "date-desc");
       });
     });
 
@@ -2296,7 +2299,7 @@ const renderMarkdownToElements = (contentStr: string) => {
 
   const toggleFolderCollapse = (folderName: string) => {
     setCollapsedFolders(prev => {
-      const current = prev[folderName] ?? true;
+      const current = prev[folderName] ?? false;
       return {
         ...prev,
         [folderName]: !current
@@ -3055,26 +3058,36 @@ const renderMarkdownToElements = (contentStr: string) => {
         </div>
 
         {/* Active date filter banner & sort selector */}
-        <div className="px-3 py-1.5 bg-[#11141a] border-b border-[var(--border)] flex items-center justify-between text-[11px] gap-2">
-          <div className="flex items-center gap-1.5 overflow-hidden">
+        <div className="relative px-3 py-1.5 bg-[#11141a] border-b border-[var(--border)] flex items-center justify-between text-[11px] gap-2">
+          <div 
+            onClick={() => setIsSidebarDateFilterOpen(!isSidebarDateFilterOpen)}
+            className="flex items-center gap-1.5 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity flex-1"
+            title="クリックして期間フィルター（西暦・月・日）を設定"
+          >
             <Calendar className="w-3 h-3 text-[var(--purple)] shrink-0" />
             {filterStartDate || filterEndDate ? (
               <div className="flex items-center gap-1 truncate">
                 <span className="text-purple-300 font-mono text-[10px] truncate" title={`期間フィルター: ${filterStartDate || '最古'} 〜 ${filterEndDate || '最新'}`}>
-                  {filterStartDate || "最古"} 〜 {filterEndDate || "最新"}
+                  {filterStartDate === filterEndDate ? `${filterStartDate} (指定日)` : `${filterStartDate || "最古"} 〜 ${filterEndDate || "最新"}`}
                 </span>
-                <button
-                  onClick={() => handleCommonDateFilterChange("", "")}
-                  className="text-gray-400 hover:text-red-400 transition-colors p-0.5 cursor-pointer text-[10px]"
-                  title="期間フィルターを解除して全期間を表示"
-                >
-                  ✕
-                </button>
               </div>
             ) : (
-              <span className="text-[var(--muted)] text-[10px]">全期間</span>
+              <span className="text-[var(--muted)] text-[10px]">全期間 (日付指定)</span>
             )}
           </div>
+          {(filterStartDate || filterEndDate) && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleCommonDateFilterChange("", "");
+                toast("期間フィルターを解除しました（全期間表示）");
+              }}
+              className="text-gray-400 hover:text-red-400 transition-colors p-0.5 cursor-pointer text-[10px]"
+              title="期間フィルターを解除して全期間を表示"
+            >
+              ✕
+            </button>
+          )}
 
           <div className="flex items-center gap-1 shrink-0">
             <ArrowUpDown className="w-3 h-3 text-[var(--muted)]" />
@@ -3082,7 +3095,7 @@ const renderMarkdownToElements = (contentStr: string) => {
               value={noteSortMode}
               onChange={(e) => handleSortChange(e.target.value as any)}
               className="bg-[#161b22] border border-[#30363d] text-[10px] text-gray-300 rounded px-1.5 py-0.5 outline-none cursor-pointer focus:border-[var(--purple)]"
-              title="ノートの並び順（ソート）"
+              title="西暦・月・日単位でソート（同一日はタイトル順）"
             >
               <option value="date-desc">日付 (新→古)</option>
               <option value="date-asc">日付 (古→新)</option>
@@ -3090,6 +3103,101 @@ const renderMarkdownToElements = (contentStr: string) => {
               <option value="title-asc">名前順</option>
             </select>
           </div>
+
+          {/* Quick Date Filter Popover */}
+          {isSidebarDateFilterOpen && (
+            <div className="absolute top-full left-0 right-0 z-50 bg-[#161b22] border border-[#30363d] shadow-2xl p-3 flex flex-col gap-2 rounded-b-xl animate-in fade-in duration-150">
+              <div className="flex items-center justify-between pb-1 border-b border-[#30363d]">
+                <span className="text-[11px] font-bold text-white flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5 text-[var(--purple)]" />
+                  <span>日付フィルター (年月日指定)</span>
+                </span>
+                <button
+                  onClick={() => setIsSidebarDateFilterOpen(false)}
+                  className="text-gray-400 hover:text-white text-xs cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="text-[10px] text-gray-400 leading-tight">
+                西暦・月・日（YYYY-MM-DD）で完全一致・期間抽出します。特定の日（例: 2026-08-24）のみに絞り込む場合は、開始日と終了日を同じ日付に設定してください。
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between text-[11px] bg-[#0d1117] p-1.5 px-2 rounded border border-[#30363d]">
+                  <span className="text-gray-400 shrink-0 w-12">開始日:</span>
+                  <input
+                    type="date"
+                    value={filterStartDate}
+                    onChange={(e) => handleCommonDateFilterChange(e.target.value, filterEndDate)}
+                    className="w-full bg-transparent text-[11px] text-white font-mono outline-none cursor-pointer text-right [color-scheme:dark]"
+                  />
+                  {filterStartDate && (
+                    <button
+                      onClick={() => handleCommonDateFilterChange("", filterEndDate)}
+                      className="ml-1 text-gray-500 hover:text-white cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center justify-between text-[11px] bg-[#0d1117] p-1.5 px-2 rounded border border-[#30363d]">
+                  <span className="text-gray-400 shrink-0 w-12">終了日:</span>
+                  <input
+                    type="date"
+                    value={filterEndDate}
+                    onChange={(e) => handleCommonDateFilterChange(filterStartDate, e.target.value)}
+                    className="w-full bg-transparent text-[11px] text-white font-mono outline-none cursor-pointer text-right [color-scheme:dark]"
+                  />
+                  {filterEndDate && (
+                    <button
+                      onClick={() => handleCommonDateFilterChange(filterStartDate, "")}
+                      className="ml-1 text-gray-500 hover:text-white cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-1 pt-1">
+                {filterStartDate && (
+                  <button
+                    onClick={() => {
+                      handleCommonDateFilterChange(filterStartDate, filterStartDate);
+                      toast(`期間を「${filterStartDate}（1日のみ）」に設定しました`);
+                    }}
+                    className="flex-1 py-1 px-1.5 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-200 text-[10px] font-semibold rounded cursor-pointer transition-colors text-center"
+                    title="開始日と同じ日付を終了日にセットして単日抽出"
+                  >
+                    この日のみ
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    const today = new Date();
+                    const y = today.getFullYear();
+                    const m = String(today.getMonth() + 1).padStart(2, "0");
+                    const d = String(today.getDate()).padStart(2, "0");
+                    const str = `${y}-${m}-${d}`;
+                    handleCommonDateFilterChange(str, str);
+                    toast("期間を「今日」に設定しました");
+                  }}
+                  className="flex-1 py-1 px-1.5 bg-[#21262d] hover:bg-[#30363d] text-gray-300 text-[10px] rounded cursor-pointer transition-colors text-center"
+                >
+                  今日
+                </button>
+                <button
+                  onClick={() => {
+                    handleCommonDateFilterChange("", "");
+                    toast("期間フィルターを解除しました");
+                  }}
+                  className="flex-1 py-1 px-1.5 bg-[#21262d] hover:bg-[#30363d] text-gray-400 hover:text-white text-[10px] rounded cursor-pointer transition-colors text-center"
+                >
+                  解除
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Category lists elements */}
@@ -3117,7 +3225,7 @@ const renderMarkdownToElements = (contentStr: string) => {
         <div className="flex-1 overflow-y-auto py-2">
           {sortedFolders.map(folderName => {
             const groupList = categorizedGroups[folderName] || [];
-            const isCollapsed = collapsedFolders[folderName] ?? true;
+            const isCollapsed = collapsedFolders[folderName] ?? false;
 
             return (
               <div key={folderName} className="mb-0.5">
@@ -3244,7 +3352,7 @@ const renderMarkdownToElements = (contentStr: string) => {
                           ) : (
                             <FileText className={`w-3.5 h-3.5 flex-shrink-0 ${activeId === n.id ? "text-[var(--blue)]" : "text-[var(--muted)]"}`} />
                           )}
-                          <span className={`${isEmpty ? "text-[var(--muted)] italic" : ""} flex-1 truncate`}>{n.title}</span>
+                          <span className={`${isEmpty ? "text-[var(--muted)] italic" : ""} flex-1 min-w-0 truncate`}>{n.title}</span>
                           {displayDate && (
                             <span className="text-[10px] text-[var(--muted)] font-mono shrink-0 group-hover:opacity-0 transition-opacity">
                               {displayDate.split(" ")[0]}
@@ -3763,8 +3871,15 @@ const renderMarkdownToElements = (contentStr: string) => {
                               }}
                               className="p-1 px-2 border border-transparent rounded bg-[var(--bg)] hover:bg-[#1c2128] hover:border-[var(--border)] cursor-pointer transition-all min-w-0"
                             >
-                              <div className="text-[11px] font-semibold text-[var(--blue)] truncate">
-                                ◈ {b.title}
+                              <div className="flex items-center justify-between gap-1">
+                                <div className="text-[11px] font-semibold text-[var(--blue)] truncate flex-1">
+                                  ◈ {b.title}
+                                </div>
+                                {getNoteDisplayDate(b) && (
+                                  <span className="text-[9px] text-[var(--muted)] font-mono shrink-0">
+                                    {getNoteDisplayDate(b)}
+                                  </span>
+                                )}
                               </div>
                               <div className="text-[10px] text-[var(--muted)] line-clamp-2 mt-0.5 leading-normal">
                                 {b.content.replace(/#\s.+/, "").substring(0, 50)}
@@ -3802,6 +3917,11 @@ const renderMarkdownToElements = (contentStr: string) => {
                                 }`}
                               >
                                 <span className="truncate flex-1">→ {l}</span>
+                                {foundObj && getNoteDisplayDate(foundObj) && (
+                                  <span className="text-[9px] text-[var(--muted)] font-mono shrink-0">
+                                    {getNoteDisplayDate(foundObj)}
+                                  </span>
+                                )}
                                 {!foundObj && <span className="text-[9px] text-[var(--orange)] border border-[var(--orange)]/30 px-1 rounded-sm flex-shrink-0 font-bold scale-90">新規</span>}
                               </div>
                             );
@@ -3968,10 +4088,17 @@ const renderMarkdownToElements = (contentStr: string) => {
             </div>
 
             {/* METRICS METADATA BAR FOOTERS */}
-            <div className="p-1 px-8 border-t border-[var(--border)] text-[10px] text-[var(--muted)] flex gap-4 select-none items-center">
+            <div className="p-1.5 px-4 md:px-8 border-t border-[var(--border)] text-[10px] text-[var(--muted)] flex flex-wrap gap-x-5 gap-y-1.5 select-none items-center">
+              <span className="flex items-center gap-1 font-medium text-gray-200">
+                <Calendar className="w-3 h-3 text-[var(--blue)] shrink-0" />
+                <span>記事発行日 (K列):</span>
+                <span className="text-white font-mono bg-[#1c2128] border border-[#30363d] px-1.5 py-0.5 rounded">
+                  {activeNote.dateStr?.trim() || "未設定"}
+                </span>
+              </span>
               <span>作成日: {new Date(activeNote.createdAt).toLocaleString("ja-JP")}</span>
               <span>更新日: {new Date(activeNote.updatedAt).toLocaleString("ja-JP")}</span>
-              <span className="ml-auto md:ml-0 flex items-center">
+              <span className="flex items-center">
                 {activeNote.sourceUrl ? (
                   <a
                     href={activeNote.sourceUrl}
@@ -3986,7 +4113,10 @@ const renderMarkdownToElements = (contentStr: string) => {
                 )}
               </span>
               <span className="ml-auto hidden md:inline">文字数: {activeNote.content.length} 文字</span>
-              <span>リンク数: {getOutlinks(activeNote.content).length} 個</span>
+              <span className="flex items-center gap-1 font-semibold text-gray-200">
+                <Link2 className="w-3 h-3 text-[var(--blue)] shrink-0" />
+                <span>リンク数: {getOutlinks(activeNote.content).length} 個</span>
+              </span>
             </div>
           </div>
         ) : (
@@ -4164,9 +4294,10 @@ const renderMarkdownToElements = (contentStr: string) => {
                       value={noteSortMode}
                       onChange={(e) => handleSortChange(e.target.value as any)}
                       className="bg-transparent text-xs text-gray-200 outline-none cursor-pointer text-right [color-scheme:dark]"
+                      title="西暦・月・日単位でソート（同一日のノートは五十音順）"
                     >
-                      <option value="date-desc" className="bg-[#161b22] text-white">📅 日付 (新しい順)</option>
-                      <option value="date-asc" className="bg-[#161b22] text-white">📅 日付 (古い順)</option>
+                      <option value="date-desc" className="bg-[#161b22] text-white">📅 日付 (年月日・新しい順)</option>
+                      <option value="date-asc" className="bg-[#161b22] text-white">📅 日付 (年月日・古い順)</option>
                       <option value="updated-desc" className="bg-[#161b22] text-white">🕒 最終更新 (新しい順)</option>
                       <option value="title-asc" className="bg-[#161b22] text-white">🔤 タイトル五十音順</option>
                     </select>
@@ -4174,7 +4305,19 @@ const renderMarkdownToElements = (contentStr: string) => {
                 </div>
                 
                 {/* Preset period buttons */}
-                <div className="flex gap-1.5 mt-1">
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {filterStartDate && (
+                    <button
+                      onClick={() => {
+                        handleCommonDateFilterChange(filterStartDate, filterStartDate);
+                        toast(`期間を「${filterStartDate}（1日のみ）」に設定しました`);
+                      }}
+                      className="flex-1 text-center py-1.5 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-[11px] font-semibold rounded-lg text-purple-200 transition-colors cursor-pointer whitespace-nowrap"
+                      title="開始日と同じ日付を終了日に設定して単日抽出"
+                    >
+                      同日(単日)
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       const today = new Date();
@@ -4239,17 +4382,22 @@ const renderMarkdownToElements = (contentStr: string) => {
                 </div>
 
                 {/* Column reference explanatory notice */}
-                <div className="text-[10px] text-[var(--muted)] border-t border-[#30363d] pt-2 mt-2 flex items-center justify-between">
-                  <span>
-                    ※ 参照列: <strong className="text-purple-300 font-semibold">K列（発行日・記事日付）</strong>
-                    <span className="text-[9px] text-gray-500 ml-1">（空欄時はF列登録日）</span>
-                  </span>
-                  <button
-                    onClick={() => setIsSettingsOpen(true)}
-                    className="text-[10px] text-[var(--blue)] hover:underline cursor-pointer shrink-0 ml-1"
-                  >
-                    詳細 ⚙
-                  </button>
+                <div className="text-[10px] text-[var(--muted)] border-t border-[#30363d] pt-2 mt-2 leading-relaxed">
+                  <div className="flex items-center justify-between">
+                    <span>
+                      ※ 参照列: <strong className="text-purple-300 font-semibold">K列（発行日・記事日付）</strong>
+                      <span className="text-[9px] text-gray-500 ml-1">（空欄時はF列登録日）</span>
+                    </span>
+                    <button
+                      onClick={() => setIsSettingsOpen(true)}
+                      className="text-[10px] text-[var(--blue)] hover:underline cursor-pointer shrink-0 ml-1"
+                    >
+                      詳細 ⚙
+                    </button>
+                  </div>
+                  <div className="text-[9.5px] text-gray-400 mt-1">
+                    💡 西暦・月・日（YYYY-MM-DD）で厳密にソート・抽出します。例えば2026年8月24日の記事のみを抽出したい場合は、開始日と終了日の両方に「2026-08-24」を設定してください（時刻に左右されずにその日の記事だけが選択されます）。
+                  </div>
                 </div>
               </div>
 
