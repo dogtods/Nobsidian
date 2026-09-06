@@ -1531,7 +1531,11 @@ function saveNote(note, targetSheetName, targetSsUrl) {
 
       // メモ書き画面（プレビュー・編集）の内容をスプレッドシートのE列（5列目）に直接ピンポイント保存
       const eVal = note.summary !== undefined ? note.summary : (note.content !== undefined ? note.content : "");
-      sheet.getRange(rowNum, 5).setValue(eVal);
+      if (String(eVal).trim() === "") {
+        sheet.getRange(rowNum, 5).clearContent();
+      } else {
+        sheet.getRange(rowNum, 5).setValue(eVal);
+      }
 
       // タイトル・URL・キーワード・年表も更新
       if (note.title !== undefined && note.title !== "") {
