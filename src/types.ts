@@ -20,7 +20,7 @@ export interface Note {
   source?: string;     // M列 (source: raindrop / drive / mht / app)
   processed?: boolean | string; // G列 (processed)
   nobsidian?: string;  // H列 (nobsidian)
-  columnO?: string;    // O列 (15列目: 更新日時 / カテゴリ / ロット情報)
+  columnN?: string;    // N列 (14列目: カテゴリ / ロット情報)
   rowIndex?: number;   // スプレッドシート上の行番号 (2〜lastRow)
 }
 

@@ -21,7 +21,7 @@
  * 【スプレッドシートの列構成（15列）】
  * A(id) B(title) C(url) D(tags) E(highlights) F(saved_at) G(processed) H(nobsidian)
  * I(all:本文原文) J(apendix:メタ情報) K(date:日付) L(timeline:年表) M(source:取得元)
- * N(edited_content:アプリ編集本文) O(updated_at:アプリ更新日時)
+ * N(カテゴリ・ロット情報:14列目) O(updated_at:アプリ更新日時)
  *
  * ※ A〜M列の外部取り込み元データは非破壊で保持され、アプリ内での編集や加筆はN列・O列に追記されます。
  *
@@ -1353,25 +1353,30 @@ function handleGetNotes(targetSheetName, targetSsUrl) {
     }
 
     let uAt = cAt;
-    let colORaw = "";
     if (row[14] instanceof Date) {
       uAt = row[14].getTime();
-      const tz = Session.getScriptTimeZone() || "Asia/Tokyo";
-      const h = row[14].getHours();
-      const m = row[14].getMinutes();
-      const s = row[14].getSeconds();
-      if (h === 0 && m === 0 && s === 0) {
-        colORaw = Utilities.formatDate(row[14], tz, "yyyy/MM/dd");
-      } else {
-        colORaw = Utilities.formatDate(row[14], tz, "yyyy/MM/dd HH:mm:ss");
-      }
     } else if (row[14] !== "" && !isNaN(Number(row[14])) && Number(row[14]) > 0) {
       uAt = Number(row[14]);
-      colORaw = String(row[14]);
     } else if (row[14]) {
-      colORaw = String(row[14]).trim();
       const parsed = Date.parse(row[14]);
       if (!isNaN(parsed)) uAt = parsed;
+    }
+
+    let colNRaw = "";
+    if (row.length >= 14 && row[13] !== undefined && row[13] !== null) {
+      if (row[13] instanceof Date) {
+        const tz = Session.getScriptTimeZone() || "Asia/Tokyo";
+        const h = row[13].getHours();
+        const m = row[13].getMinutes();
+        const s = row[13].getSeconds();
+        if (h === 0 && m === 0 && s === 0) {
+          colNRaw = Utilities.formatDate(row[13], tz, "yyyy/MM/dd");
+        } else {
+          colNRaw = Utilities.formatDate(row[13], tz, "yyyy/MM/dd HH:mm:ss");
+        }
+      } else {
+        colNRaw = String(row[13]).trim();
+      }
     }
 
     // A列が空の場合は、ランダムなミリ秒ではなく、安定した row_X 形式を使用（リロード時の再採番揺れを完全防止）
@@ -1424,7 +1429,7 @@ function handleGetNotes(targetSheetName, targetSsUrl) {
       source: source,
       processed: row[6],
       nobsidian: row[7],
-      columnO: colORaw
+      columnN: colNRaw
     };
   }).filter(n => n.title.trim() !== "" || n.content.trim() !== "");
 
@@ -1542,8 +1547,9 @@ function saveNote(note, targetSheetName, targetSsUrl) {
         sheet.getRange(rowNum, 12).setValue(note.timeline);
       }
       // O列（更新日時 / 分類情報: 15列目）
-      if (note.columnO !== undefined && note.columnO !== "") {
-        sheet.getRange(rowNum, 15).setValue(note.columnO);
+      if (note.columnN !== undefined && note.columnN !== "") {
+        sheet.getRange(rowNum, 14).setValue(note.columnN);
+        sheet.getRange(rowNum, 15).setValue(new Date());
       } else {
         sheet.getRange(rowNum, 15).setValue(new Date());
       }
@@ -1580,8 +1586,8 @@ function saveNote(note, targetSheetName, targetSsUrl) {
     note.dateStr || "",
     note.timeline || "",
     note.source || "web_app",
-    "", // N列: E列を勝手に複製しない（空のまま）
-    (note.columnO !== undefined && note.columnO !== "") ? note.columnO : new Date()
+    (note.columnN !== undefined && note.columnN !== "") ? note.columnN : "", // N列
+    new Date() // O列
   ];
   sheet.appendRow(newRow);
   SpreadsheetApp.flush();
@@ -1647,8 +1653,8 @@ function saveAll(notes, targetSheetName, targetSsUrl) {
           exist[10] || n.dateStr || "",
           n.timeline !== undefined ? n.timeline : (exist[11] || ""),
           exist[12] || n.source || "web_app",
-          exist[13] || "", // N列: E列を複製しない！既存の値を維持
-          new Date()
+          (n.columnN !== undefined) ? n.columnN : (exist[13] || ""), // N列: 指定があれば上書き、なければ既存維持
+          new Date() // O列: 更新日時
         ];
       }
       return [
@@ -1665,8 +1671,8 @@ function saveAll(notes, targetSheetName, targetSsUrl) {
         n.dateStr || "",
         n.timeline || "",
         n.source || "web_app",
-        "", // N列: E列を複製しない（空のまま）
-        (n.columnO !== undefined && n.columnO !== "") ? n.columnO : new Date()
+        (n.columnN !== undefined && n.columnN !== "") ? n.columnN : "", // N列
+        new Date() // O列
       ];
     });
 

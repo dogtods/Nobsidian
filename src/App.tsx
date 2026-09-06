@@ -44,7 +44,7 @@ import { Note, FolderRelation } from "./types";
 import { getStoredPrompt, DEFAULT_PROMPTS } from "./components/PromptSettingsModal";
 import {
   getFolderFromKeywords,
-  getFolderFromColumnO,
+  getFolderFromColumnN,
   formatDateStr,
   extractWikiLinks,
   parseHeatmapData,
@@ -159,7 +159,7 @@ const normalizeNoteItem = (n: Note): Note => {
     summary: memoText,  // E列の内容を保持
     columnJ: rawText,
     rawContent: rawText,
-    columnO: n.columnO !== undefined ? n.columnO : "",
+    columnN: n.columnN !== undefined ? n.columnN : "",
     rowIndex: n.rowIndex,
   };
 };
@@ -382,25 +382,25 @@ export default function App() {
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const [folderColumnSource, setFolderColumnSource] = useState<"D" | "O">(() => {
+  const [folderColumnSource, setFolderColumnSource] = useState<"D" | "N">(() => {
     try {
-      return (localStorage.getItem("cn_folder_column_source") as "D" | "O") || "D";
+      return (localStorage.getItem("cn_folder_column_source") as "D" | "N") || "D";
     } catch {
       return "D";
     }
   });
 
-  const handleFolderColumnChange = (col: "D" | "O") => {
+  const handleFolderColumnChange = (col: "D" | "N") => {
     setFolderColumnSource(col);
     try {
       localStorage.setItem("cn_folder_column_source", col);
     } catch {}
-    toast(col === "D" ? "フォルダリストを「D列（カテゴリ・タグ）」基準に切り替えました ✦" : "フォルダリストを「O列（15列目）」基準に切り替えました ✦");
+    toast(col === "D" ? "フォルダリストを「D列（カテゴリ・タグ）」基準に切り替えました ✦" : "フォルダリストを「N列（14列目）」基準に切り替えました ✦");
   };
 
   const getFolder = (note: Note) => {
-    if (folderColumnSource === "O") {
-      return getFolderFromColumnO(note);
+    if (folderColumnSource === "N") {
+      return getFolderFromColumnN(note);
     }
     return getFolderFromKeywords(note.keywords);
   };
@@ -1100,10 +1100,10 @@ export default function App() {
 
     const newFolder = val.trim();
 
-    if (folderColumnSource === "O") {
+    if (folderColumnSource === "N") {
       const updated = {
         ...active,
-        columnO: newFolder,
+        columnN: newFolder,
         updatedAt: Date.now()
       };
       let newList: Note[] = [];
@@ -2728,10 +2728,10 @@ const renderMarkdownToElements = (contentStr: string) => {
     const trimmedNewName = newName.trim();
     const updatedList = notes.map(n => {
       if (getFolder(n) === oldName) {
-        if (folderColumnSource === "O") {
+        if (folderColumnSource === "N") {
           return {
             ...n,
-            columnO: trimmedNewName,
+            columnN: trimmedNewName,
             updatedAt: Date.now()
           };
         } else {
@@ -3418,7 +3418,7 @@ const renderMarkdownToElements = (contentStr: string) => {
             </div>
           </div>
 
-          {/* D列 / O列 フォルダ基準列切り替えボタン */}
+          {/* D列 / N列 フォルダ基準列切り替えボタン */}
           <div className="flex items-center justify-between gap-1 pt-0.5">
             <span className="text-[10px] text-gray-400 font-medium shrink-0">基準列:</span>
             <div className="flex bg-[#0d1117] p-0.5 rounded-md border border-[#30363d] text-[10px] font-semibold">
@@ -3439,16 +3439,16 @@ const renderMarkdownToElements = (contentStr: string) => {
               <button
                 type="button"
                 id="btn-folder-col-o"
-                onClick={() => handleFolderColumnChange("O")}
+                onClick={() => handleFolderColumnChange("N")}
                 className={`px-2 py-0.5 rounded transition-all flex items-center gap-1 cursor-pointer ${
-                  folderColumnSource === "O"
+                  folderColumnSource === "N"
                     ? "bg-[#1f6feb] text-white shadow-sm font-bold"
                     : "text-gray-400 hover:text-gray-200 hover:bg-[#161b22]"
                 }`}
-                title="スプレッドシートのO列（15列目: 更新日・ロット・情報）を元にフォルダリストを分類します"
+                title="スプレッドシートのN列（14列目: 更新日・ロット・情報）を元にフォルダリストを分類します"
               >
-                {folderColumnSource === "O" && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>}
-                <span>O列 (15列目)</span>
+                {folderColumnSource === "N" && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>}
+                <span>N列 (14列目)</span>
               </button>
             </div>
           </div>

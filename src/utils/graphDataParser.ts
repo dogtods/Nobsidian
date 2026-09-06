@@ -83,9 +83,9 @@ export function getFolderFromKeywords(keywordsStr: string): string {
 }
 
 // Extract folder name from Column O (15th column / updated_at / custom info)
-export function getFolderFromColumnO(note: Note): string {
-  if (note.columnO && typeof note.columnO === "string" && note.columnO.trim() !== "") {
-    const trimmed = note.columnO.trim();
+export function getFolderFromColumnN(note: Note): string {
+  if (note.columnN && typeof note.columnN === "string" && note.columnN.trim() !== "") {
+    const trimmed = note.columnN.trim();
     // 1. Check if it's formatted like [folder:XYZ]
     const match = trimmed.match(/\[folder:(.+?)\]/i);
     if (match) return match[1].trim();
@@ -103,7 +103,7 @@ export function getFolderFromColumnO(note: Note): string {
     return first || "未分類";
   }
 
-  // Fallback: If columnO is empty, check if note has updatedAt timestamp
+  // Fallback: If columnN is empty, check if note has updatedAt timestamp
   if (note.updatedAt && note.updatedAt > 0) {
     const d = new Date(note.updatedAt);
     if (!isNaN(d.getTime())) {
