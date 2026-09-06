@@ -149,9 +149,9 @@ const getApiUrl = () => {
 const normalizeNoteItem = (n: Note): Note => {
   const rawText = (n.rawContent || n.columnJ || "").trim();
   // E列の内容を最優先とし、未設定の場合のみcontent（メモ書き内容）を参照
-  const memoText = n.summary !== undefined 
-    ? n.summary 
-    : (n.content !== undefined ? n.content : "");
+  const memoText = (n.content !== undefined && n.content !== null && n.content !== "")
+    ? n.content 
+    : (n.summary !== undefined ? n.summary : "");
 
   return {
     ...n,
@@ -407,6 +407,7 @@ export default function App() {
 
   // Local Saving (Dual-layer persistence via IndexedDB and LocalStorage)
   const triggerLocalSave = (updatedNotes: Note[], activeNoteId: string | null) => {
+    notesRef.current = updatedNotes;
     saveNotesLocally(updatedNotes, activeNoteId).catch(() => {});
   };
 
@@ -509,6 +510,20 @@ export default function App() {
     
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+
+    // 同期開始前にローカルの未保存内容（追記・入力中テキスト）があれば先行アップロードフラッシュ
+    if (hasPendingSave) {
+      setHasPendingSave(false);
+      const active = getActiveNote();
+      if (active) {
+        try {
+          await pushNoteToServer(active, false);
+        } catch (flushErr) {
+          console.warn("Pre-sync note flush error:", flushErr);
+        }
+      }
     }
 
     try {
@@ -549,21 +564,77 @@ export default function App() {
           if (!serverNote) {
             mergedMap[localNote.id] = localNote;
             localHasNewerUpdates = true;
-          } else if (localNote.updatedAt > serverNote.updatedAt) {
-            // Local edits are newer: preserve local user content and merge metadata
-            mergedMap[matchedServerId] = {
-              ...serverNote,
-              ...localNote,
-              id: serverNote.id || localNote.id,
-              rowIndex: serverNote.rowIndex || localNote.rowIndex,
-              updatedAt: localNote.updatedAt
-            };
-            localHasNewerUpdates = true;
+          } else {
+            // Check if server note or local note has newer/appended content in Column E
+            const serverE = (serverNote.summary || serverNote.content || "").trim();
+            const localE = (localNote.content || localNote.summary || "").trim();
+
+            if (serverE !== localE) {
+              if (serverE.includes(localE)) {
+                // スプレッドシート側（E列）に直接追記・加筆された場合: シート側の最新内容を優先採用
+                mergedMap[matchedServerId] = {
+                  ...localNote,
+                  ...serverNote,
+                  id: serverNote.id || localNote.id,
+                  rowIndex: serverNote.rowIndex || localNote.rowIndex,
+                  content: serverNote.content || serverNote.summary,
+                  summary: serverNote.summary || serverNote.content,
+                  updatedAt: Math.max(serverNote.updatedAt || 0, localNote.updatedAt || 0)
+                };
+              } else if (localE.includes(serverE)) {
+                // Webアプリ側で追記・加筆された場合: ローカル内容を保持してスプレッドシートへ同期
+                mergedMap[matchedServerId] = {
+                  ...serverNote,
+                  ...localNote,
+                  id: serverNote.id || localNote.id,
+                  rowIndex: serverNote.rowIndex || localNote.rowIndex,
+                  content: localNote.content,
+                  summary: localNote.content,
+                  updatedAt: localNote.updatedAt
+                };
+                localHasNewerUpdates = true;
+              } else if (localNote.updatedAt > (serverNote.updatedAt || 0)) {
+                // ローカル更新日時がより新しい場合
+                mergedMap[matchedServerId] = {
+                  ...serverNote,
+                  ...localNote,
+                  id: serverNote.id || localNote.id,
+                  rowIndex: serverNote.rowIndex || localNote.rowIndex,
+                  content: localNote.content,
+                  summary: localNote.content,
+                  updatedAt: localNote.updatedAt
+                };
+                localHasNewerUpdates = true;
+              } else {
+                // サーバー更新日時がより新しい場合
+                mergedMap[matchedServerId] = {
+                  ...localNote,
+                  ...serverNote,
+                  id: serverNote.id || localNote.id,
+                  rowIndex: serverNote.rowIndex || localNote.rowIndex,
+                  content: serverNote.content || serverNote.summary,
+                  summary: serverNote.summary || serverNote.content,
+                  updatedAt: serverNote.updatedAt
+                };
+              }
+            } else {
+              // 内容同一: メタデータを安全に統合
+              mergedMap[matchedServerId] = {
+                ...serverNote,
+                ...localNote,
+                id: serverNote.id || localNote.id,
+                rowIndex: serverNote.rowIndex || localNote.rowIndex,
+                content: localNote.content || serverNote.content,
+                summary: localNote.summary || serverNote.summary,
+                updatedAt: Math.max(serverNote.updatedAt || 0, localNote.updatedAt || 0)
+              };
+            }
           }
         });
 
         const mergedList = Object.values(mergedMap).map(normalizeNoteItem);
         
+        notesRef.current = mergedList;
         setNotes(mergedList);
         triggerLocalSave(mergedList, activeId);
         
@@ -711,10 +782,11 @@ export default function App() {
     setIsSavingNote(true);
     updateSyncStatus("syncing", "E列へ保存中...");
     try {
+      const finalContent = (note.content !== undefined && note.content !== null) ? note.content : (note.summary || "");
       const noteToSave: Note = {
         ...note,
-        summary: note.summary !== undefined ? note.summary : note.content,
-        content: note.content,
+        summary: finalContent,
+        content: finalContent,
       };
       const res = await apiPost({ action: "saveNote", note: noteToSave });
       if (res && res.error) {
@@ -2190,30 +2262,36 @@ const renderMarkdownToElements = (contentStr: string) => {
         return toast("テキストが入力されていません");
       }
 
-      const updated = {
+      const appendText = (() => {
+        const trimmed = text.trim();
+        const mermaidKeywords = ['graph', 'flowchart', 'sequenceDiagram', 'classDiagram', 'stateDiagram', 'erDiagram', 'journey', 'gantt', 'pie', 'quadrantChart', 'xychart-beta', 'timeline'];
+        const lines = trimmed.split('\n');
+        const firstLine = lines[0].toLowerCase();
+        const secondLine = lines.length > 1 ? lines[1].toLowerCase() : "";
+        const isMermaid = mermaidKeywords.some(kw => firstLine.includes(kw) || secondLine.includes(kw)) || trimmed.startsWith('%%{init');
+        
+        if (isMermaid && !trimmed.includes('```mermaid')) {
+          return "```mermaid\n" + trimmed + "\n```\n";
+        }
+        return text;
+      })();
+
+      const nextContent = (active.content ? active.content.trim() + "\n\n" : "") + appendText;
+      const updated: Note = {
         ...active,
-        content: active.content.trim() + "\n\n" + (() => {
-          const trimmed = text.trim();
-          const mermaidKeywords = ['graph', 'flowchart', 'sequenceDiagram', 'classDiagram', 'stateDiagram', 'erDiagram', 'journey', 'gantt', 'pie', 'quadrantChart', 'xychart-beta', 'timeline'];
-          const lines = trimmed.split('\n');
-          const firstLine = lines[0].toLowerCase();
-          const secondLine = lines.length > 1 ? lines[1].toLowerCase() : "";
-          const isMermaid = mermaidKeywords.some(kw => firstLine.includes(kw) || secondLine.includes(kw)) || trimmed.startsWith('%%{init');
-          
-          if (isMermaid && !trimmed.includes('```mermaid')) {
-            return "```mermaid\n" + trimmed + "\n```\n";
-          }
-          return text;
-        })(),
+        content: nextContent,
+        summary: nextContent, // E列（summary）にも同一内容を完全に反映
         updatedAt: Date.now()
       };
       let newList: Note[] = [];
       setNotes(prev => {
         newList = prev.map(n => n.id === active.id ? updated : n);
+        notesRef.current = newList;
         triggerLocalSave(newList, active.id);
         return newList;
       });
-      toast("内容を末尾に追記しました ✦");
+      scheduleDelayedSave(updated);
+      toast("内容を末尾に追記し、E列に自動保存予約しました ✦");
     } catch (e: any) {
       console.error(e);
       toast("追記に失敗しました。");
@@ -2295,7 +2373,7 @@ const renderMarkdownToElements = (contentStr: string) => {
         const kwsStr = resultObj.keywords.join(", ");
         const updatedKw = folder !== "未分類" ? `${kwsStr}, [folder:${folder}]` : kwsStr;
 
-        const newSummary = needSummary ? (resultObj.summary || "") : active.summary;
+        const newSummary = needSummary ? (resultObj.summary || "") : (active.content || active.summary);
         const updated = {
           ...active,
           keywords: updatedKw,
@@ -2305,11 +2383,12 @@ const renderMarkdownToElements = (contentStr: string) => {
         };
 
         let newList: Note[] = [];
-      setNotes(prev => {
-        newList = prev.map(n => n.id === active.id ? updated : n);
-        triggerLocalSave(newList, active.id);
-        return newList;
-      });
+        setNotes(prev => {
+          newList = prev.map(n => n.id === active.id ? updated : n);
+          notesRef.current = newList;
+          triggerLocalSave(newList, active.id);
+          return newList;
+        });
         pushNoteToServer(updated);
       } else if (needSummary && resultObj.summary) {
         const updated = {
@@ -2320,11 +2399,12 @@ const renderMarkdownToElements = (contentStr: string) => {
         };
 
         let newList: Note[] = [];
-      setNotes(prev => {
-        newList = prev.map(n => n.id === active.id ? updated : n);
-        triggerLocalSave(newList, active.id);
-        return newList;
-      });
+        setNotes(prev => {
+          newList = prev.map(n => n.id === active.id ? updated : n);
+          notesRef.current = newList;
+          triggerLocalSave(newList, active.id);
+          return newList;
+        });
         pushNoteToServer(updated);
       }
 
@@ -4296,18 +4376,22 @@ const renderMarkdownToElements = (contentStr: string) => {
                           onClick={() => {
                             const active = getActiveNote();
                             if (active) {
-                              const updated = {
+                              const nextContent = active.content + "\n\n" + (aiResults.visual_structure.includes('```mermaid') ? aiResults.visual_structure : "```mermaid\n" + aiResults.visual_structure.trim() + "\n```");
+                              const updated: Note = {
                                 ...active,
-                                content: active.content + "\n\n" + (aiResults.visual_structure.includes('```mermaid') ? aiResults.visual_structure : "```mermaid\n" + aiResults.visual_structure.trim() + "\n```"),
+                                content: nextContent,
+                                summary: nextContent,
                                 updatedAt: Date.now()
                               };
                               let newList: Note[] = [];
-      setNotes(prev => {
-        newList = prev.map(n => n.id === active.id ? updated : n);
-        triggerLocalSave(newList, active.id);
-        return newList;
-      });
-                              toast("図解（Mermaid）を本文末尾に追記しました ✦");
+                              setNotes(prev => {
+                                newList = prev.map(n => n.id === active.id ? updated : n);
+                                notesRef.current = newList;
+                                triggerLocalSave(newList, active.id);
+                                return newList;
+                              });
+                              scheduleDelayedSave(updated);
+                              toast("図解（Mermaid）を本文末尾に追記し、E列に保存予約しました ✦");
                             }
                           }}
                         >

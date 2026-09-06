@@ -1,6 +1,9 @@
-const str = '{\n  "test": "line1\nline2"\n}';
-const fixedStr = str.replace(/"([^"\\]|\\.)*"/g, match => {
-    return match.replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t");
-});
-console.log(fixedStr);
-console.log(JSON.parse(fixedStr));
+const compressContent = (content, maxLength) => {
+  if (!content) return "";
+  let clean = content.replace(/```[\s\S]*?```/g, "[コードブロック省略/Token Saving]");
+  if (clean.length > maxLength) {
+    clean = clean.substring(0, maxLength) + "\n...[長文のため後半をカット/Token Saving]";
+  }
+  return clean;
+};
+console.log(compressContent("this is a test\nthis is at the bottom", 100));

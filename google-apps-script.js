@@ -1530,7 +1530,10 @@ function saveNote(note, targetSheetName, targetSsUrl) {
       }
 
       // メモ書き画面（プレビュー・編集）の内容をスプレッドシートのE列（5列目）に直接ピンポイント保存
-      const eVal = note.summary !== undefined ? note.summary : (note.content !== undefined ? note.content : "");
+      // note.content（エディタ・プレビュー編集・追記内容）を最優先でE列に保存
+      const eVal = (note.content !== undefined && note.content !== null) 
+        ? note.content 
+        : (note.summary !== undefined && note.summary !== null ? note.summary : "");
       if (String(eVal).trim() === "") {
         sheet.getRange(rowNum, 5).clearContent();
       } else {
@@ -1574,7 +1577,9 @@ function saveNote(note, targetSheetName, targetSsUrl) {
   }
 
   // 既存行が見つからなかった場合（真の新規ノートのみ末尾に行追加）
-  const eVal = note.summary !== undefined ? note.summary : (note.content || "");
+  const eVal = (note.content !== undefined && note.content !== null) 
+    ? note.content 
+    : (note.summary !== undefined && note.summary !== null ? note.summary : "");
   const newRowId = note.id || ("row_" + (lastRow + 1));
   const newRow = [
     newRowId,
@@ -1641,7 +1646,10 @@ function saveAll(notes, targetSheetName, targetSsUrl) {
     const rows = notes.map(n => {
       const noteTitleKey = n.title ? String(n.title).trim().toLowerCase() : "";
       const exist = existingMap.get(String(n.id).trim()) || (noteTitleKey ? existingTitleMap.get(noteTitleKey) : null);
-      const eVal = n.summary !== undefined ? n.summary : (n.content !== undefined ? n.content : (exist ? exist[4] || "" : ""));
+      // n.content（メモ本文・追記テキスト）を最優先でE列に反映
+      const eVal = (n.content !== undefined && n.content !== null) 
+        ? n.content 
+        : (n.summary !== undefined && n.summary !== null ? n.summary : (exist ? exist[4] || "" : ""));
       if (exist) {
         return [
           n.id || exist[0] || "",
@@ -2815,5 +2823,25 @@ function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, 
     return { success: true, count: addedCount };
   } catch (err) {
     return { success: false, error: err.message };
+  }
+}
+
+/**
+ * スプレッドシート上でセル（E列の追記・編集など）が手動編集されたときに自動実行されるトリガー
+ * 編集行の15列目（O列: updatedAt）に現在日時を自動記録し、
+ * Webアプリとの双方向同期時に手動追記・編集内容が消去されるのを防止します。
+ */
+function onEdit(e) {
+  if (!e || !e.range) return;
+  try {
+    const range = e.range;
+    const sheet = range.getSheet();
+    const row = range.getRow();
+    // 1行目（ヘッダー行）以外のセル編集時にO列を更新
+    if (row > 1) {
+      sheet.getRange(row, 15).setValue(new Date());
+    }
+  } catch (err) {
+    console.error("onEdit error:", err);
   }
 }
