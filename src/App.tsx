@@ -153,10 +153,22 @@ const normalizeNoteItem = (n: Note): Note => {
     ? n.content 
     : (n.summary !== undefined ? n.summary : "");
 
+  let normKeywords = n.keywords || "";
+  // 過去に付与された [folder:〇〇] を検知した場合、シンプルなフォルダ名にクリーンアップ
+  if (normKeywords.includes("[folder:")) {
+    const match = normKeywords.match(/\[folder:(.+?)\]/i);
+    if (match) {
+      normKeywords = match[1].trim();
+    } else {
+      normKeywords = normKeywords.replace(/\[folder:[^\]]+\]/gi, "").trim();
+    }
+  }
+
   return {
     ...n,
     content: memoText,  // メモ書き画面（エディタ・プレビュー）にE列をそのまま配置
     summary: memoText,  // E列の内容を保持
+    keywords: normKeywords,
     columnJ: rawText,
     rawContent: rawText,
     columnN: n.columnN !== undefined ? n.columnN : "",
@@ -993,7 +1005,7 @@ export default function App() {
       title: title,
       content: content,
       summary: content, // E列用に同期
-      keywords: folder ? `[folder:${folder}]` : "",
+      keywords: folder ? folder.trim() : "",
       sourceUrl: sourceUrl || "",
       createdAt: timestamp || Date.now(),
       updatedAt: Date.now()
@@ -1188,22 +1200,10 @@ export default function App() {
       return;
     }
 
-    let kws = active.keywords || "";
-
-    if (kws.includes("[folder:")) {
-      if (newFolder) {
-        kws = kws.replace(/\[folder:(.+?)\]/, `[folder:${newFolder}]`);
-      } else {
-        kws = kws.replace(/\[folder:(.+?)\]/, "").trim();
-        kws = kws.replace(/^,\s*/, "").replace(/,\s*$/, "").replace(/,\s*,/g, ",");
-      }
-    } else if (newFolder) {
-      kws = kws ? `${kws}, [folder:${newFolder}]` : `[folder:${newFolder}]`;
-    }
-
+    // D列基準: [folder:...] を付与せず、シンプルなフォルダ名そのものを保存
     const updated = {
       ...active,
-      keywords: kws,
+      keywords: newFolder,
       updatedAt: Date.now()
     };
 
@@ -2127,12 +2127,12 @@ const renderMarkdownToElements = (contentStr: string) => {
               newContent = newContent + "\n\n" + wrapped;
             }
             
-            let newKeywords = current.keywords;
-            if (resultItem.keywords && Array.isArray(resultItem.keywords)) {
-              const folder = getFolder(current);
-              const kwsStr = resultItem.keywords.join(", ");
-              newKeywords = folder !== "未分類" ? `${kwsStr}, [folder:${folder}]` : kwsStr;
-            }
+            // D列には [folder:〇〇] や長いキーワード群を書き込まず、シンプルなフォルダ名だけを維持
+            const folder = getFolder(current);
+            const cleanFolder = (folder && folder !== "未分類") ? folder : "";
+            const newKeywords = folderColumnSource === "D"
+              ? cleanFolder
+              : (getFolderFromKeywords(current.keywords || "") !== "未分類" ? getFolderFromKeywords(current.keywords || "") : "");
             
             newNotesList[targetIndex] = {
               ...current,
@@ -2367,46 +2367,30 @@ const renderMarkdownToElements = (contentStr: string) => {
 
       setAiResults(resultObj);
 
-      // Save intermediate keywords directly to note if extracted
-      if (needKeywords && resultObj.keywords) {
-        const folder = getFolder(active);
-        const kwsStr = resultObj.keywords.join(", ");
-        const updatedKw = folder !== "未分類" ? `${kwsStr}, [folder:${folder}]` : kwsStr;
+      // D列には [folder:〇〇] や長いキーワード群を書き込まず、シンプルなフォルダ名だけを維持
+      const currentFolder = getFolder(active);
+      const cleanFolder = (currentFolder && currentFolder !== "未分類") ? currentFolder : "";
+      const cleanKeywords = folderColumnSource === "D"
+        ? cleanFolder
+        : (getFolderFromKeywords(active.keywords || "") !== "未分類" ? getFolderFromKeywords(active.keywords || "") : "");
 
-        const newSummary = needSummary ? (resultObj.summary || "") : (active.content || active.summary);
-        const updated = {
-          ...active,
-          keywords: updatedKw,
-          summary: newSummary,
-          content: newSummary, // E列用に同期
-          updatedAt: Date.now()
-        };
+      const newSummary = (needSummary && resultObj.summary) ? resultObj.summary : (active.content || active.summary);
+      const updated = {
+        ...active,
+        keywords: cleanKeywords, // D列にはシンプルなフォルダ名のみを維持
+        summary: newSummary,
+        content: newSummary, // E列用に同期
+        updatedAt: Date.now()
+      };
 
-        let newList: Note[] = [];
-        setNotes(prev => {
-          newList = prev.map(n => n.id === active.id ? updated : n);
-          notesRef.current = newList;
-          triggerLocalSave(newList, active.id);
-          return newList;
-        });
-        pushNoteToServer(updated);
-      } else if (needSummary && resultObj.summary) {
-        const updated = {
-          ...active,
-          summary: resultObj.summary,
-          content: resultObj.summary, // E列用に同期
-          updatedAt: Date.now()
-        };
-
-        let newList: Note[] = [];
-        setNotes(prev => {
-          newList = prev.map(n => n.id === active.id ? updated : n);
-          notesRef.current = newList;
-          triggerLocalSave(newList, active.id);
-          return newList;
-        });
-        pushNoteToServer(updated);
-      }
+      let newList: Note[] = [];
+      setNotes(prev => {
+        newList = prev.map(n => n.id === active.id ? updated : n);
+        notesRef.current = newList;
+        triggerLocalSave(newList, active.id);
+        return newList;
+      });
+      pushNoteToServer(updated);
 
       toast("AI分析完了しました ✦");
     } catch (e: any) {
@@ -2815,10 +2799,9 @@ const renderMarkdownToElements = (contentStr: string) => {
             updatedAt: Date.now()
           };
         } else {
-          const reKeywords = n.keywords.replace(`[folder:${oldName}]`, `[folder:${trimmedNewName}]`);
           return {
             ...n,
-            keywords: reKeywords,
+            keywords: trimmedNewName,
             updatedAt: Date.now()
           };
         }
@@ -2894,17 +2877,20 @@ const renderMarkdownToElements = (contentStr: string) => {
             finalUpdatedList = prev.map(n => {
               const nextFolder = mapping[n.id];
               if (nextFolder) {
-                let kws = n.keywords || "";
-                if (kws.includes("[folder:")) {
-                  kws = kws.replace(/\[folder:(.+?)\]/, `[folder:${nextFolder}]`);
+                const trimmedFolder = nextFolder.trim();
+                if (folderColumnSource === "N") {
+                  return {
+                    ...n,
+                    columnN: trimmedFolder,
+                    updatedAt: Date.now()
+                  };
                 } else {
-                  kws = kws ? `${kws}, [folder:${nextFolder}]` : `[folder:${nextFolder}]`;
+                  return {
+                    ...n,
+                    keywords: trimmedFolder,
+                    updatedAt: Date.now()
+                  };
                 }
-                return {
-                  ...n,
-                  keywords: kws,
-                  updatedAt: Date.now()
-                };
               }
               return n;
             });
