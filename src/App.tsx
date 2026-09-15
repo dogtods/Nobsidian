@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   FileText,
   BookOpen,
@@ -37,10 +37,12 @@ import {
   Save,
   Check,
   Calendar,
-  ArrowUpDown
+  ArrowUpDown,
+  Compass
 } from "lucide-react";
 
 import { Note, FolderRelation } from "./types";
+import { GuideBar } from "./components/GuideBar";
 import { getStoredPrompt, DEFAULT_PROMPTS } from "./components/PromptSettingsModal";
 import {
   getFolderFromKeywords,
@@ -299,6 +301,278 @@ export default function App() {
   const [isExtractingStructure, setIsExtractingStructure] = useState(false);
   const [sourceMemoFontSize, setSourceMemoFontSize] = useState<"text-base" | "text-lg" | "text-xl">("text-base");
   const [sourceMemoLineHeight, setSourceMemoLineHeight] = useState<"1.2" | "1.5" | "2.0">("1.5");
+
+  // 読書支援ガイドバー (GuideBar) State & 画面上の行(Visual Line)計算
+  const [isGuideBarOpen, setIsGuideBarOpen] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("cn_guidebar_open") === "true";
+    } catch (_) {
+      return false;
+    }
+  });
+  const [guideLineIndex, setGuideLineIndex] = useState<number>(0);
+  const [visualLines, setVisualLines] = useState<{
+    index: number;
+    top: number;
+    left: number;
+    width: number;
+    height: number;
+  }[]>([]);
+  const previewRef = useRef<HTMLDivElement | null>(null);
+
+  // 画面上の視覚行（Visual Lines: 目で見て1行）をDOMのレンダリング結果から計算
+  const computeVisualLines = useCallback((container: HTMLElement) => {
+    const containerRect = container.getBoundingClientRect();
+    const scrollTop = container.scrollTop;
+    const scrollLeft = container.scrollLeft;
+
+    const rawRects: { top: number; bottom: number; left: number; right: number; width: number; height: number; center: number }[] = [];
+
+    // テキストノードをTreeWalkerで走査
+    const walker = document.createTreeWalker(
+      container,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode: (node) => {
+          if (!node.textContent || !node.textContent.trim()) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          const parent = node.parentElement;
+          if (!parent) return NodeFilter.FILTER_REJECT;
+          // ガイドバー要素自身、非表示要素、スクリプトなどは除外
+          if (
+            parent.closest("#visual-reading-guide-line") ||
+            parent.closest(".hidden") ||
+            parent.closest("button") ||
+            parent.tagName.toLowerCase() === "script" ||
+            parent.tagName.toLowerCase() === "style"
+          ) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      }
+    );
+
+    let textNode = walker.nextNode();
+    while (textNode) {
+      const range = document.createRange();
+      range.selectNodeContents(textNode);
+      const rectList = range.getClientRects();
+      for (let i = 0; i < rectList.length; i++) {
+        const r = rectList[i];
+        if (r.width > 2 && r.height > 2) {
+          rawRects.push({
+            top: r.top,
+            bottom: r.bottom,
+            left: r.left,
+            right: r.right,
+            width: r.width,
+            height: r.height,
+            center: (r.top + r.bottom) / 2,
+          });
+        }
+      }
+      textNode = walker.nextNode();
+    }
+
+    // テキストを持たないブロック要素（hr など）
+    const specialElements = container.querySelectorAll("hr");
+    specialElements.forEach(el => {
+      const r = el.getBoundingClientRect();
+      if (r.width > 2) {
+        rawRects.push({
+          top: r.top - 4,
+          bottom: r.bottom + 4,
+          left: r.left,
+          right: r.right,
+          width: r.width,
+          height: Math.max(r.height + 8, 16),
+          center: (r.top + r.bottom) / 2,
+        });
+      }
+    });
+
+    if (rawRects.length === 0) return [];
+
+    // Y座標でソート（topが近い場合はleft順）
+    rawRects.sort((a, b) => {
+      if (Math.abs(a.top - b.top) > 5) {
+        return a.top - b.top;
+      }
+      return a.left - b.left;
+    });
+
+    // 画面上で同じ行（Y座標が重なる）Rect同士を1つの行（VisualLine）にマージ
+    const merged: { index: number; top: number; left: number; width: number; height: number }[] = [];
+
+    for (const r of rawRects) {
+      const last = merged[merged.length - 1];
+      const lastClientTop = last ? last.top - scrollTop + containerRect.top : 0;
+      const lastClientBottom = last ? last.top + last.height - scrollTop + containerRect.top : 0;
+      const lastCenter = (lastClientTop + lastClientBottom) / 2;
+
+      const overlap = last ? Math.min(lastClientBottom, r.bottom) - Math.max(lastClientTop, r.top) : 0;
+      const isSameLine = last && (
+        overlap > Math.min(last.height, r.height) * 0.4 ||
+        Math.abs(r.center - lastCenter) < Math.min(last.height, r.height) * 0.45
+      );
+
+      if (last && isSameLine) {
+        const relLeft = r.left - containerRect.left + scrollLeft;
+        const relRight = r.right - containerRect.left + scrollLeft;
+        const relTop = r.top - containerRect.top + scrollTop;
+        const relBottom = r.bottom - containerRect.top + scrollTop;
+
+        const newLeft = Math.min(last.left, relLeft);
+        const newRight = Math.max(last.left + last.width, relRight);
+        const newTop = Math.min(last.top, relTop);
+        const newBottom = Math.max(last.top + last.height, relBottom);
+
+        last.left = newLeft;
+        last.width = newRight - newLeft;
+        last.top = newTop;
+        last.height = newBottom - newTop;
+      } else {
+        const relTop = r.top - containerRect.top + scrollTop;
+        const relLeft = r.left - containerRect.left + scrollLeft;
+        merged.push({
+          index: merged.length,
+          top: relTop,
+          left: relLeft,
+          width: r.width,
+          height: r.height,
+        });
+      }
+    }
+
+    merged.forEach((item, idx) => {
+      item.index = idx;
+    });
+
+    return merged;
+  }, []);
+
+  // プレビュー表示時の視覚行更新関数
+  const updateVisualLines = useCallback(() => {
+    if (!previewRef.current) return;
+    const lines = computeVisualLines(previewRef.current);
+    if (lines.length > 0) {
+      setVisualLines(lines);
+    }
+  }, [computeVisualLines]);
+
+  // 記事変更・ガイドバー開閉・モード変更時の視覚行更新
+  const currentNoteContent = notes.find(n => n.id === activeId)?.content;
+  useEffect(() => {
+    if (!isGuideBarOpen || mode !== "preview") return;
+    const timer = setTimeout(() => {
+      updateVisualLines();
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [activeId, currentNoteContent, isGuideBarOpen, mode, updateVisualLines]);
+
+  // 画面リサイズ監視（ウィンドウ幅変更で行の折り返し位置が変わるため再計算）
+  useEffect(() => {
+    if (!previewRef.current || !isGuideBarOpen) return;
+    let resizeTimer: any;
+    const observer = new ResizeObserver(() => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        updateVisualLines();
+      }, 100);
+    });
+    observer.observe(previewRef.current);
+    return () => {
+      observer.disconnect();
+      clearTimeout(resizeTimer);
+    };
+  }, [isGuideBarOpen, updateVisualLines]);
+
+  // ガイドバーの行進行に合わせてプレビューをスムーズスクロール
+  useEffect(() => {
+    if (!isGuideBarOpen || visualLines.length === 0) return;
+    const line = visualLines[guideLineIndex];
+    if (!line || !previewRef.current) return;
+
+    const container = previewRef.current;
+    const currentScrollTop = container.scrollTop;
+    const containerHeight = container.clientHeight;
+    const lineTop = line.top;
+
+    // 画面の上から約38%の位置に現在行が来るよう快適にスクロール
+    const targetScrollTop = lineTop - (containerHeight * 0.38);
+
+    const isOutOfView =
+      lineTop < currentScrollTop + 40 ||
+      lineTop > currentScrollTop + containerHeight - 80;
+
+    if (isOutOfView || Math.abs(currentScrollTop - targetScrollTop) > 70) {
+      container.scrollTo({
+        top: Math.max(0, targetScrollTop),
+        behavior: "smooth"
+      });
+    }
+  }, [guideLineIndex, isGuideBarOpen, visualLines]);
+
+  // プレビュー内クリックで画面上のその行にガイドバーを直接ジャンプ移動
+  const handlePreviewClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isGuideBarOpen || visualLines.length === 0) return;
+
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim().length > 0) return;
+
+    const container = previewRef.current;
+    if (!container) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const clickY = e.clientY - containerRect.top + container.scrollTop;
+
+    let closestIndex = 0;
+    let minDiff = Infinity;
+
+    for (let i = 0; i < visualLines.length; i++) {
+      const l = visualLines[i];
+      if (clickY >= l.top && clickY <= l.top + l.height) {
+        closestIndex = i;
+        break;
+      }
+      const diff = Math.abs(clickY - (l.top + l.height / 2));
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestIndex = i;
+      }
+    }
+
+    setGuideLineIndex(closestIndex);
+  };
+
+  const toggleGuideBar = () => {
+    setIsGuideBarOpen(prev => {
+      const nextVal = !prev;
+      try {
+        localStorage.setItem("cn_guidebar_open", String(nextVal));
+      } catch (_) {}
+      if (nextVal) {
+        if (!activeId) {
+          const { groups, sortedFolders } = getCategorizedNotes();
+          for (const f of sortedFolders) {
+            if (groups[f] && groups[f].length > 0) {
+              setActiveId(groups[f][0].id);
+              break;
+            }
+          }
+        }
+        setMode("preview");
+        setGuideLineIndex(0);
+        setTimeout(() => updateVisualLines(), 80);
+        toast("📖 ガイドバーを開始しました");
+      } else {
+        toast("ガイドバーを終了しました");
+      }
+      return nextVal;
+    });
+  };
 
   // Touch event coordinates for mobile article/note navigation
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -949,11 +1223,21 @@ export default function App() {
     };
   }, []);
 
-  // Reset AI analysis panel when active note changes to avoid showing stale results on other notes
+  // Reset AI analysis panel & reading guide position when active note changes
   useEffect(() => {
     setAiResults(null);
     setAiPanelOpen(false);
+    setGuideLineIndex(0);
   }, [activeId]);
+
+  // 読書ガイドバーの対象行が変更されたら、スムーズに画面中央へスクロール
+  useEffect(() => {
+    if (!isGuideBarOpen) return;
+    const targetEl = document.getElementById(`guide-line-${guideLineIndex}`);
+    if (targetEl) {
+      targetEl.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [guideLineIndex, isGuideBarOpen, activeId]);
 
   const loadDefaultNotes = () => {
     const fresh: Note[] = [];
@@ -1127,6 +1411,7 @@ export default function App() {
       flushPendingSave(false);
     }
     setActiveId(id);
+    setGuideLineIndex(0);
     if (id) {
       try { localStorage.setItem("cn_last_active_id", id); } catch {}
     } else {
@@ -1336,8 +1621,8 @@ export default function App() {
     }
   };
 
-  // Navigates to the next or previous note dynamically
-  const navigateNote = (direction: "next" | "prev") => {
+  // フォルダリスト順に前後のノートへ遷移（最下段・最上段に達した場合はfalseを返す）
+  const navigateNote = (direction: "next" | "prev"): boolean => {
     const { groups, sortedFolders } = getCategorizedNotes();
     const orderedList: Note[] = [];
     sortedFolders.forEach(folderName => {
@@ -1345,34 +1630,41 @@ export default function App() {
       orderedList.push(...groupList);
     });
 
-    if (orderedList.length === 0) return;
+    if (orderedList.length === 0) return false;
 
     const currentIndex = orderedList.findIndex(n => n.id === activeId);
-    if (currentIndex === -1) {
-      setActiveId(orderedList[0].id);
-      return;
-    }
 
     let targetIndex = currentIndex;
-    if (direction === "next") {
+    if (currentIndex === -1) {
+      if (direction === "next") {
+        targetIndex = 0;
+      } else {
+        targetIndex = orderedList.length - 1;
+      }
+    } else if (direction === "next") {
       targetIndex = currentIndex + 1;
       if (targetIndex >= orderedList.length) {
-        targetIndex = 0; // Loop around
+        // フォルダリストの最下段に達した（ループしない）
+        return false;
       }
     } else {
       targetIndex = currentIndex - 1;
       if (targetIndex < 0) {
-        targetIndex = orderedList.length - 1; // Loop around
+        // フォルダリストの最上段に達した（ループしない）
+        return false;
       }
     }
 
     const targetNote = orderedList[targetIndex];
     if (targetNote) {
       setActiveId(targetNote.id);
+      setGuideLineIndex(0);
       setAiPanelOpen(false);
       setSidebarOpen(false);
       toast(`📖 [[${targetNote.title}]] へ切り替えました`);
+      return true;
     }
+    return false;
   };
 
   const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
@@ -1684,28 +1976,30 @@ const renderMarkdownToElements = (contentStr: string) => {
     }
 
     const tableElement = (
-      <table key={`table-${keySeq++}`} className="min-w-full border-collapse my-4 border border-[var(--border)]">
-        <thead>
-          <tr className="bg-[var(--surface)]">
-            {headers.map((h, idx) => (
-              <th key={idx} style={{ textAlign: aligns[idx] as any }} className="border border-[var(--border)] p-2 font-bold text-sm">
-                {parseInlineMarkdownToElements(h)}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, rIdx) => (
-            <tr key={rIdx} className="odd:bg-[var(--background)] even:bg-[var(--surface)]">
-              {headers.map((_, cIdx) => (
-                <td key={cIdx} style={{ textAlign: aligns[cIdx] as any }} className="border border-[var(--border)] p-2 text-sm">
-                  {parseInlineMarkdownToElements(row[cIdx] || "")}
-                </td>
+      <div key={`table-wrapper-${keySeq++}`} className="my-4 overflow-x-auto">
+        <table className="min-w-full border-collapse border border-[var(--border)]">
+          <thead>
+            <tr className="bg-[var(--surface)]">
+              {headers.map((h, idx) => (
+                <th key={idx} style={{ textAlign: aligns[idx] as any }} className="border border-[var(--border)] p-2 font-bold text-sm">
+                  {parseInlineMarkdownToElements(h)}
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row, rIdx) => (
+              <tr key={rIdx} className="odd:bg-[var(--background)] even:bg-[var(--surface)]">
+                {headers.map((_, cIdx) => (
+                  <td key={cIdx} style={{ textAlign: aligns[cIdx] as any }} className="border border-[var(--border)] p-2 text-sm">
+                    {parseInlineMarkdownToElements(row[cIdx] || "")}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     );
 
     return { element: tableElement, nextIdx: currentIdx };
@@ -1728,10 +2022,17 @@ const renderMarkdownToElements = (contentStr: string) => {
       
       const codeString = codeBlockContent.join("\n");
       if (codeBlockLanguage.toLowerCase() === "mermaid") {
-        elements.push(<MermaidViewer key={`code-${keySeq++}`} code={codeString} />);
+        elements.push(
+          <div key={`code-${keySeq++}`} className="my-3">
+            <MermaidViewer code={codeString} />
+          </div>
+        );
       } else {
         elements.push(
-          <pre key={`code-${keySeq++}`} className="bg-[var(--surface)] text-[var(--fg)] p-4 rounded-md my-4 overflow-x-auto text-sm font-mono border border-[var(--border)]">
+          <pre
+            key={`code-${keySeq++}`}
+            className="bg-[var(--surface)] text-[var(--fg)] p-4 rounded-md my-4 overflow-x-auto text-sm font-mono border border-[var(--border)]"
+          >
             <code>{codeString}</code>
           </pre>
         );
@@ -1745,20 +2046,36 @@ const renderMarkdownToElements = (contentStr: string) => {
       const tableResult = parseTable(i);
       if (tableResult) {
         elements.push(tableResult.element);
-        i = tableResult.nextIdx; // テーブルとして消費した行の次へ進める
+        i = tableResult.nextIdx;
         continue;
       }
     }
 
     // 3. その他単一行要素の処理
     if (line.startsWith("# ")) {
-      elements.push(<h1 key={keySeq++}>{parseInlineMarkdownToElements(line.slice(2))}</h1>);
+      elements.push(
+        <h1 key={keySeq++}>
+          {parseInlineMarkdownToElements(line.slice(2))}
+        </h1>
+      );
     } else if (line.startsWith("## ")) {
-      elements.push(<h2 key={keySeq++}>{parseInlineMarkdownToElements(line.slice(3))}</h2>);
+      elements.push(
+        <h2 key={keySeq++}>
+          {parseInlineMarkdownToElements(line.slice(3))}
+        </h2>
+      );
     } else if (line.startsWith("### ")) {
-      elements.push(<h3 key={keySeq++}>{parseInlineMarkdownToElements(line.slice(4))}</h3>);
-    } else if (line.startsWith("> ")) { // 引用ブロックの追加
-      elements.push(<blockquote key={keySeq++} className="border-l-4 border-[var(--border)] pl-4 italic my-2 text-[var(--fg-muted)]">{parseInlineMarkdownToElements(line.slice(2))}</blockquote>);
+      elements.push(
+        <h3 key={keySeq++}>
+          {parseInlineMarkdownToElements(line.slice(4))}
+        </h3>
+      );
+    } else if (line.startsWith("> ")) {
+      elements.push(
+        <blockquote key={keySeq++} className="border-l-4 border-[var(--border)] pl-4 italic my-2 text-[var(--fg-muted)]">
+          {parseInlineMarkdownToElements(line.slice(2))}
+        </blockquote>
+      );
     } else if (line.startsWith("- [x] ")) {
       elements.push(
         <div key={keySeq++} className="check-row">
@@ -1781,11 +2098,22 @@ const renderMarkdownToElements = (contentStr: string) => {
         </div>
       );
     } else if (line === "---" || line === "***") {
-      elements.push(<hr key={keySeq++} style={{ border: "none", borderTop: "1px solid var(--border)", margin: "14px 0" }} />);
+      elements.push(
+        <hr
+          key={keySeq++}
+          style={{ border: "none", borderTop: "1px solid var(--border)", margin: "14px 0" }}
+        />
+      );
     } else if (line === "") {
-      elements.push(<div key={keySeq++} className="spacer" />);
+      elements.push(
+        <div key={keySeq++} className="spacer" />
+      );
     } else {
-      elements.push(<p key={keySeq++}>{parseInlineMarkdownToElements(line)}</p>);
+      elements.push(
+        <p key={keySeq++}>
+          {parseInlineMarkdownToElements(line)}
+        </p>
+      );
     }
 
     i++;
@@ -3922,6 +4250,20 @@ const renderMarkdownToElements = (contentStr: string) => {
                       <span>記事全文</span>
                     </button>
                   )}
+
+                  {/* 読書支援ガイドバー表示切り替えボタン */}
+                  <button
+                    onClick={toggleGuideBar}
+                    className={`p-1 px-2.5 border text-xs font-medium rounded-md cursor-pointer flex items-center gap-1.5 transition-all ${
+                      isGuideBarOpen
+                        ? "bg-yellow-500/20 border-yellow-500/50 text-yellow-300 hover:bg-yellow-500/30 font-bold shadow-[0_0_8px_rgba(250,204,21,0.2)]"
+                        : "bg-transparent border-[var(--border2)] text-[var(--subtle)] hover:text-white hover:bg-[var(--border)]"
+                    }`}
+                    title="読書ガイドバー（自動行送り）の表示切り替え"
+                  >
+                    <Compass className={`w-3.5 h-3.5 flex-shrink-0 ${isGuideBarOpen ? "text-yellow-400" : "text-[var(--subtle)]"}`} />
+                    <span>ガイドバー</span>
+                  </button>
                 </div>
 
                 {!isFullScreen && (
@@ -4108,7 +4450,32 @@ const renderMarkdownToElements = (contentStr: string) => {
                     onKeyDown={handleEditorKeyDown}
                   />
                 ) : (
-                  <div id="preview" className="flex-1 p-6 md:p-8 overflow-y-auto block md select-text print:p-0 print:m-0 print:overflow-visible">
+                  <div 
+                    ref={previewRef}
+                    id="preview" 
+                    onClick={handlePreviewClick}
+                    className={`relative flex-1 p-6 md:p-8 overflow-y-auto block md select-text print:p-0 print:m-0 print:overflow-visible ${
+                      isGuideBarOpen ? "pb-28 cursor-pointer" : ""
+                    }`}
+                  >
+                    {/* 画面上の「目で見て1行」を正確に追従する読書ガイドバー */}
+                    {isGuideBarOpen && visualLines[guideLineIndex] && (
+                      <div
+                        id="visual-reading-guide-line"
+                        className="pointer-events-none absolute transition-all duration-150 ease-out z-20 rounded"
+                        style={{
+                          top: `${visualLines[guideLineIndex].top - 3}px`,
+                          left: `${Math.max(12, visualLines[guideLineIndex].left - 8)}px`,
+                          width: `${Math.max(visualLines[guideLineIndex].width + 16, 120)}px`,
+                          height: `${visualLines[guideLineIndex].height + 6}px`,
+                          backgroundColor: "rgba(250, 204, 21, 0.22)",
+                          borderLeft: "4px solid #facc15",
+                          borderBottom: "2px solid rgba(250, 204, 21, 0.6)",
+                          boxShadow: "0 0 14px rgba(250, 204, 21, 0.25)",
+                        }}
+                      />
+                    )}
+
                     <h1 className="hidden print:block text-3xl font-bold mb-6 text-black border-b pb-2">{activeNote.title || "Untitled Note"}</h1>
                     {renderMarkdownToElements(activeNote.content)}
                   </div>
@@ -5418,9 +5785,50 @@ const renderMarkdownToElements = (contentStr: string) => {
         </div>
       )}
 
+      {/* 読書支援ガイドバー (GuideBar) */}
+      {isGuideBarOpen && activeNote && (
+        <GuideBar
+          isOpen={isGuideBarOpen}
+          totalLines={visualLines.length > 0 ? visualLines.length : undefined}
+          onClose={() => {
+            setIsGuideBarOpen(false);
+            setGuideLineIndex(0);
+            try {
+              localStorage.setItem("cn_guidebar_open", "false");
+            } catch (_) {}
+          }}
+          activeNote={activeNote}
+          currentLineIndex={guideLineIndex}
+          onLineChange={(idx) => setGuideLineIndex(idx)}
+          onNextArticle={() => {
+            const moved = navigateNote("next");
+            if (moved) {
+              setGuideLineIndex(0);
+              return true;
+            } else {
+              setIsGuideBarOpen(false);
+              setGuideLineIndex(0);
+              try {
+                localStorage.setItem("cn_guidebar_open", "false");
+              } catch (_) {}
+              toast("フォルダリスト最下段の記事まで到達したため、ガイドバーを解除しました");
+              return false;
+            }
+          }}
+          onPrevArticle={() => {
+            const moved = navigateNote("prev");
+            if (moved) {
+              setGuideLineIndex(0);
+              return true;
+            }
+            return false;
+          }}
+        />
+      )}
+
       {/* Central Notification Toast element */}
       {toastMessage && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 p-2 px-5 rounded-lg bg-[var(--surface)] text-[var(--bright)] text-xs font-semibold border border-[var(--border2)] shadow-2xl z-[9999] pointer-events-none transition-all duration-300">
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 p-2 px-5 rounded-lg bg-[var(--surface)] text-[var(--bright)] text-xs font-semibold border border-[var(--border2)] shadow-2xl z-[9999] pointer-events-none transition-all duration-300">
           {toastMessage}
         </div>
       )}

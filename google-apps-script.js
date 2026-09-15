@@ -2845,3 +2845,228 @@ function onEdit(e) {
     console.error("onEdit error:", err);
   }
 }
+
+// ====================================================================
+// ★ 週次ナレッジレポート生成 & メール自動送信 (weeklyReport)
+// （トリガーによる定期自動実行・一括分析・メール通知）
+// ====================================================================
+
+/**
+ * 週次レポートの生成・メール送信メイン関数
+ * - 外部ソース（Raindrop/Drive等）の未処理取り込みを実行
+ * - G列（processed）が 'false' または false の未処理ノートを抽出
+ * - Gemini APIで週次総括レポートを生成（flash-lite等軽量モデル対応・自動フォールバック）
+ * - メール（MY_EMAILまたは実行者宛て）にレポートを送信
+ * - 対象ノートのG列を 'true' に更新
+ */
+function weeklyReport() {
+  try {
+    console.log("【週次レポート】処理を開始します...");
+
+    // 1. 外部ソースの同期（設定されている場合）
+    try {
+      console.log("外部ソース（Raindrop / Googleドライブ等）の同期を確認中...");
+      syncExternalSources({ raindrop: true, drive: true });
+    } catch (syncErr) {
+      console.warn("外部同期スキップ/待機: " + syncErr.message);
+    }
+
+    // 2. スプレッドシート及び対象シートの取得
+    const targetSsUrl = props.getProperty('SPREADSHEET_URL') || props.getProperty('SHEET_ID') || "";
+    const targetSheetName = props.getProperty('TARGET_SHEET_NAME') || "Notes";
+    const sheet = getSheet(targetSheetName, targetSsUrl);
+    const data = sheet.getDataRange().getValues();
+
+    if (!data || data.length <= 1) {
+      console.log("スプレッドシートにデータが存在しません。");
+      return;
+    }
+
+    // 3. G列（index 6, 7列目: processed）が false の未処理記事を抽出
+    const unprocessedItems = [];
+    const unprocessedIndices = [];
+
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const isProcessed = row[6];
+      if (isProcessed === false || String(isProcessed).toLowerCase() === 'false' || isProcessed === '') {
+        unprocessedItems.push({
+          id: String(row[0] || ""),
+          title: String(row[1] || "（無題）").trim(),
+          url: String(row[2] || "").trim(),
+          category: String(row[3] || "").trim(),
+          highlights: String(row[4] || "").trim(),
+          summary: String(row[4] || row[8] || "").trim(),
+          date: String(row[10] || row[5] || "").trim()
+        });
+        unprocessedIndices.push(i + 1); // スプレッドシートの行番号（1-indexed）
+      }
+    }
+
+    const recipientEmail = getConfig('MY_EMAIL') || props.getProperty('MY_EMAIL') || Session.getActiveUser().getEmail();
+
+    // 4. 未処理記事が0件の場合のハンドリング
+    if (unprocessedItems.length === 0) {
+      console.log("今週の未処理記事（processed=false）はありませんでした。");
+      if (recipientEmail) {
+        try {
+          GmailApp.sendEmail(recipientEmail, "【通知】週次ナレッジレポート対象記事なし", "今週、未処理の記事はありませんでした。");
+        } catch (mailErr) {
+          console.warn("通知メール送信スキップ: " + mailErr.message);
+        }
+      }
+      return;
+    }
+
+    console.log(`未処理記事 ${unprocessedItems.length} 件を検出しました。Geminiによる包括分析を開始します...`);
+
+    // 5. 日付範囲の算出
+    const today = new Date();
+    const lastWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const dateRange = Utilities.formatDate(lastWeek, "JST", "MM/dd") + " - " + Utilities.formatDate(today, "JST", "MM/dd");
+
+    // 6. Gemini APIによる週次レポート生成
+    const reportText = analyzeWeeklyReportWithGemini(unprocessedItems);
+
+    // 7. メール送信
+    console.log("レポートメールを送信中...");
+    sendReportEmail(reportText, unprocessedItems.length, dateRange, recipientEmail);
+
+    // 8. 処理済みフラグの更新（G列を 'true' にセット）
+    unprocessedIndices.forEach(rowIdx => {
+      sheet.getRange(rowIdx, 7).setValue('true');
+    });
+    SpreadsheetApp.flush();
+
+    console.log(`週次レポート処理が完了しました（対象記事: ${unprocessedItems.length} 件）。`);
+    return {
+      success: true,
+      count: unprocessedItems.length,
+      dateRange: dateRange
+    };
+
+  } catch (e) {
+    console.error("Error in weeklyReport: " + e.message);
+    throw e;
+  }
+}
+
+/**
+ * Gemini APIで未処理記事群を包括分析して週次レポートを作成
+ * - gemini-flash-lite 等の軽量モデルを完全サポート
+ * - 候補モデル自動フォールバック搭載
+ * - トークン枯渇防止のための文字数セーフガード搭載
+ */
+function analyzeWeeklyReportWithGemini(articles) {
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) {
+    console.warn("Gemini APIキーが未設定のため、簡易テキストレポートを作成します。");
+    return generateFallbackWeeklyReport(articles);
+  }
+
+  const model = getConfig('GEMINI_MODEL') || 'gemini-flash-lite-latest';
+  const candidateModels = getCandidateModels(model);
+
+  // トークン節約のため各記事の内容を適切に調整
+  const maxCharsPerItem = 800;
+  const formattedArticles = articles.map((a, idx) => {
+    let content = String(a.highlights || a.summary || "").trim();
+    if (content.length > maxCharsPerItem) {
+      content = content.substring(0, maxCharsPerItem) + "...(文字数制限により一部省略)";
+    }
+    return `[記事${idx + 1}]
+- タイトル: ${a.title}
+- 分野/カテゴリ: ${a.category || "未分類"}
+- 発行日: ${a.date || "不明"}
+- URL: ${a.url || "なし"}
+- 内容要約・事実:
+${content}`;
+  }).join("\n\n---\n\n");
+
+  const customWeeklyPrompt = props.getProperty('WEEKLY_REPORT_PROMPT') || props.getProperty('REPORT_PROMPT');
+  const basePrompt = (customWeeklyPrompt && customWeeklyPrompt.trim() !== "")
+    ? customWeeklyPrompt.trim()
+    : `あなたは優秀なビジネス・技術リサーチアナリストです。
+収集された以下の記事・ノート群（週次・期間ナレッジ）を包括的に分析し、エグゼクティブ向けの実践的な「週次ナレッジ分析レポート」を作成してください。
+
+【レポートの構成】
+1. 🎯 今週のエグゼクティブサマリー（主要動向の要約、市場・技術の転換点、2〜3パラグラフ）
+2. 📊 分野・トピック別詳細分析（重要トピックごとの動向、具体的な数値、企業・組織の動向、事実関係）
+3. ⚡ 主要な示唆と市場への影響（ビジネスや研究開発へのインパクト、機会とリスク）
+4. 🔮 今後の注目点・アクション提案（次に注視すべきマイルストーン、推奨アクション）
+
+※具体的な固有名詞、数字、日付を明記し、論理的かつ説得力のある日本語で作成してください。`;
+
+  const fullPromptText = `${basePrompt}
+
+【分析対象ノートデータ（計 ${articles.length} 件）】
+${formattedArticles}`;
+
+  for (const targetModel of candidateModels) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
+      const payload = {
+        contents: [{ parts: [{ text: fullPromptText }] }],
+        generationConfig: {
+          temperature: getNumConfig('GEMINI_TEMPERATURE') || 0.2,
+          maxOutputTokens: 8192
+        }
+      };
+
+      const resText = fetchGeminiWithRetry(url, payload, 3);
+      if (resText) {
+        const resJson = JSON.parse(resText);
+        const text = extractGeminiResponseText(resJson);
+        if (text && text.trim()) {
+          return text.trim();
+        }
+      }
+    } catch (err) {
+      console.warn(`モデル ${targetModel} での週次分析に失敗したため、次モデルへ移行します: ${err.message}`);
+    }
+  }
+
+  console.warn("すべてのGeminiモデル呼び出しに失敗したため、簡易サマリーにフォールバックします。");
+  return generateFallbackWeeklyReport(articles);
+}
+
+/**
+ * AI全滅時のフォールバック用簡易レポート作成
+ */
+function generateFallbackWeeklyReport(articles) {
+  return `【週次ナレッジ簡易集計レポート】
+収集記事数: ${articles.length} 件
+
+■ 対象記事一覧:
+` + articles.map((a, i) => `${i + 1}. [${a.category || "一般"}] ${a.title}\n   ${a.url ? a.url : ""}`).join("\n\n");
+}
+
+/**
+ * レポートメール送信関数
+ */
+function sendReportEmail(reportText, articleCount, dateRange, recipientEmail) {
+  const targetEmail = recipientEmail || getConfig('MY_EMAIL') || props.getProperty('MY_EMAIL') || Session.getActiveUser().getEmail();
+  if (!targetEmail) {
+    console.warn("宛先メールアドレス（MY_EMAIL）が設定されていないため、メール送信をスキップしました。");
+    return;
+  }
+
+  const subject = `📚 週次ナレッジレポート｜${dateRange}（${articleCount}本）`;
+  const plainBody = `今週のナレッジ収集結果をまとめました。
+
+■ 収集記事数: ${articleCount} 本
+■ 期間: ${dateRange}
+
+---------------------------------------------------
+${reportText}
+---------------------------------------------------
+
+※ 本メールは Connected Notes システムから自動送信されました。`;
+
+  try {
+    GmailApp.sendEmail(targetEmail, subject, plainBody);
+    console.log(`週次レポートメールを送信しました: ${targetEmail}`);
+  } catch (e) {
+    console.error(`メール送信エラー: ${e.message}`);
+  }
+}
