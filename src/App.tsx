@@ -1066,7 +1066,7 @@ export default function App() {
     }
     setHasPendingSave(false);
     setIsSavingNote(true);
-    updateSyncStatus("syncing", "E列へ保存中...");
+    updateSyncStatus("syncing", "保存中...");
     try {
       const finalContent = (note.content !== undefined && note.content !== null) ? note.content : (note.summary || "");
       const noteToSave: Note = {
@@ -1097,9 +1097,9 @@ export default function App() {
         });
       }
       setIsSavingNote(false);
-      updateSyncStatus("synced", "E列同期済");
+      updateSyncStatus("synced", "同期済");
       if (isExplicit) {
-        toast("スプレッドシート（E列）に即時反映しました ✦");
+        toast("スプレッドシートに即時反映しました ✦");
       }
     } catch (err: any) {
       setIsSavingNote(false);
@@ -2619,7 +2619,7 @@ const renderMarkdownToElements = (contentStr: string) => {
         return newList;
       });
       scheduleDelayedSave(updated);
-      toast("内容を末尾に追記し、E列に自動保存予約しました ✦");
+      toast("内容を末尾に追記し、自動保存予約しました ✦");
     } catch (e: any) {
       console.error(e);
       toast("追記に失敗しました。");
@@ -4056,299 +4056,315 @@ const renderMarkdownToElements = (contentStr: string) => {
             onTouchEnd={handleTouchEnd}
           >
             {/* TOOLBAR */}
-            <div className={`p-3.5 border-b border-[var(--border)] flex justify-between items-center bg-[var(--bg)] flex-wrap gap-2.5 z-10 select-none print:hidden ${
+            <div className={`border-b border-[var(--border)] bg-[var(--bg)] z-10 select-none print:hidden ${
               isFullScreen ? "landscape:hidden" : ""
             }`}>
-              {!isFullScreen && (
-                <div className="flex items-center gap-2 flex-1 min-w-0">
-                  <button
-                    onClick={() => setSidebarOpen(true)}
-                    className="md:hidden border-0 bg-transparent text-[var(--subtle)] mr-1 cursor-pointer"
-                  >
-                    <Menu className="w-5 h-5" />
-                  </button>
+              {/* 上段: タイトル・フォルダ & 基本操作（プレビュー/編集・保存・全画面） */}
+              <div className="p-2.5 px-4 flex items-center justify-between gap-3 min-h-[48px]">
+                {!isFullScreen && (
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <button
+                      onClick={() => setSidebarOpen(true)}
+                      className="md:hidden border-0 bg-transparent text-[var(--subtle)] mr-1 cursor-pointer shrink-0"
+                    >
+                      <Menu className="w-5 h-5" />
+                    </button>
 
-                  <div className="flex-1 flex flex-col min-w-0">
-                    <div className="flex items-center w-full gap-2">
-                      <input
-                        className="text-base font-bold bg-transparent border-0 text-[var(--bright)] outline-none w-full min-w-0 focus:border-b focus:border-[var(--border2)]"
-                        placeholder="タイトル"
-                        value={activeNote.title}
-                        onChange={(e) => handleNoteTitleChange(e.target.value)}
-                      />
-                      <button
-                        id="ai-title-btn"
-                        onClick={optimizeTitleWithAI}
-                        className="p-1 rounded text-[var(--purple)] bg-transparent opacity-65 hover:opacity-100 hover:scale-105 active:scale-95 transition-all cursor-pointer flex-shrink-0"
-                        title="AIでタイトルを最適化する"
-                      >
-                        <Sparkles className="w-4 h-4 text-[var(--purple)]" />
-                      </button>
-                    </div>
+                    <div className="flex-1 flex flex-col min-w-0">
+                      <div className="flex items-center w-full gap-2">
+                        <input
+                          className="text-base font-bold bg-transparent border-0 text-[var(--bright)] outline-none w-full min-w-0 focus:border-b focus:border-[var(--border2)]"
+                          placeholder="タイトル"
+                          value={activeNote.title}
+                          onChange={(e) => handleNoteTitleChange(e.target.value)}
+                        />
+                        <button
+                          id="ai-title-btn"
+                          onClick={optimizeTitleWithAI}
+                          className="p-1 rounded text-[var(--purple)] bg-transparent opacity-65 hover:opacity-100 hover:scale-105 active:scale-95 transition-all cursor-pointer flex-shrink-0"
+                          title="AIでタイトルを最適化する"
+                        >
+                          <Sparkles className="w-4 h-4 text-[var(--purple)]" />
+                        </button>
+                      </div>
 
-                    <div className="flex items-center gap-1.5 mt-0.5 text-[var(--muted)]">
-                      <span className="scale-90 text-[10px]">📁</span>
-                      <input
-                        className="bg-transparent border-0 text-[11px] text-[var(--muted)] outline-none w-full placeholder:text-[var(--muted)]/50 focus:text-white"
-                        placeholder={`フォルダ名 (${folderColumnSource}列基準: 空欄で未分類)`}
-                        value={getFolder(activeNote) === "未分類" ? "" : getFolder(activeNote)}
-                        onChange={(e) => handleNoteFolderChange(e.target.value)}
-                      />
-                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#21262d] text-gray-400 font-mono shrink-0" title={`現在は${folderColumnSource}列を基準にフォルダを分類しています`}>
-                        {folderColumnSource}列
-                      </span>
+                      <div className="flex items-center gap-1.5 mt-0.5 text-[var(--muted)]">
+                        <span className="scale-90 text-[10px]">📁</span>
+                        <input
+                          className="bg-transparent border-0 text-[11px] text-[var(--muted)] outline-none w-full placeholder:text-[var(--muted)]/50 focus:text-white"
+                          placeholder="フォルダ名 (空欄で未分類)"
+                          value={getFolder(activeNote) === "未分類" ? "" : getFolder(activeNote)}
+                          onChange={(e) => handleNoteFolderChange(e.target.value)}
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* View tabs and Charts switch and API settings configs */}
-              <div className="flex gap-1.5 items-center flex-wrap">
-                <div className="flex bg-[#1c2128] border border-[var(--border2)] rounded-md p-0.5">
-                  <button
-                    className={`px-3 py-1 text-[11px] font-semibold border-0 rounded cursor-pointer transition-all ${
-                      mode === "preview" ? "bg-[var(--border)] text-[var(--blue)] font-bold mb-0" : "text-[var(--subtle)] hover:bg-[#ffffff08]"
-                    }`}
-                    onClick={() => {
-                      flushPendingSave(false);
-                      setMode("preview");
-                    }}
-                  >
-                    プレビュー
-                  </button>
-                  <button
-                    className={`px-3 py-1 text-[11px] font-semibold border-0 rounded cursor-pointer transition-all ${
-                      mode === "edit" ? "bg-[var(--border)] text-[var(--blue)] font-bold mb-0" : "text-[var(--subtle)] hover:bg-[#ffffff08]"
-                    }`}
-                    onClick={() => setMode("edit")}
-                  >
-                    編集
-                  </button>
-                </div>
-
-                {/* E列保存 / 同期ステータスボタン */}
-                <button
-                  onClick={() => flushPendingSave(true)}
-                  disabled={isSavingNote}
-                  className={`p-1 px-2.5 border text-xs font-semibold rounded-md cursor-pointer flex items-center gap-1.5 transition-all ${
-                    isSavingNote
-                      ? "bg-blue-900/30 border-blue-500/40 text-blue-300"
-                      : hasPendingSave
-                      ? "bg-amber-900/30 border-amber-500/50 text-amber-300 hover:bg-amber-900/50 animate-pulse"
-                      : autoSync
-                      ? "bg-emerald-900/20 border-emerald-500/30 text-emerald-300 hover:bg-emerald-900/40"
-                      : "bg-[#1c2128] border-[var(--border2)] text-gray-300 hover:text-white hover:bg-[var(--border)]"
-                  }`}
-                  title="スプレッドシート（E列）に即座に反映します。ショートカット: Ctrl+S"
-                >
-                  {isSavingNote ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400" />
-                      <span>E列保存中...</span>
-                    </>
-                  ) : hasPendingSave ? (
-                    <>
-                      <Save className="w-3.5 h-3.5 text-amber-400" />
-                      <span>E列へ保存</span>
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      <span className="hidden sm:inline">E列同期済</span>
-                      <span className="sm:hidden">保存</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  onClick={() => setIsFullScreen(!isFullScreen)}
-                  className={`p-1 px-2.5 bg-transparent border text-xs font-semibold rounded-md cursor-pointer flex items-center gap-1.5 transition-all ${
-                    isFullScreen 
-                      ? "bg-blue-900/30 border-blue-500/30 text-blue-300 hover:bg-blue-900/50 animate-pulse" 
-                      : "border-[var(--border2)] text-[var(--subtle)] hover:text-white hover:bg-[var(--border)]"
-                  }`}
-                  title={isFullScreen ? "全画面表示を解除します" : "サイドバーを非表示にして全画面で記事を表示します"}
-                >
-                  {isFullScreen ? <Minimize2 className="w-3.5 h-3.5 text-blue-400" /> : <Maximize2 className="w-3.5 h-3.5 text-blue-400" />}
-                  <span>{isFullScreen ? "全画面解除" : "全画面"}</span>
-                </button>
-
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={isTtsPlaying ? stopTts : startTtsFromCurrent}
-                    className={`p-1 px-2.5 bg-transparent border border-[var(--border2)] text-xs font-medium rounded-md cursor-pointer flex items-center gap-1.5 transition-all ${
-                      isTtsPlaying ? "text-red-400 hover:text-red-300 hover:bg-red-900/30" : "text-[var(--subtle)] hover:text-white hover:bg-[var(--border)]"
-                    }`}
-                    title="このフォルダの末尾まで記事を連続で読み上げます（バックグラウンド再生対応）"
-                  >
-                    {isTtsLoading ? (
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-[var(--blue)]" />
-                    ) : isTtsPlaying ? (
-                      <Square className="w-3.5 h-3.5" />
-                    ) : (
-                      <Volume2 className="w-3.5 h-3.5 text-green-400" />
-                    )}
-                    <span className="hidden sm:inline">{isTtsPlaying ? "停止" : "読み上げ"}</span>
-                  </button>
-
-                  <button
-                    onClick={copyNoteToClipboard}
-                    className="p-1 px-2.5 bg-transparent border border-[var(--border2)] text-xs text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded-md cursor-pointer flex items-center gap-1.5 transition-all"
-                    title="この記事の内容（テキスト・Markdown）をクリップボードにコピー"
-                  >
-                    <Copy className="w-3.5 h-3.5 text-[var(--blue)]" />
-                    <span className="hidden sm:inline">コピー</span>
-                  </button>
-
-                  <button
-                    onClick={exportToPDF}
-                    className="p-1 px-2.5 bg-transparent border border-[var(--border2)] text-xs text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded-md cursor-pointer flex items-center gap-1.5 transition-all"
-                    title="A4サイズPDFとして出力（プレビューモード時）"
-                  >
-                    <Download className="w-3.5 h-3.5 text-[var(--green)]" />
-                    <span className="hidden sm:inline">PDF</span>
-                  </button>
-
-                  <button
-                    onClick={exportNoteToJSON}
-                    className="p-1 px-2.5 bg-transparent border border-[var(--border2)] text-xs text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded-md cursor-pointer flex items-center gap-1.5 transition-all"
-                    title="この記事をJSONファイルとしてダウンロード"
-                  >
-                    <FileJson className="w-3.5 h-3.5 text-[var(--accent)]" />
-                    <span className="hidden sm:inline">JSON</span>
-                  </button>
-
-                  <button
-                    onClick={runVisualExtraction}
-                    disabled={isExtractingStructure}
-                    className={`p-1 px-2.5 bg-transparent border border-[var(--border2)] text-xs font-medium rounded-md cursor-pointer flex items-center gap-1.5 transition-all ${isExtractingStructure ? 'opacity-50 cursor-not-allowed' : 'text-[var(--subtle)] hover:text-white hover:bg-[var(--border)]'}`}
-                    title="記事の図解（比較・時系列・因果）を抽出する"
-                  >
-                    {isExtractingStructure ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-[var(--accent)]" /> : <Grid className="w-3.5 h-3.5 text-[var(--accent)]" />}
-                    <span className="hidden sm:inline">図解抽出</span>
-                  </button>
-
-                  <button
-                    onClick={handleAppendFromClipboard}
-                    className="p-1 px-2.5 bg-transparent border border-[var(--border2)] text-xs font-medium rounded-md cursor-pointer flex items-center gap-1.5 transition-all text-[var(--subtle)] hover:text-white hover:bg-[var(--border)]"
-                    title="クリップボードの内容をノートの末尾に追記する"
-                  >
-                    <Clipboard className="w-3.5 h-3.5 text-[var(--blue)]" />
-                    <span className="hidden sm:inline">末尾に貼り付け</span>
-                  </button>
-
-                  {(activeNote.columnJ || activeNote.rawContent) && (activeNote.columnJ || activeNote.rawContent)!.trim() !== "" && (
+                {/* 右側: プレビュー/編集, 保存, 全画面 */}
+                <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                  <div className="flex bg-[#1c2128] border border-[var(--border2)] rounded-md p-0.5">
                     <button
-                      onClick={() => setShowSourceMemo(!showSourceMemo)}
-                      className={`p-1 px-2.5 border text-xs font-medium rounded-md cursor-pointer flex items-center gap-1.5 transition-all
-                        ${showSourceMemo 
-                          ? "bg-blue-900/30 border-blue-500/30 text-blue-300 hover:bg-blue-900/50" 
-                          : "bg-transparent border-[var(--border2)] text-[var(--subtle)] hover:text-white hover:bg-[var(--border)]"}`}
-                      title="元の記事本文(I列)の表示切り替え"
+                      className={`px-2.5 py-1 text-[11px] font-semibold border-0 rounded cursor-pointer transition-all ${
+                        mode === "preview" ? "bg-[var(--border)] text-[var(--blue)] font-bold mb-0" : "text-[var(--subtle)] hover:bg-[#ffffff08]"
+                      }`}
+                      onClick={() => {
+                        flushPendingSave(false);
+                        setMode("preview");
+                      }}
                     >
-                      <FileText className={`w-3.5 h-3.5 flex-shrink-0 ${showSourceMemo ? "text-blue-400" : "text-[var(--subtle)]"}`} />
-                      <span>記事全文</span>
+                      プレビュー
                     </button>
-                  )}
+                    <button
+                      className={`px-2.5 py-1 text-[11px] font-semibold border-0 rounded cursor-pointer transition-all ${
+                        mode === "edit" ? "bg-[var(--border)] text-[var(--blue)] font-bold mb-0" : "text-[var(--subtle)] hover:bg-[#ffffff08]"
+                      }`}
+                      onClick={() => setMode("edit")}
+                    >
+                      編集
+                    </button>
+                  </div>
 
-                  {/* 読書支援ガイドバー表示切り替えボタン */}
+                  {/* 保存 / 同期ステータスボタン */}
                   <button
-                    onClick={toggleGuideBar}
-                    className={`p-1 px-2.5 border text-xs font-medium rounded-md cursor-pointer flex items-center gap-1.5 transition-all ${
-                      isGuideBarOpen
-                        ? "bg-yellow-500/20 border-yellow-500/50 text-yellow-300 hover:bg-yellow-500/30 font-bold shadow-[0_0_8px_rgba(250,204,21,0.2)]"
-                        : "bg-transparent border-[var(--border2)] text-[var(--subtle)] hover:text-white hover:bg-[var(--border)]"
+                    onClick={() => flushPendingSave(true)}
+                    disabled={isSavingNote}
+                    className={`p-1 px-2.5 portrait:px-2 border text-xs font-semibold rounded-md cursor-pointer flex items-center gap-1.5 portrait:gap-0 transition-all ${
+                      isSavingNote
+                        ? "bg-blue-900/30 border-blue-500/40 text-blue-300"
+                        : hasPendingSave
+                        ? "bg-amber-900/30 border-amber-500/50 text-amber-300 hover:bg-amber-900/50 animate-pulse"
+                        : autoSync
+                        ? "bg-emerald-900/20 border-emerald-500/30 text-emerald-300 hover:bg-emerald-900/40"
+                        : "bg-[#1c2128] border-[var(--border2)] text-gray-300 hover:text-white hover:bg-[var(--border)]"
                     }`}
-                    title="読書ガイドバー（自動行送り）の表示切り替え"
+                    title="即座に保存・同期します。ショートカット: Ctrl+S"
                   >
-                    <Compass className={`w-3.5 h-3.5 flex-shrink-0 ${isGuideBarOpen ? "text-yellow-400" : "text-[var(--subtle)]"}`} />
-                    <span>ガイドバー</span>
+                    {isSavingNote ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400 shrink-0" />
+                        <span className="portrait:hidden">保存中...</span>
+                      </>
+                    ) : hasPendingSave ? (
+                      <>
+                        <Save className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <span className="portrait:hidden">保存</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span className="portrait:hidden">同期済</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={() => setIsFullScreen(!isFullScreen)}
+                    className={`p-1 px-2.5 portrait:px-2 bg-transparent border text-xs font-semibold rounded-md cursor-pointer flex items-center gap-1.5 portrait:gap-0 transition-all ${
+                      isFullScreen 
+                        ? "bg-blue-900/30 border-blue-500/30 text-blue-300 hover:bg-blue-900/50 animate-pulse" 
+                        : "border-[var(--border2)] text-[var(--subtle)] hover:text-white hover:bg-[var(--border)]"
+                    }`}
+                    title={isFullScreen ? "全画面表示を解除します" : "サイドバーを非表示にして全画面で記事を表示します"}
+                  >
+                    {isFullScreen ? <Minimize2 className="w-3.5 h-3.5 text-blue-400 shrink-0" /> : <Maximize2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
+                    <span className="portrait:hidden hidden sm:inline">{isFullScreen ? "全画面解除" : "全画面"}</span>
                   </button>
                 </div>
+              </div>
 
+              {/* 下段: アクションツールバー（機能別に整理された整然とした配列、縦型時はアイコンのみで2行に集約） */}
+              <div className="px-3 py-1.5 border-t border-[var(--border)]/60 bg-[#161b22]/40 flex items-center justify-between portrait:justify-start gap-2 overflow-x-auto custom-scrollbar text-xs">
+                {/* 機能ボタングループ群 */}
+                <div className="flex items-center gap-2 shrink-0">
+                  {/* 1. AI連携グループ */}
+                  <div className="flex items-center bg-[#1c2128] border border-[var(--border2)] rounded-md p-0.5 gap-0.5 shrink-0">
+                    <button
+                      onClick={runGeminiAnalysis}
+                      className="p-1 px-2 portrait:px-1.5 text-[var(--purple)] hover:bg-[#a371f71a] font-bold text-xs rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all"
+                      title="Gemini AIで抽出解析"
+                      disabled={aiIsLoading}
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-[var(--purple)] shrink-0" />
+                      <span className="portrait:hidden">✦ AI解析</span>
+                    </button>
+                    <button
+                      onClick={copyAIPromptForExternal}
+                      className="p-1 px-2 portrait:px-1.5 text-[#7ee787] hover:bg-[#2ea0431a] font-semibold text-xs rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all"
+                      title="外部AI（ChatGPT等）で解析するためのプロンプトをダウンロード"
+                    >
+                      <Download className="w-3 h-3 shrink-0" />
+                      <span className="portrait:hidden">外部AI用に出力</span>
+                    </button>
+                    <button
+                      onClick={() => setIsExternalPasteOpen(true)}
+                      className="p-1 px-2 portrait:px-1.5 text-[#7ee787] hover:bg-[#2ea0431a] font-semibold text-xs rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all"
+                      title="外部AI（ChatGPT等）から得られたJSON結果を適用"
+                    >
+                      <Clipboard className="w-3 h-3 shrink-0" />
+                      <span className="portrait:hidden">結果の適用</span>
+                    </button>
+                  </div>
+
+                  {/* 2. 閲覧支援グループ */}
+                  <div className="flex items-center bg-[#1c2128] border border-[var(--border2)] rounded-md p-0.5 gap-0.5 shrink-0">
+                    <button
+                      onClick={isTtsPlaying ? stopTts : startTtsFromCurrent}
+                      className={`p-1 px-2 portrait:px-1.5 text-xs font-medium rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all ${
+                        isTtsPlaying ? "text-red-400 bg-red-900/30" : "text-[var(--subtle)] hover:text-white hover:bg-[var(--border)]"
+                      }`}
+                      title="このフォルダの末尾まで記事を連続で読み上げます"
+                    >
+                      {isTtsLoading ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-[var(--blue)] shrink-0" />
+                      ) : isTtsPlaying ? (
+                        <Square className="w-3.5 h-3.5 shrink-0" />
+                      ) : (
+                        <Volume2 className="w-3.5 h-3.5 text-green-400 shrink-0" />
+                      )}
+                      <span className="portrait:hidden">{isTtsPlaying ? "停止" : "読み上げ"}</span>
+                    </button>
+
+                    <button
+                      onClick={toggleGuideBar}
+                      className={`p-1 px-2 portrait:px-1.5 text-xs font-medium rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all ${
+                        isGuideBarOpen
+                          ? "bg-yellow-500/20 text-yellow-300 font-bold"
+                          : "text-[var(--subtle)] hover:text-white hover:bg-[var(--border)]"
+                      }`}
+                      title="読書ガイドバー（自動行送り）の表示切り替え"
+                    >
+                      <Compass className={`w-3.5 h-3.5 shrink-0 ${isGuideBarOpen ? "text-yellow-400" : "text-[var(--subtle)]"}`} />
+                      <span className="portrait:hidden">ガイドバー</span>
+                    </button>
+
+                    {(activeNote.columnJ || activeNote.rawContent) && (activeNote.columnJ || activeNote.rawContent)!.trim() !== "" && (
+                      <button
+                        onClick={() => setShowSourceMemo(!showSourceMemo)}
+                        className={`p-1 px-2 portrait:px-1.5 text-xs font-medium rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all ${
+                          showSourceMemo 
+                            ? "bg-blue-900/30 text-blue-300" 
+                            : "text-[var(--subtle)] hover:text-white hover:bg-[var(--border)]"
+                        }`}
+                        title="元の記事本文の表示切り替え"
+                      >
+                        <FileText className={`w-3.5 h-3.5 shrink-0 ${showSourceMemo ? "text-blue-400" : "text-[var(--subtle)]"}`} />
+                        <span className="portrait:hidden">記事全文</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* 3. 編集・ツールグループ */}
+                  <div className="flex items-center bg-[#1c2128] border border-[var(--border2)] rounded-md p-0.5 gap-0.5 shrink-0">
+                    <button
+                      onClick={copyNoteToClipboard}
+                      className="p-1 px-2 portrait:px-1.5 text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all"
+                      title="この記事の内容をクリップボードにコピー"
+                    >
+                      <Copy className="w-3.5 h-3.5 text-[var(--blue)] shrink-0" />
+                      <span className="portrait:hidden">コピー</span>
+                    </button>
+
+                    <button
+                      onClick={handleAppendFromClipboard}
+                      className="p-1 px-2 portrait:px-1.5 text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all"
+                      title="クリップボードの内容をノート末尾に追記"
+                    >
+                      <Clipboard className="w-3.5 h-3.5 text-[var(--blue)] shrink-0" />
+                      <span className="portrait:hidden">末尾貼付</span>
+                    </button>
+
+                    <button
+                      onClick={runVisualExtraction}
+                      disabled={isExtractingStructure}
+                      className={`p-1 px-2 portrait:px-1.5 text-xs font-medium rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all ${
+                        isExtractingStructure ? 'opacity-50 cursor-not-allowed' : 'text-[var(--subtle)] hover:text-white hover:bg-[var(--border)]'
+                      }`}
+                      title="記事の図解（比較・時系列・因果）を抽出する"
+                    >
+                      {isExtractingStructure ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-[var(--accent)] shrink-0" /> : <Grid className="w-3.5 h-3.5 text-[var(--accent)] shrink-0" />}
+                      <span className="portrait:hidden">図解抽出</span>
+                    </button>
+
+                    <button
+                      onClick={exportToPDF}
+                      className="p-1 px-2 portrait:px-1.5 text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all"
+                      title="A4サイズPDFとして出力"
+                    >
+                      <Download className="w-3.5 h-3.5 text-[var(--green)] shrink-0" />
+                      <span className="portrait:hidden">PDF</span>
+                    </button>
+
+                    <button
+                      onClick={exportNoteToJSON}
+                      className="p-1 px-2 portrait:px-1.5 text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all"
+                      title="JSONファイルとしてダウンロード"
+                    >
+                      <FileJson className="w-3.5 h-3.5 text-[var(--accent)] shrink-0" />
+                      <span className="portrait:hidden">JSON</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 右側: チャート・可視化グループ */}
                 {!isFullScreen && (
-                  <>
-                    <div className="h-4 w-[1px] bg-[var(--border)] mx-1" />
-
-                    {/* Analytical Charts */}
+                  <div className="flex items-center bg-[#1c2128] border border-[var(--border2)] rounded-md p-0.5 gap-0.5 shrink-0">
+                    <span className="portrait:hidden text-[10px] text-[var(--muted)] px-1.5 font-medium select-none">チャート:</span>
                     <button
                       onClick={() => setIsGraphOpen(true)}
-                      className="p-1 px-2.5 bg-transparent border border-[var(--border2)] text-xs text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded-md cursor-pointer flex items-center gap-1 transition-all"
+                      className="p-1 px-1.5 text-xs text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded cursor-pointer flex items-center gap-0.5 portrait:gap-0 transition-all"
                       title="ナレッジグラフ表示"
                     >
-                      🕸 <span className="hidden sm:inline">グラフ</span>
+                      <span>🕸</span>
+                      <span className="portrait:hidden">グラフ</span>
                     </button>
 
                     <button
                       onClick={() => setIsTimelineOpen(true)}
-                      className="p-1 px-2.5 bg-transparent border border-[var(--border2)] text-xs text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded-md cursor-pointer flex items-center gap-1 transition-all"
+                      className="p-1 px-1.5 text-xs text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded cursor-pointer flex items-center gap-0.5 portrait:gap-0 transition-all"
                       title="時系列年表表示"
                     >
-                      📅 <span className="hidden sm:inline">年表</span>
+                      <span>📅</span>
+                      <span className="portrait:hidden">年表</span>
                     </button>
                     
                     <button
                       onClick={() => setIsHeatmapOpen(true)}
-                      className="p-1 px-2.5 bg-transparent border border-[var(--border2)] text-xs text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded-md cursor-pointer flex items-center gap-1 transition-all"
+                      className="p-1 px-1.5 text-xs text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded cursor-pointer flex items-center gap-0.5 portrait:gap-0 transition-all"
                       title="ヒートマップ表示"
                     >
-                      <Grid className="w-3.5 h-3.5 text-blue-400" /> <span className="hidden sm:inline">ヒートマップ</span>
+                      <Grid className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                      <span className="portrait:hidden hidden xl:inline">ヒートマップ</span>
                     </button>
 
                     <button
                       onClick={() => setIsCoOccurOpen(true)}
-                      className="p-1 px-2.5 bg-transparent border border-[var(--border2)] text-xs text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded-md cursor-pointer flex items-center gap-1 transition-all"
+                      className="p-1 px-1.5 text-xs text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded cursor-pointer flex items-center gap-0.5 portrait:gap-0 transition-all"
                       title="キーワード共起ネットワーク表示"
                     >
-                      <Globe className="w-3.5 h-3.5 text-blue-400" /> <span className="hidden sm:inline">共起</span>
+                      <Globe className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                      <span className="portrait:hidden hidden xl:inline">共起</span>
                     </button>
 
                     <button
                       onClick={() => setIsStreamOpen(true)}
-                      className="p-1 px-2.5 bg-transparent border border-[var(--border2)] text-xs text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded-md cursor-pointer flex items-center gap-1 transition-all"
+                      className="p-1 px-1.5 text-xs text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded cursor-pointer flex items-center gap-0.5 portrait:gap-0 transition-all"
                       title="推移ストリームグラフ表示"
                     >
-                      <Waves className="w-3.5 h-3.5 text-blue-400" /> <span className="hidden sm:inline">ストリーム</span>
+                      <Waves className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                      <span className="portrait:hidden hidden xl:inline">ストリーム</span>
                     </button>
 
                     <button
                       onClick={() => setIsBubbleOpen(true)}
-                      className="p-1 px-2.5 bg-transparent border border-[var(--border2)] text-xs text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded-md cursor-pointer flex items-center gap-1 transition-all"
+                      className="p-1 px-1.5 text-xs text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded cursor-pointer flex items-center gap-0.5 portrait:gap-0 transition-all"
                       title="カテゴリバブルチャート表示"
                     >
-                      <AreaChart className="w-3.5 h-3.5 text-blue-400" /> <span className="hidden sm:inline">バブル</span>
+                      <AreaChart className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                      <span className="portrait:hidden hidden xl:inline">バブル</span>
                     </button>
-
-                    <div className="h-4 w-[1px] bg-[var(--border)] mx-1" />
-                  </>
+                  </div>
                 )}
-
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={copyAIPromptForExternal}
-                    className="p-1 px-3 bg-[#2ea0431c] border border-[#2ea04344] hover:bg-[#2ea0432c] text-[#7ee787] font-bold text-xs rounded-md cursor-pointer flex items-center gap-1.5 transition-all"
-                    title="外部AI（ChatGPT等）で解析するためのプロンプトをダウンロードします（テキストファイルをAIに添付してください）"
-                  >
-                    <Download className="w-3.5 h-3.5" /> <span className="hidden sm:inline">外部AI用に出力</span>
-                  </button>
-
-                  <button
-                    onClick={() => setIsExternalPasteOpen(true)}
-                    className="p-1 px-3 bg-[#2ea0431c] border border-[#2ea04344] hover:bg-[#2ea0432c] text-[#7ee787] font-bold text-xs rounded-md cursor-pointer flex items-center gap-1.5 transition-all"
-                    title="外部AI（ChatGPT等）から得られたJSON結果を適用します"
-                  >
-                    <Clipboard className="w-3.5 h-3.5" /> <span className="hidden sm:inline">結果を適用</span>
-                  </button>
-
-                  <button
-                    onClick={runGeminiAnalysis}
-                    className="p-1 px-3 bg-[#a371f71c] border border-[#a371f744] hover:bg-[#a371f72c] text-[var(--purple)] font-bold text-xs rounded-md cursor-pointer flex items-center gap-1.5 transition-all"
-                    title="Gemini AIで抽出解析"
-                    disabled={aiIsLoading}
-                  >
-                    <Sparkles className="w-3.5 h-3.5" /> ✦ <span className="hidden sm:inline">AI解析</span>
-                  </button>
-                </div>
               </div>
             </div>
 
@@ -4361,7 +4377,7 @@ const renderMarkdownToElements = (contentStr: string) => {
                       <div className="flex items-center gap-3">
                         <div className="flex items-center gap-1.5 text-blue-400 font-medium">
                           <FileText className="w-4 h-4" />
-                          <span>記事全文 (I列)</span>
+                          <span>記事全文</span>
                         </div>
                         <div className="flex items-center gap-1 bg-[#161b22] p-0.5 rounded border border-[#30363d]">
                           <span className="text-gray-500 px-1">文字:</span>
@@ -4744,7 +4760,7 @@ const renderMarkdownToElements = (contentStr: string) => {
                                 return newList;
                               });
                               scheduleDelayedSave(updated);
-                              toast("図解（Mermaid）を本文末尾に追記し、E列に保存予約しました ✦");
+                              toast("図解（Mermaid）を本文末尾に追記し、保存予約しました ✦");
                             }
                           }}
                         >
@@ -4760,35 +4776,33 @@ const renderMarkdownToElements = (contentStr: string) => {
             </div>
 
             {/* METRICS METADATA BAR FOOTERS */}
-            <div className="p-1.5 px-4 md:px-8 border-t border-[var(--border)] text-[10px] text-[var(--muted)] flex flex-wrap gap-x-5 gap-y-1.5 select-none items-center">
-              <span className="flex items-center gap-1 font-medium text-gray-200">
-                <Calendar className="w-3 h-3 text-[var(--blue)] shrink-0" />
-                <span>記事発行日 (K列):</span>
-                <span className="text-white font-mono bg-[#1c2128] border border-[#30363d] px-1.5 py-0.5 rounded">
-                  {activeNote.dateStr?.trim() || "未設定"}
+            <div className="py-1.5 px-3 md:px-6 border-t border-[var(--border)] text-[10px] md:text-[11px] text-[var(--muted)] flex items-center justify-between gap-3 select-none flex-wrap">
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="flex items-center gap-1 font-medium text-gray-300">
+                  <Calendar className="w-3 h-3 text-[var(--blue)] shrink-0" />
+                  <span>発行日:</span>
+                  <span className="text-white font-mono bg-[#1c2128] border border-[#30363d] px-1.5 py-0.5 rounded">
+                    {activeNote.dateStr?.trim() || "未設定"}
+                  </span>
                 </span>
-              </span>
-              <span>作成日: {new Date(activeNote.createdAt).toLocaleString("ja-JP")}</span>
-              <span>更新日: {new Date(activeNote.updatedAt).toLocaleString("ja-JP")}</span>
-              <span className="flex items-center">
-                {activeNote.sourceUrl ? (
+                <span className="hidden sm:inline">
+                  更新日: {new Date(activeNote.updatedAt).toLocaleDateString("ja-JP")}
+                </span>
+                {activeNote.sourceUrl && (
                   <a
                     href={activeNote.sourceUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-[var(--blue)] bg-blue-900/30 border border-blue-500/30 px-1.5 py-0.5 rounded flex items-center hover:bg-blue-900/50 transition-colors"
+                    className="text-[var(--blue)] bg-blue-900/30 border border-blue-500/30 px-1.5 py-0.5 rounded flex items-center gap-1 hover:bg-blue-900/50 transition-colors"
+                    title="元記事URLを開く"
                   >
-                    🔗 {activeNote.sourceUrl.split('.').pop()?.split('?')[0].toUpperCase().substring(0, 4) || 'LINK'}
+                    🔗 元記事
                   </a>
-                ) : (
-                  <span className="md:hidden text-[var(--purple)] bg-[#a371f710] border border-[#a371f720] px-1.5 py-0.5 rounded">📱 左右スワイプで記事読込</span>
                 )}
-              </span>
-              <span className="ml-auto hidden md:inline">文字数: {activeNote.content.length} 文字</span>
-              <span className="flex items-center gap-1 font-semibold text-gray-200">
-                <Link2 className="w-3 h-3 text-[var(--blue)] shrink-0" />
-                <span>リンク数: {getOutlinks(activeNote.content).length} 個</span>
-              </span>
+              </div>
+              <div className="flex items-center gap-3 ml-auto">
+                <span>{activeNote.content.length.toLocaleString()} 文字</span>
+              </div>
             </div>
           </div>
         ) : (
