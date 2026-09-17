@@ -515,19 +515,79 @@ export default function ImportModal({
         } else if (selectedFile.name.endsWith(".json")) {
           try {
             const parsed = JSON.parse(rawContent);
-            if (Array.isArray(parsed)) {
-              const notes: Note[] = parsed.map((item: any, idx: number) => ({
-                id: item.id || `note_json_${Date.now()}_${idx}`,
-                title: item.title || `JSONノート ${idx + 1}`,
-                content: item.content || "",
-                summary: item.summary || "",
-                keywords: item.keywords || "",
-                createdAt: item.createdAt || Date.now(),
-                updatedAt: item.updatedAt || Date.now(),
-                sourceUrl: item.sourceUrl || "",
-                timeline: item.timeline || "",
-                columnJ: item.columnJ || ""
-              }));
+            const rawList: any[] = Array.isArray(parsed) 
+              ? parsed 
+              : Array.isArray(parsed?.notes) 
+              ? parsed.notes 
+              : Array.isArray(parsed?.data) 
+              ? parsed.data 
+              : Array.isArray(parsed?.items) 
+              ? parsed.items 
+              : Array.isArray(parsed?.articles) 
+              ? parsed.articles 
+              : (parsed && typeof parsed === "object" && (parsed.title || parsed.content || parsed.body || parsed.text)) 
+              ? [parsed] 
+              : [];
+
+            if (rawList.length > 0) {
+              const parseTimestamp = (val: any) => {
+                if (typeof val === "number" && !isNaN(val)) return val;
+                if (typeof val === "string" && val.trim()) {
+                  const t = new Date(val).getTime();
+                  if (!isNaN(t)) return t;
+                }
+                return Date.now();
+              };
+
+              const notes: Note[] = rawList.map((item: any, idx: number) => {
+                const title = String(item.title || item.name || item.subject || `JSONノート ${idx + 1}`);
+                
+                let rawContentVal = item.content ?? item.body ?? item.text ?? item.markdown ?? item.note ?? "";
+                let content = "";
+                if (Array.isArray(rawContentVal)) {
+                  content = rawContentVal.map(c => typeof c === "object" ? JSON.stringify(c) : String(c)).join("\n\n");
+                } else if (typeof rawContentVal === "object" && rawContentVal !== null) {
+                  content = JSON.stringify(rawContentVal, null, 2);
+                } else {
+                  content = String(rawContentVal);
+                }
+
+                const summary = item.summary || item.description || item.abstract || "";
+                const rawKeywords = item.keywords || item.category || (Array.isArray(item.tags) ? item.tags.join(", ") : item.tags) || "";
+                const folderName = item.folder || item.category || (Array.isArray(item.tags) && item.tags.length > 0 ? String(item.tags[0]) : "");
+                let keywords = rawKeywords;
+                if (folderName && !keywords.includes("[folder:")) {
+                  keywords = keywords ? `[folder:${folderName}], ${keywords}` : `[folder:${folderName}]`;
+                }
+
+                let dateStr = item.dateStr || item.date || item.publishedAt || item.publishedDate || item.issueDate || "";
+                if (typeof dateStr === "string") {
+                  const dateMatch = dateStr.match(/^(\d{4}[-/]\d{1,2}[-/]\d{1,2})/);
+                  if (dateMatch) {
+                    dateStr = dateMatch[1].replace(/\//g, "-");
+                  }
+                }
+
+                const sourceUrl = item.sourceUrl || item.url || item.link || item.source || "";
+                const rawContentText = item.rawContent || item.raw || item.rawText || item.columnJ || item.fullText || "";
+
+                return {
+                  id: String(item.id || item.noteId || item.uuid || `note_json_${Date.now()}_${idx}`),
+                  title,
+                  content,
+                  summary,
+                  keywords,
+                  createdAt: parseTimestamp(item.createdAt),
+                  updatedAt: parseTimestamp(item.updatedAt),
+                  sourceUrl,
+                  timeline: item.timeline || "",
+                  columnJ: item.columnJ || rawContentText,
+                  rawContent: rawContentText,
+                  dateStr,
+                  columnN: item.columnN || folderName
+                };
+              });
+
               onNotesUpdateBatch(notes, overwriteBatch);
               onSaveToast(`${notes.length}件のJSONノートを取り込みました ✦`);
               onClose();
@@ -721,7 +781,7 @@ export default function ImportModal({
                 <span>ローカルファイル / Web URL からの直接取り込み</span>
               </label>
               <p className="text-[11px] text-gray-400 leading-relaxed">
-                PC内のMHT / Markdownファイルや、Web記事のURLを指定して直接アプリへ取り込みます。
+                PC内のJSON / Markdown / MHTファイルや、Web記事のURLを指定して直接アプリへ取り込みます。
               </p>
 
               <div className="flex flex-col gap-2.5 mt-1">
