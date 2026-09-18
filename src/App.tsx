@@ -269,6 +269,10 @@ export default function App() {
   const [ttsQueue, setTtsQueue] = useState<Note[]>([]);
   const [isTtsPlaying, setIsTtsPlaying] = useState(false);
   const [isTtsLoading, setIsTtsLoading] = useState(false);
+  const [ttsSpeed, setTtsSpeed] = useState<number>(() => {
+    const v = parseFloat(localStorage.getItem("cn_tts_speed") || "1.2");
+    return isNaN(v) ? 1.2 : v;
+  });
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Auto-complete Wiki suggestions state
@@ -1229,6 +1233,14 @@ export default function App() {
     setAiPanelOpen(false);
     setGuideLineIndex(0);
   }, [activeId]);
+
+  // 設定モーダルが閉じたときに音声読み上げ速度を同期
+  useEffect(() => {
+    if (!isSettingsOpen) {
+      const v = parseFloat(localStorage.getItem("cn_tts_speed") || "1.2");
+      if (!isNaN(v)) setTtsSpeed(v);
+    }
+  }, [isSettingsOpen]);
 
   // 読書ガイドバーの対象行が変更されたら、スムーズに画面中央へスクロール
   useEffect(() => {
@@ -2936,6 +2948,10 @@ const renderMarkdownToElements = (contentStr: string) => {
     if (ttsQueue.length === 0) return;
     
     const currentNote = ttsQueue[0];
+    if (currentNote.id) {
+      setActiveId(currentNote.id);
+      setMode("preview");
+    }
     setIsTtsLoading(true);
     
     try {
@@ -3008,7 +3024,7 @@ const renderMarkdownToElements = (contentStr: string) => {
             URL.revokeObjectURL(audioRef.current.src);
           }
           audioRef.current.src = audioSrc;
-          audioRef.current.playbackRate = parseFloat(localStorage.getItem("cn_tts_speed") || "1.2");
+          audioRef.current.playbackRate = ttsSpeed;
           
           if ('mediaSession' in navigator) {
             navigator.mediaSession.metadata = new MediaMetadata({
@@ -3033,6 +3049,20 @@ const renderMarkdownToElements = (contentStr: string) => {
     } finally {
       setIsTtsLoading(false);
     }
+  };
+
+  const cycleTtsSpeed = () => {
+    const speeds = [0.8, 1.0, 1.2, 1.5, 1.8, 2.0];
+    const currIdx = speeds.findIndex(s => Math.abs(s - ttsSpeed) < 0.05);
+    const next = currIdx === -1 ? 1.2 : speeds[(currIdx + 1) % speeds.length];
+    setTtsSpeed(next);
+    try {
+      localStorage.setItem("cn_tts_speed", String(next));
+    } catch (_) {}
+    if (audioRef.current) {
+      audioRef.current.playbackRate = next;
+    }
+    toast(`読み上げ速度: ${next}x に変更しました ✦`);
   };
 
   const startTtsFromCurrent = () => {
@@ -4223,6 +4253,16 @@ const renderMarkdownToElements = (contentStr: string) => {
                         <Volume2 className="w-3.5 h-3.5 text-green-400 shrink-0" />
                       )}
                       <span className="portrait:hidden">{isTtsPlaying ? "停止" : "読み上げ"}</span>
+                    </button>
+
+                    {/* 音声読み上げスピード切り替えボタン */}
+                    <button
+                      type="button"
+                      onClick={cycleTtsSpeed}
+                      className="px-1.5 py-0.5 text-[11px] font-mono font-bold text-purple-300 hover:text-purple-100 hover:bg-[var(--border)] rounded cursor-pointer transition-all border-l border-[#30363d]"
+                      title="音声読み上げ速度（クリックで 1.0x / 1.2x / 1.5x / 1.8x / 2.0x / 0.8x を順繰り切り替え）"
+                    >
+                      {ttsSpeed}x
                     </button>
 
                     <button
