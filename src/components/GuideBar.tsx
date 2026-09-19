@@ -4,8 +4,7 @@ import {
   Pause,
   ChevronUp,
   ChevronDown,
-  X,
-  Pin
+  X
 } from "lucide-react";
 import { Note } from "../types";
 
@@ -23,8 +22,8 @@ export interface GuideBarProps {
   onTogglePositionFixed?: () => void;
 }
 
-// 0.5秒から2.0秒まで0.5ステップ
-export const SPEED_OPTIONS = [0.5, 1.0, 1.5, 2.0] as const;
+// スピード選択肢 (0.5, 0.8, 1.0, 1.2, 1.5, 2.0秒)
+export const SPEED_OPTIONS = [0.5, 0.8, 1.0, 1.2, 1.5, 2.0] as const;
 export type GuideSpeed = typeof SPEED_OPTIONS[number];
 
 export const GuideBar: React.FC<GuideBarProps> = ({
@@ -43,7 +42,7 @@ export const GuideBar: React.FC<GuideBarProps> = ({
   // 自動送り再生ステート (デフォルト: 流す/再生中)
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
 
-  // 再生スピード（デフォルト 1.0秒、0.5秒〜2.0秒、0.5ステップ）
+  // 再生スピード（デフォルト 1.0秒）
   const [speed, setSpeed] = useState<GuideSpeed>(() => {
     try {
       const saved = localStorage.getItem("cn_guidebar_speed");
@@ -53,6 +52,15 @@ export const GuideBar: React.FC<GuideBarProps> = ({
       }
     } catch (_) {}
     return 1.0;
+  });
+
+  // 漢字自動減速機能のON/OFFステート
+  const [isKanjiSlowdownEnabled, setIsKanjiSlowdownEnabled] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem("cn_kanji_slowdown_enabled");
+      if (saved !== null) return saved === "true";
+    } catch (_) {}
+    return true; // デフォルトで有効
   });
 
   // 画面上の視覚行数（propsから渡された場合は最優先）、未計算時はテキスト行数
@@ -96,12 +104,40 @@ export const GuideBar: React.FC<GuideBarProps> = ({
     }
   }, [currentLineIndex, totalLines, onLineChange, onPrevArticle]);
 
-  // 自動行送りタイマー処理
+  // 自動行送りタイマー処理（漢字の数に応じた速度調整機能付き）
   useEffect(() => {
     if (!isPlaying || !isOpen) return;
 
-    const intervalMs = speed * 1000;
-    const timer = setInterval(() => {
+    const rawContent = activeNote?.content || "";
+    const lines = rawContent.split("\n").filter(l => l.trim().length > 0);
+    
+    let lineText = "";
+    if (lines.length > 0 && totalLines > 0) {
+      const lineIdx = Math.min(Math.floor((currentLineIndex / totalLines) * lines.length), lines.length - 1);
+      lineText = lines[lineIdx] || "";
+    } else {
+      lineText = lines[currentLineIndex] || rawContent;
+    }
+
+    const totalChars = lineText.replace(/\s+/g, "").length;
+
+    let multiplier = 1.0;
+    if (isKanjiSlowdownEnabled && totalChars > 0) {
+      const kanjiMatches = lineText.match(/[\u4e00-\u9faf\u3400-\u4dbf]/g);
+      const kanjiCount = kanjiMatches ? kanjiMatches.length : 0;
+      const kanjiRatio = kanjiCount / totalChars;
+
+      if (kanjiRatio >= 0.6) {
+        multiplier = 1.5; // 漢字が大半・全部（60%以上）なら1.5倍遅く
+      } else if (kanjiRatio >= 0.3) {
+        multiplier = 1.3; // 漢字が半分程度（30%以上）なら1.3倍遅く
+      } else if (kanjiCount > 0) {
+        multiplier = 1.1; // 漢字が一部含まれるなら1.1倍遅く
+      }
+    }
+
+    const intervalMs = speed * 1000 * multiplier;
+    const timer = setTimeout(() => {
       if (currentLineIndex >= totalLines - 1) {
         const moved = onNextArticle();
         if (!moved) {
@@ -113,8 +149,8 @@ export const GuideBar: React.FC<GuideBarProps> = ({
       }
     }, intervalMs);
 
-    return () => clearInterval(timer);
-  }, [isPlaying, isOpen, speed, currentLineIndex, totalLines, onNextArticle, onLineChange, onClose]);
+    return () => clearTimeout(timer);
+  }, [isPlaying, isOpen, speed, currentLineIndex, totalLines, activeNote?.content, onNextArticle, onLineChange, onClose]);
 
   // ノート変更時の補正
   useEffect(() => {
@@ -142,11 +178,6 @@ export const GuideBar: React.FC<GuideBarProps> = ({
       } else if (e.code === "ArrowUp" || e.key === "k") {
         e.preventDefault();
         handlePrevLine();
-      } else if (e.key === "f" || e.key === "F") {
-        e.preventDefault();
-        if (onTogglePositionFixed) {
-          onTogglePositionFixed();
-        }
       }
     };
 
@@ -215,36 +246,6 @@ export const GuideBar: React.FC<GuideBarProps> = ({
 
       <div className="h-4 w-[1px] bg-[#30363d] mx-0.5" />
 
-      {/* 🟡 ガイドライン位置固定トグルボタン */}
-      {onTogglePositionFixed && (
-        <>
-          <button
-            type="button"
-            onClick={onTogglePositionFixed}
-            className={`h-7 px-2.5 rounded-full flex items-center gap-1.5 text-xs font-bold transition-all cursor-pointer shrink-0 ${
-              isPositionFixed
-                ? "bg-amber-400 text-black shadow-[0_0_10px_rgba(251,191,36,0.5)]"
-                : "bg-[#0d1117] text-gray-400 hover:text-white border border-[#30363d]"
-            }`}
-            title={
-              isPositionFixed
-                ? "ガイドライン位置固定: ON (画面上の固定位置で文章を送ります) [Fキー]"
-                : "ガイドライン位置固定: OFF (通常追従モード) [Fキー]"
-            }
-          >
-            <Pin className={`w-3.5 h-3.5 shrink-0 ${isPositionFixed ? "fill-black" : ""}`} />
-            <span>位置固定</span>
-            <span className={`text-[10px] font-mono px-1 rounded ${
-              isPositionFixed ? "bg-black/20 text-black font-extrabold" : "bg-black/40 text-gray-400"
-            }`}>
-              {isPositionFixed ? "ON" : "OFF"}
-            </span>
-          </button>
-
-          <div className="h-4 w-[1px] bg-[#30363d] mx-0.5" />
-        </>
-      )}
-
       {/* 🟡 速さの調整 (0.5s 〜 2.0s / 0.5ステップ) */}
       <div className="flex items-center gap-1 bg-[#0d1117] p-0.5 rounded-full border border-[#30363d] shrink-0">
         {SPEED_OPTIONS.map((s) => (
@@ -263,6 +264,56 @@ export const GuideBar: React.FC<GuideBarProps> = ({
           </button>
         ))}
       </div>
+
+      <div className="h-4 w-[1px] bg-[#30363d] mx-0.5" />
+
+      {/* 🟡 位置固定トグルボタン (選択式・上位50%位置) */}
+      {onTogglePositionFixed && (
+        <button
+          type="button"
+          onClick={onTogglePositionFixed}
+          className={`h-7 px-2.5 rounded-full flex items-center gap-1.5 text-xs font-bold transition-all cursor-pointer shrink-0 ${
+            isPositionFixed
+              ? "bg-yellow-400 text-black shadow-sm"
+              : "bg-[#0d1117] text-gray-400 hover:text-white border border-[#30363d]"
+          }`}
+          title={isPositionFixed ? "位置固定: ON (画面中央 上位50%の位置に固定) [Fキー]" : "位置固定: OFF (通常追従) [Fキー]"}
+        >
+          <span>位置固定</span>
+          <span className={`text-[10px] font-mono px-1 rounded ${
+            isPositionFixed ? "bg-black/20 text-black font-extrabold" : "bg-black/40 text-gray-400"
+          }`}>
+            {isPositionFixed ? "ON" : "OFF"}
+          </span>
+        </button>
+      )}
+
+      <div className="h-4 w-[1px] bg-[#30363d] mx-0.5" />
+
+      {/* 🟡 漢字減速トグルボタン */}
+      <button
+        type="button"
+        onClick={() => {
+          const nextVal = !isKanjiSlowdownEnabled;
+          setIsKanjiSlowdownEnabled(nextVal);
+          try {
+            localStorage.setItem("cn_kanji_slowdown_enabled", String(nextVal));
+          } catch (_) {}
+        }}
+        className={`h-7 px-2.5 rounded-full flex items-center gap-1.5 text-xs font-bold transition-all cursor-pointer shrink-0 ${
+          isKanjiSlowdownEnabled
+            ? "bg-yellow-400 text-black shadow-sm"
+            : "bg-[#0d1117] text-gray-400 hover:text-white border border-[#30363d]"
+        }`}
+        title={isKanjiSlowdownEnabled ? "漢字自動減速: ON (漢字の量に応じて速度を自動調整します)" : "漢字自動減速: OFF"}
+      >
+        <span>漢字減速</span>
+        <span className={`text-[10px] font-mono px-1 rounded ${
+          isKanjiSlowdownEnabled ? "bg-black/20 text-black font-extrabold" : "bg-black/40 text-gray-400"
+        }`}>
+          {isKanjiSlowdownEnabled ? "ON" : "OFF"}
+        </span>
+      </button>
 
       <div className="h-4 w-[1px] bg-[#30363d] mx-0.5" />
 

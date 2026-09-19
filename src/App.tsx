@@ -373,18 +373,18 @@ export default function App() {
   // ガイドライン位置固定モード State (画面上の一定位置にガイドラインを固定し、文章側がスクロールする)
   const [isGuideLineFixed, setIsGuideLineFixed] = useState<boolean>(() => {
     try {
-      return localStorage.getItem("cn_guideline_fixed") === "true";
-    } catch (_) {
-      return false;
-    }
+      const saved = localStorage.getItem("cn_guideline_fixed");
+      if (saved !== null) return saved === "true";
+    } catch (_) {}
+    return true; // デフォルトで有効（目の動きを最小限にするため固定）
   });
-  // 固定位置の比率（プレビュー画面の上部からの位置、標準は画面の上部から約35%）
+  // 固定位置の比率（プレビュー画面の上部からの位置、標準は上位50%＝0.5）
   const [guideLineFixedRatio, setGuideLineFixedRatio] = useState<number>(() => {
     try {
-      const saved = parseFloat(localStorage.getItem("cn_guideline_fixed_ratio") || "0.35");
-      if (!isNaN(saved) && saved >= 0.15 && saved <= 0.75) return saved;
+      const saved = parseFloat(localStorage.getItem("cn_guideline_fixed_ratio") || "0.5");
+      if (!isNaN(saved) && saved >= 0.15 && saved <= 0.85) return saved;
     } catch (_) {}
-    return 0.35;
+    return 0.5;
   });
   const isAutoScrollingRef = useRef(false);
   const autoScrollTimerRef = useRef<any>(null);
@@ -4471,30 +4471,6 @@ const renderMarkdownToElements = (contentStr: string) => {
                       <span className="portrait:hidden">ガイドバー</span>
                     </button>
 
-                    {/* ガイドライン位置固定ボタン（ガイドバー有効時に連動表示） */}
-                    {isGuideBarOpen && (
-                      <button
-                        type="button"
-                        onClick={toggleGuideLineFixed}
-                        className={`p-1 px-2 portrait:px-1.5 text-xs font-medium rounded cursor-pointer flex items-center gap-1.5 portrait:gap-1 transition-all ${
-                          isGuideLineFixed
-                            ? "bg-amber-400/20 text-amber-300 font-bold border border-amber-400/40"
-                            : "text-[var(--subtle)] hover:text-white hover:bg-[var(--border)]"
-                        }`}
-                        title={
-                          isGuideLineFixed
-                            ? "ガイドライン位置固定: ON (画面上の固定位置で文章を送ります)\nクリックで通常追従モードへ"
-                            : "ガイドライン位置固定: OFF (通常追従モード)\nクリックで画面上の位置固定モードへ"
-                        }
-                      >
-                        <Pin className={`w-3.5 h-3.5 shrink-0 ${isGuideLineFixed ? "text-amber-400 fill-amber-400" : "text-[var(--subtle)]"}`} />
-                        <span className="portrait:hidden whitespace-nowrap">位置固定</span>
-                        <span className="text-[10px] font-mono px-1 py-0.2 bg-[#0d1117] border border-[#30363d] rounded text-amber-300 font-bold whitespace-nowrap">
-                          {isGuideLineFixed ? "ON" : "OFF"}
-                        </span>
-                      </button>
-                    )}
-
                     {/* 文字幅トグルボタン（4段階循環: 広 1/4 → 中 2/4 → 狭 3/4 → 最狭 4/4） */}
                     <button
                       type="button"
@@ -4793,20 +4769,12 @@ const renderMarkdownToElements = (contentStr: string) => {
                           left: `${Math.max(12, visualLines[guideLineIndex].left - 8)}px`,
                           width: `${Math.max(visualLines[guideLineIndex].width + 16, 120)}px`,
                           height: `${visualLines[guideLineIndex].height + 6}px`,
-                          backgroundColor: isGuideLineFixed ? "rgba(250, 204, 21, 0.28)" : "rgba(250, 204, 21, 0.22)",
+                          backgroundColor: "rgba(250, 204, 21, 0.22)",
                           borderLeft: "4px solid #facc15",
                           borderBottom: "2px solid rgba(250, 204, 21, 0.6)",
-                          boxShadow: isGuideLineFixed
-                            ? "0 0 16px rgba(250, 204, 21, 0.35), 0 0 6px rgba(250, 204, 21, 0.4)"
-                            : "0 0 14px rgba(250, 204, 21, 0.25)",
+                          boxShadow: "0 0 14px rgba(250, 204, 21, 0.25)",
                         }}
-                      >
-                        {isGuideLineFixed && (
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-yellow-300 font-mono font-bold tracking-wider opacity-85 select-none flex items-center gap-0.5 pointer-events-none">
-                            📌 固定
-                          </span>
-                        )}
-                      </div>
+                      />
                     )}
 
                     {/* E列 記事本文コンテナ（4段階の文字幅切り替え） */}
