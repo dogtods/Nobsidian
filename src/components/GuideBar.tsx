@@ -4,7 +4,8 @@ import {
   Pause,
   ChevronUp,
   ChevronDown,
-  X
+  X,
+  Pin
 } from "lucide-react";
 import { Note } from "../types";
 
@@ -18,6 +19,8 @@ export interface GuideBarProps {
   onNextArticle: () => boolean;
   onPrevArticle?: () => boolean;
   isLastArticle?: boolean;
+  isPositionFixed?: boolean;
+  onTogglePositionFixed?: () => void;
 }
 
 // 0.5秒から2.0秒まで0.5ステップ
@@ -34,6 +37,8 @@ export const GuideBar: React.FC<GuideBarProps> = ({
   onNextArticle,
   onPrevArticle,
   isLastArticle = false,
+  isPositionFixed = false,
+  onTogglePositionFixed,
 }) => {
   // 自動送り再生ステート (デフォルト: 流す/再生中)
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
@@ -137,6 +142,11 @@ export const GuideBar: React.FC<GuideBarProps> = ({
       } else if (e.code === "ArrowUp" || e.key === "k") {
         e.preventDefault();
         handlePrevLine();
+      } else if (e.key === "f" || e.key === "F") {
+        e.preventDefault();
+        if (onTogglePositionFixed) {
+          onTogglePositionFixed();
+        }
       }
     };
 
@@ -204,6 +214,36 @@ export const GuideBar: React.FC<GuideBarProps> = ({
       </div>
 
       <div className="h-4 w-[1px] bg-[#30363d] mx-0.5" />
+
+      {/* 🟡 ガイドライン位置固定トグルボタン */}
+      {onTogglePositionFixed && (
+        <>
+          <button
+            type="button"
+            onClick={onTogglePositionFixed}
+            className={`h-7 px-2.5 rounded-full flex items-center gap-1.5 text-xs font-bold transition-all cursor-pointer shrink-0 ${
+              isPositionFixed
+                ? "bg-amber-400 text-black shadow-[0_0_10px_rgba(251,191,36,0.5)]"
+                : "bg-[#0d1117] text-gray-400 hover:text-white border border-[#30363d]"
+            }`}
+            title={
+              isPositionFixed
+                ? "ガイドライン位置固定: ON (画面上の固定位置で文章を送ります) [Fキー]"
+                : "ガイドライン位置固定: OFF (通常追従モード) [Fキー]"
+            }
+          >
+            <Pin className={`w-3.5 h-3.5 shrink-0 ${isPositionFixed ? "fill-black" : ""}`} />
+            <span>位置固定</span>
+            <span className={`text-[10px] font-mono px-1 rounded ${
+              isPositionFixed ? "bg-black/20 text-black font-extrabold" : "bg-black/40 text-gray-400"
+            }`}>
+              {isPositionFixed ? "ON" : "OFF"}
+            </span>
+          </button>
+
+          <div className="h-4 w-[1px] bg-[#30363d] mx-0.5" />
+        </>
+      )}
 
       {/* 🟡 速さの調整 (0.5s 〜 2.0s / 0.5ステップ) */}
       <div className="flex items-center gap-1 bg-[#0d1117] p-0.5 rounded-full border border-[#30363d] shrink-0">

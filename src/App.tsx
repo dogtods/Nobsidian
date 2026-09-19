@@ -39,7 +39,9 @@ import {
   Calendar,
   ArrowUpDown,
   Compass,
-  FoldHorizontal
+  FoldHorizontal,
+  Type,
+  Pin
 } from "lucide-react";
 
 import { Note, FolderRelation } from "./types";
@@ -347,6 +349,17 @@ export default function App() {
     return 1;
   });
 
+  // E列記事本文のフォントサイズ調整（基準サイズ ±10pt、初期値 0pt）
+  const [articleFontDelta, setArticleFontDelta] = useState<number>(() => {
+    try {
+      const saved = parseInt(localStorage.getItem("cn_article_font_delta") || "0", 10);
+      if (!isNaN(saved) && saved >= -10 && saved <= 10) {
+        return saved;
+      }
+    } catch (_) {}
+    return 0;
+  });
+
   // 読書支援ガイドバー (GuideBar) State & 画面上の行(Visual Line)計算
   const [isGuideBarOpen, setIsGuideBarOpen] = useState<boolean>(() => {
     try {
@@ -356,6 +369,26 @@ export default function App() {
     }
   });
   const [guideLineIndex, setGuideLineIndex] = useState<number>(0);
+
+  // ガイドライン位置固定モード State (画面上の一定位置にガイドラインを固定し、文章側がスクロールする)
+  const [isGuideLineFixed, setIsGuideLineFixed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("cn_guideline_fixed") === "true";
+    } catch (_) {
+      return false;
+    }
+  });
+  // 固定位置の比率（プレビュー画面の上部からの位置、標準は画面の上部から約35%）
+  const [guideLineFixedRatio, setGuideLineFixedRatio] = useState<number>(() => {
+    try {
+      const saved = parseFloat(localStorage.getItem("cn_guideline_fixed_ratio") || "0.35");
+      if (!isNaN(saved) && saved >= 0.15 && saved <= 0.75) return saved;
+    } catch (_) {}
+    return 0.35;
+  });
+  const isAutoScrollingRef = useRef(false);
+  const autoScrollTimerRef = useRef<any>(null);
+
   const [visualLines, setVisualLines] = useState<{
     index: number;
     top: number;
@@ -507,7 +540,7 @@ export default function App() {
     }
   }, [computeVisualLines]);
 
-  // 記事変更・ガイドバー開閉・モード変更・文字幅変更時の視覚行更新
+  // 記事変更・ガイドバー開閉・モード変更・文字幅変更・フォントサイズ変更時の視覚行更新
   const currentNoteContent = notes.find(n => n.id === activeId)?.content;
   useEffect(() => {
     if (!isGuideBarOpen || mode !== "preview") return;
@@ -521,7 +554,7 @@ export default function App() {
       clearTimeout(timer1);
       clearTimeout(timer2);
     };
-  }, [activeId, currentNoteContent, isGuideBarOpen, mode, contentWidthLevel, updateVisualLines]);
+  }, [activeId, currentNoteContent, isGuideBarOpen, mode, contentWidthLevel, articleFontDelta, updateVisualLines]);
 
   // 画面リサイズ監視（ウィンドウ幅変更で行の折り返し位置が変わるため再計算）
   useEffect(() => {
@@ -551,20 +584,64 @@ export default function App() {
     const containerHeight = container.clientHeight;
     const lineTop = line.top;
 
-    // 画面の上から約38%の位置に現在行が来るよう快適にスクロール
-    const targetScrollTop = lineTop - (containerHeight * 0.38);
+    if (isGuideLineFixed) {
+      // 【位置固定モード】: 画面上の指定位置（guideLineFixedRatio、約35%）に現在行が来るよう正確にスクロール
+      const targetScrollTop = lineTop - (containerHeight * guideLineFixedRatio);
+      const clampedTarget = Math.max(0, targetScrollTop);
 
-    const isOutOfView =
-      lineTop < currentScrollTop + 40 ||
-      lineTop > currentScrollTop + containerHeight - 80;
-
-    if (isOutOfView || Math.abs(currentScrollTop - targetScrollTop) > 70) {
+      isAutoScrollingRef.current = true;
+      clearTimeout(autoScrollTimerRef.current);
       container.scrollTo({
-        top: Math.max(0, targetScrollTop),
+        top: clampedTarget,
         behavior: "smooth"
       });
+      autoScrollTimerRef.current = setTimeout(() => {
+        isAutoScrollingRef.current = false;
+      }, 250);
+    } else {
+      // 【通常追従モード】: 画面の上から約38%の位置に現在行が来るよう快適にスクロール
+      const targetScrollTop = lineTop - (containerHeight * 0.38);
+
+      const isOutOfView =
+        lineTop < currentScrollTop + 40 ||
+        lineTop > currentScrollTop + containerHeight - 80;
+
+      if (isOutOfView || Math.abs(currentScrollTop - targetScrollTop) > 70) {
+        container.scrollTo({
+          top: Math.max(0, targetScrollTop),
+          behavior: "smooth"
+        });
+      }
     }
-  }, [guideLineIndex, isGuideBarOpen, visualLines]);
+  }, [guideLineIndex, isGuideBarOpen, visualLines, isGuideLineFixed, guideLineFixedRatio]);
+
+  // 位置固定モード時、ユーザーがマウスホイールやタッチで手動スクロールした際に固定ライン位置にある行を自動同期
+  const handlePreviewScroll = useCallback(() => {
+    if (!isGuideLineFixed || !isGuideBarOpen || visualLines.length === 0 || !previewRef.current) return;
+    if (isAutoScrollingRef.current) return;
+
+    const container = previewRef.current;
+    const fixedY = container.scrollTop + (container.clientHeight * guideLineFixedRatio);
+
+    let closestIndex = 0;
+    let minDiff = Infinity;
+    for (let i = 0; i < visualLines.length; i++) {
+      const l = visualLines[i];
+      const lineCenter = l.top + l.height / 2;
+      const diff = Math.abs(fixedY - lineCenter);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestIndex = i;
+      }
+    }
+
+    setGuideLineIndex((prev) => {
+      if (prev !== closestIndex) {
+        return closestIndex;
+      }
+      return prev;
+    });
+  }, [isGuideLineFixed, isGuideBarOpen, visualLines, guideLineFixedRatio]);
 
   // プレビュー内クリックで画面上のその行にガイドバーを直接ジャンプ移動
   const handlePreviewClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -596,6 +673,42 @@ export default function App() {
     }
 
     setGuideLineIndex(closestIndex);
+  };
+
+  // ガイドライン位置固定トグル（通常追従 ⇔ 画面上固定）
+  const toggleGuideLineFixed = () => {
+    setIsGuideLineFixed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("cn_guideline_fixed", String(next));
+      } catch (_) {}
+
+      if (next) {
+        // 現在の行が画面の適正位置（15%〜70%）にあればその位置を固定位置として採用、それ以外は標準35%
+        const container = previewRef.current;
+        if (container && visualLines[guideLineIndex]) {
+          const currentLineTop = visualLines[guideLineIndex].top;
+          const currentScrollTop = container.scrollTop;
+          const containerHeight = container.clientHeight;
+          const currentRatio = (currentLineTop - currentScrollTop) / containerHeight;
+          if (currentRatio >= 0.15 && currentRatio <= 0.70) {
+            setGuideLineFixedRatio(currentRatio);
+            try {
+              localStorage.setItem("cn_guideline_fixed_ratio", String(currentRatio));
+            } catch (_) {}
+          } else {
+            setGuideLineFixedRatio(0.35);
+            try {
+              localStorage.setItem("cn_guideline_fixed_ratio", "0.35");
+            } catch (_) {}
+          }
+        }
+        toast("📌 ガイドライン位置固定: ON（画面の固定位置で文章を送ります）");
+      } else {
+        toast("ガイドライン位置固定: OFF（通常追従モードに戻しました）");
+      }
+      return next;
+    });
   };
 
   const toggleGuideBar = () => {
@@ -764,6 +877,27 @@ export default function App() {
       toast(`文字幅: ${CONTENT_WIDTH_CONFIG[next].label} (${CONTENT_WIDTH_CONFIG[next].fraction}) に変更しました ✦`);
       return next;
     });
+  };
+
+  // E列記事本文のフォントサイズ変更ハンドラ（基準サイズ ±10pt）
+  const changeArticleFontSize = (delta: number) => {
+    setArticleFontDelta((prev) => {
+      const next = Math.max(-10, Math.min(10, prev + delta));
+      try {
+        localStorage.setItem("cn_article_font_delta", String(next));
+      } catch (_) {}
+      const sign = next > 0 ? `+${next}` : next === 0 ? "±0" : `${next}`;
+      toast(`記事フォント: ${sign}pt に変更しました ✦`);
+      return next;
+    });
+  };
+
+  const resetArticleFontSize = () => {
+    setArticleFontDelta(0);
+    try {
+      localStorage.setItem("cn_article_font_delta", "0");
+    } catch (_) {}
+    toast("記事フォント: 標準サイズ (±0pt) にリセットしました ✦");
   };
 
   const copyToClipboard = async (text: string, successMsg: string = "コピーしました ✦") => {
@@ -4337,6 +4471,30 @@ const renderMarkdownToElements = (contentStr: string) => {
                       <span className="portrait:hidden">ガイドバー</span>
                     </button>
 
+                    {/* ガイドライン位置固定ボタン（ガイドバー有効時に連動表示） */}
+                    {isGuideBarOpen && (
+                      <button
+                        type="button"
+                        onClick={toggleGuideLineFixed}
+                        className={`p-1 px-2 portrait:px-1.5 text-xs font-medium rounded cursor-pointer flex items-center gap-1.5 portrait:gap-1 transition-all ${
+                          isGuideLineFixed
+                            ? "bg-amber-400/20 text-amber-300 font-bold border border-amber-400/40"
+                            : "text-[var(--subtle)] hover:text-white hover:bg-[var(--border)]"
+                        }`}
+                        title={
+                          isGuideLineFixed
+                            ? "ガイドライン位置固定: ON (画面上の固定位置で文章を送ります)\nクリックで通常追従モードへ"
+                            : "ガイドライン位置固定: OFF (通常追従モード)\nクリックで画面上の位置固定モードへ"
+                        }
+                      >
+                        <Pin className={`w-3.5 h-3.5 shrink-0 ${isGuideLineFixed ? "text-amber-400 fill-amber-400" : "text-[var(--subtle)]"}`} />
+                        <span className="portrait:hidden whitespace-nowrap">位置固定</span>
+                        <span className="text-[10px] font-mono px-1 py-0.2 bg-[#0d1117] border border-[#30363d] rounded text-amber-300 font-bold whitespace-nowrap">
+                          {isGuideLineFixed ? "ON" : "OFF"}
+                        </span>
+                      </button>
+                    )}
+
                     {/* 文字幅トグルボタン（4段階循環: 広 1/4 → 中 2/4 → 狭 3/4 → 最狭 4/4） */}
                     <button
                       type="button"
@@ -4351,6 +4509,40 @@ const renderMarkdownToElements = (contentStr: string) => {
                         {CONTENT_WIDTH_CONFIG[contentWidthLevel].fraction}
                       </span>
                     </button>
+
+                    {/* 記事フォントサイズ調整（基準サイズ ±10pt） */}
+                    <div
+                      className="flex items-center bg-[#0d1117] border border-[#30363d] rounded p-0.5 text-xs text-[var(--subtle)] shrink-0 select-none"
+                      title={`記事フォントサイズ調整（基準サイズ比: -10pt 〜 +10pt）\n現在: ${articleFontDelta > 0 ? `+${articleFontDelta}` : articleFontDelta === 0 ? "±0" : articleFontDelta}pt\n[A-] 縮小 / [中央] リセット / [A+] 拡大`}
+                    >
+                      <Type className="w-3 h-3 text-emerald-400 mx-1 shrink-0 portrait:hidden" />
+                      <button
+                        type="button"
+                        onClick={() => changeArticleFontSize(-1)}
+                        disabled={articleFontDelta <= -10}
+                        className="px-1.5 py-0.5 text-[11px] font-bold rounded cursor-pointer transition-colors hover:text-white hover:bg-[var(--border)] disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="フォントサイズを縮小 (-1pt, 最小 -10pt)"
+                      >
+                        A-
+                      </button>
+                      <button
+                        type="button"
+                        onClick={resetArticleFontSize}
+                        className="px-1 py-0.5 text-[10px] font-mono font-bold text-emerald-400 hover:text-emerald-200 cursor-pointer transition-colors whitespace-nowrap min-w-[34px] text-center"
+                        title="クリックで標準サイズ (±0pt) にリセット"
+                      >
+                        {articleFontDelta > 0 ? `+${articleFontDelta}` : articleFontDelta === 0 ? "±0" : `${articleFontDelta}`}pt
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => changeArticleFontSize(1)}
+                        disabled={articleFontDelta >= 10}
+                        className="px-1.5 py-0.5 text-[11px] font-bold rounded cursor-pointer transition-colors hover:text-white hover:bg-[var(--border)] disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="フォントサイズを拡大 (+1pt, 最大 +10pt)"
+                      >
+                        A+
+                      </button>
+                    </div>
 
                     {(activeNote.columnJ || activeNote.rawContent) && (activeNote.columnJ || activeNote.rawContent)!.trim() !== "" && (
                       <button
@@ -4572,6 +4764,7 @@ const renderMarkdownToElements = (contentStr: string) => {
                   <textarea
                     ref={editorRef}
                     id="editor"
+                    style={{ fontSize: `calc(14px + ${articleFontDelta}pt)` }}
                     className={`flex-1 mx-auto ${CONTENT_WIDTH_CONFIG[contentWidthLevel].className} print:w-full print:max-w-none transition-[max-width,width] duration-200 p-6 md:p-8 bg-transparent text-[var(--text)] font-mono text-sm leading-relaxed overflow-y-auto outline-none border-0 resize-none select-text print:hidden break-words [overflow-wrap:anywhere]`}
                     placeholder="ここにメモを書きましょう。&#10;[[ノート名]] と書くと自動的につながり（リンク）になります。"
                     value={activeNote.content}
@@ -4584,6 +4777,8 @@ const renderMarkdownToElements = (contentStr: string) => {
                     ref={previewRef}
                     id="preview" 
                     onClick={handlePreviewClick}
+                    onScroll={handlePreviewScroll}
+                    style={{ ['--article-font-delta' as any]: `${articleFontDelta}pt` }}
                     className={`relative flex-1 p-6 md:p-8 overflow-y-auto block md select-text print:p-0 print:m-0 print:overflow-visible ${
                       isGuideBarOpen ? "pb-28 cursor-pointer" : ""
                     }`}
@@ -4598,12 +4793,20 @@ const renderMarkdownToElements = (contentStr: string) => {
                           left: `${Math.max(12, visualLines[guideLineIndex].left - 8)}px`,
                           width: `${Math.max(visualLines[guideLineIndex].width + 16, 120)}px`,
                           height: `${visualLines[guideLineIndex].height + 6}px`,
-                          backgroundColor: "rgba(250, 204, 21, 0.22)",
+                          backgroundColor: isGuideLineFixed ? "rgba(250, 204, 21, 0.28)" : "rgba(250, 204, 21, 0.22)",
                           borderLeft: "4px solid #facc15",
                           borderBottom: "2px solid rgba(250, 204, 21, 0.6)",
-                          boxShadow: "0 0 14px rgba(250, 204, 21, 0.25)",
+                          boxShadow: isGuideLineFixed
+                            ? "0 0 16px rgba(250, 204, 21, 0.35), 0 0 6px rgba(250, 204, 21, 0.4)"
+                            : "0 0 14px rgba(250, 204, 21, 0.25)",
                         }}
-                      />
+                      >
+                        {isGuideLineFixed && (
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-yellow-300 font-mono font-bold tracking-wider opacity-85 select-none flex items-center gap-0.5 pointer-events-none">
+                            📌 固定
+                          </span>
+                        )}
+                      </div>
                     )}
 
                     {/* E列 記事本文コンテナ（4段階の文字幅切り替え） */}
@@ -5954,6 +6157,8 @@ const renderMarkdownToElements = (contentStr: string) => {
             }
             return false;
           }}
+          isPositionFixed={isGuideLineFixed}
+          onTogglePositionFixed={toggleGuideLineFixed}
         />
       )}
 

@@ -82,13 +82,17 @@ body {
 }
 
 /* ===== MARKDOWN RENDER STYLES ===== */
-.md h1, .md h2, .md h3, .md p, .md .list-item, .md .check-row, .md blockquote {
+.md {
+  --article-font-delta: 0pt;
+}
+
+.md h1, .md h2, .md h3, .md p, .md .list-item, .md .check-row, .md blockquote, .md pre, .md table {
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
 .md h1 {
-  font-size: 22px;
+  font-size: calc(22px + var(--article-font-delta, 0pt));
   font-weight: 700;
   color: var(--bright);
   margin-bottom: 14px;
@@ -96,7 +100,7 @@ body {
 }
 
 .md h2 {
-  font-size: 17px;
+  font-size: calc(17px + var(--article-font-delta, 0pt));
   font-weight: 600;
   color: var(--text);
   margin: 20px 0 10px;
@@ -105,14 +109,14 @@ body {
 }
 
 .md h3 {
-  font-size: 15px;
+  font-size: calc(15px + var(--article-font-delta, 0pt));
   font-weight: 600;
   color: var(--text);
   margin: 14px 0 7px;
 }
 
 .md p {
-  font-size: 14px;
+  font-size: calc(14px + var(--article-font-delta, 0pt));
   line-height: 1.85;
   color: var(--text);
   margin-bottom: 8px;
@@ -122,14 +126,14 @@ body {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  font-size: 14px;
+  font-size: calc(14px + var(--article-font-delta, 0pt));
   color: var(--text);
   margin: 3px 0 3px 8px;
 }
 
 .md .bullet {
   color: var(--blue);
-  font-size: 9px;
+  font-size: calc(9px + var(--article-font-delta, 0pt));
   margin-top: 7px;
   flex-shrink: 0;
 }
@@ -138,13 +142,13 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: calc(14px + var(--article-font-delta, 0pt));
   color: var(--text);
   margin: 3px 0 3px 8px;
 }
 
 .md .check-icon {
-  font-size: 12px;
+  font-size: calc(12px + var(--article-font-delta, 0pt));
   width: 16px;
   flex-shrink: 0;
 }
@@ -166,9 +170,21 @@ body {
   height: 8px;
 }
 
+.md blockquote {
+  font-size: calc(14px + var(--article-font-delta, 0pt));
+}
+
+.md table th, .md table td {
+  font-size: calc(14px + var(--article-font-delta, 0pt));
+}
+
+.md pre {
+  font-size: calc(13px + var(--article-font-delta, 0pt));
+}
+
 .md code {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
+  font-size: calc(12px + var(--article-font-delta, 0pt));
   background: #1c2128;
   color: var(--orange);
   padding: 1px 5px;
