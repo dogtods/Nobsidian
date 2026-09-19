@@ -38,7 +38,8 @@ import {
   Check,
   Calendar,
   ArrowUpDown,
-  Compass
+  Compass,
+  FoldHorizontal
 } from "lucide-react";
 
 import { Note, FolderRelation } from "./types";
@@ -144,6 +145,35 @@ const getApiUrl = () => {
   } catch {
     return DEFAULT_API_URL;
   }
+};
+
+// 記事・テキスト本文の横幅4段階トグル設定（広 1/4 → 中 2/4 → 狭 3/4 → 最狭 4/4）
+export type ContentWidthLevel = 1 | 2 | 3 | 4;
+
+export const CONTENT_WIDTH_CONFIG: Record<
+  ContentWidthLevel,
+  { label: string; fraction: string; className: string }
+> = {
+  1: {
+    label: "広",
+    fraction: "1/4",
+    className: "w-full max-w-3xl",
+  },
+  2: {
+    label: "中",
+    fraction: "2/4",
+    className: "w-[85%] md:w-full max-w-2xl",
+  },
+  3: {
+    label: "狭",
+    fraction: "3/4",
+    className: "w-[70%] md:w-full max-w-lg",
+  },
+  4: {
+    label: "最狭",
+    fraction: "4/4",
+    className: "w-[45%] min-w-[190px] md:w-full max-w-[310px]",
+  },
 };
 
 // E列（要約・ハイライト）をメモ書き画面（プレビュー・編集）に忠実に配置するヘルパー
@@ -306,6 +336,17 @@ export default function App() {
   const [sourceMemoFontSize, setSourceMemoFontSize] = useState<"text-base" | "text-lg" | "text-xl">("text-base");
   const [sourceMemoLineHeight, setSourceMemoLineHeight] = useState<"1.2" | "1.5" | "2.0">("1.5");
 
+  // 記事・テキスト本文の横幅4段階トグル（1広 1/4 → 2中 2/4 → 3狭 3/4 → 4最狭 4/4）
+  const [contentWidthLevel, setContentWidthLevel] = useState<ContentWidthLevel>(() => {
+    try {
+      const saved = parseInt(localStorage.getItem("cn_content_width_level") || "1", 10);
+      if (saved === 1 || saved === 2 || saved === 3 || saved === 4) {
+        return saved as ContentWidthLevel;
+      }
+    } catch (_) {}
+    return 1;
+  });
+
   // 読書支援ガイドバー (GuideBar) State & 画面上の行(Visual Line)計算
   const [isGuideBarOpen, setIsGuideBarOpen] = useState<boolean>(() => {
     try {
@@ -466,15 +507,21 @@ export default function App() {
     }
   }, [computeVisualLines]);
 
-  // 記事変更・ガイドバー開閉・モード変更時の視覚行更新
+  // 記事変更・ガイドバー開閉・モード変更・文字幅変更時の視覚行更新
   const currentNoteContent = notes.find(n => n.id === activeId)?.content;
   useEffect(() => {
     if (!isGuideBarOpen || mode !== "preview") return;
-    const timer = setTimeout(() => {
+    const timer1 = setTimeout(() => {
       updateVisualLines();
     }, 60);
-    return () => clearTimeout(timer);
-  }, [activeId, currentNoteContent, isGuideBarOpen, mode, updateVisualLines]);
+    const timer2 = setTimeout(() => {
+      updateVisualLines();
+    }, 240);
+    return () => {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+    };
+  }, [activeId, currentNoteContent, isGuideBarOpen, mode, contentWidthLevel, updateVisualLines]);
 
   // 画面リサイズ監視（ウィンドウ幅変更で行の折り返し位置が変わるため再計算）
   useEffect(() => {
@@ -705,6 +752,18 @@ export default function App() {
   const toast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(""), 2500);
+  };
+
+  // 記事閲覧エリアの文字幅トグル（4段階循環: 1広 1/4 → 2中 2/4 → 3狭 3/4 → 4最狭 4/4）
+  const cycleContentWidth = () => {
+    setContentWidthLevel((prev) => {
+      const next = (prev >= 4 ? 1 : prev + 1) as ContentWidthLevel;
+      try {
+        localStorage.setItem("cn_content_width_level", String(next));
+      } catch (_) {}
+      toast(`文字幅: ${CONTENT_WIDTH_CONFIG[next].label} (${CONTENT_WIDTH_CONFIG[next].fraction}) に変更しました ✦`);
+      return next;
+    });
   };
 
   const copyToClipboard = async (text: string, successMsg: string = "コピーしました ✦") => {
@@ -4278,6 +4337,21 @@ const renderMarkdownToElements = (contentStr: string) => {
                       <span className="portrait:hidden">ガイドバー</span>
                     </button>
 
+                    {/* 文字幅トグルボタン（4段階循環: 広 1/4 → 中 2/4 → 狭 3/4 → 最狭 4/4） */}
+                    <button
+                      type="button"
+                      onClick={cycleContentWidth}
+                      className="p-1 px-2 portrait:px-1.5 text-xs font-medium rounded cursor-pointer flex items-center gap-1.5 portrait:gap-1 transition-all text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] shrink-0 select-none"
+                      title={`記事の文字幅を変更（クリックで 広 1/4 → 中 2/4 → 狭 3/4 → 最狭 4/4 を循環）\n現在の幅: ${CONTENT_WIDTH_CONFIG[contentWidthLevel].label} (${CONTENT_WIDTH_CONFIG[contentWidthLevel].fraction})`}
+                    >
+                      <FoldHorizontal className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                      <span className="portrait:hidden whitespace-nowrap">幅: {CONTENT_WIDTH_CONFIG[contentWidthLevel].label}</span>
+                      <span className="hidden portrait:inline whitespace-nowrap">{CONTENT_WIDTH_CONFIG[contentWidthLevel].label}</span>
+                      <span className="text-[10px] font-mono px-1 py-0.2 bg-[#0d1117] border border-[#30363d] rounded text-sky-300 font-bold whitespace-nowrap">
+                        {CONTENT_WIDTH_CONFIG[contentWidthLevel].fraction}
+                      </span>
+                    </button>
+
                     {(activeNote.columnJ || activeNote.rawContent) && (activeNote.columnJ || activeNote.rawContent)!.trim() !== "" && (
                       <button
                         onClick={() => setShowSourceMemo(!showSourceMemo)}
@@ -4498,7 +4572,7 @@ const renderMarkdownToElements = (contentStr: string) => {
                   <textarea
                     ref={editorRef}
                     id="editor"
-                    className="flex-1 p-6 md:p-8 bg-transparent text-[var(--text)] font-mono text-sm leading-relaxed overflow-y-auto outline-none border-0 resize-none select-text print:hidden"
+                    className={`flex-1 mx-auto ${CONTENT_WIDTH_CONFIG[contentWidthLevel].className} print:w-full print:max-w-none transition-[max-width,width] duration-200 p-6 md:p-8 bg-transparent text-[var(--text)] font-mono text-sm leading-relaxed overflow-y-auto outline-none border-0 resize-none select-text print:hidden break-words [overflow-wrap:anywhere]`}
                     placeholder="ここにメモを書きましょう。&#10;[[ノート名]] と書くと自動的につながり（リンク）になります。"
                     value={activeNote.content}
                     onChange={(e) => handleNoteContentChange(e.target.value)}
@@ -4532,8 +4606,11 @@ const renderMarkdownToElements = (contentStr: string) => {
                       />
                     )}
 
-                    <h1 className="hidden print:block text-3xl font-bold mb-6 text-black border-b pb-2">{activeNote.title || "Untitled Note"}</h1>
-                    {renderMarkdownToElements(activeNote.content)}
+                    {/* E列 記事本文コンテナ（4段階の文字幅切り替え） */}
+                    <div className={`mx-auto ${CONTENT_WIDTH_CONFIG[contentWidthLevel].className} print:w-full print:max-w-none transition-[max-width,width] duration-200 break-words [overflow-wrap:anywhere]`}>
+                      <h1 className="hidden print:block text-3xl font-bold mb-6 text-black border-b pb-2">{activeNote.title || "Untitled Note"}</h1>
+                      {renderMarkdownToElements(activeNote.content)}
+                    </div>
                   </div>
                 )}
 

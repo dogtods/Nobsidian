@@ -82,6 +82,11 @@ body {
 }
 
 /* ===== MARKDOWN RENDER STYLES ===== */
+.md h1, .md h2, .md h3, .md p, .md .list-item, .md .check-row, .md blockquote {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .md h1 {
   font-size: 22px;
   font-weight: 700;
