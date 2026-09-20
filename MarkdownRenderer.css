@@ -1,0 +1,45 @@
+/* ---- Theme tokens ---- */
+:root {
+  --katex-text-color: inherit;
+  --katex-error-color: #cc0000;
+  --markdown-fallback-bg: #f5f5f5;
+  --markdown-fallback-color: #333333;
+}
+
+/* Adjust this selector to match however dark mode is toggled in your app
+   (data-theme="dark" on <html>/<body>, a .dark class, etc.) */
+[data-theme='dark'] {
+  --katex-text-color: #e8e8e8;
+  --katex-error-color: #ff6b6b;
+  --markdown-fallback-bg: #1e1e1e;
+  --markdown-fallback-color: #dddddd;
+}
+
+/* ---- KaTeX output ---- */
+.markdown-renderer .katex {
+  color: var(--katex-text-color);
+  font-size: 1.05em;
+}
+
+/* Block ($$...$$) formulas can be wide; scroll instead of overflowing
+   the note card, especially on mobile. */
+.markdown-renderer .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.5em 0;
+}
+
+.markdown-renderer .katex-error {
+  color: var(--katex-error-color);
+}
+
+/* ---- Error boundary fallback ---- */
+.markdown-fallback {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--markdown-fallback-bg);
+  color: var(--markdown-fallback-color);
+  padding: 0.75em;
+  border-radius: 4px;
+  font-family: monospace;
+}
