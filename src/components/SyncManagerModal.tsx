@@ -162,7 +162,7 @@ export default function SyncManagerModal({
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
             <div>
               <p className="font-bold">同期エラーが発生しました</p>
-              <p className="mt-1 text-[var(--subtle)] leading-relaxed">{errorMessage}</p>
+              <p className="mt-1 text-[var(--subtle)] leading-relaxed whitespace-pre-wrap break-words">{errorMessage}</p>
             </div>
           </div>
         )}

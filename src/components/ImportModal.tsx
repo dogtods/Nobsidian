@@ -62,7 +62,7 @@ interface ImportModalProps {
     autoReloadApp?: boolean;
   }) => Promise<any>;
   onSyncFromServer?: () => Promise<any>;
-  syncStatus?: "idle" | "syncing" | "saved" | "error";
+  syncStatus?: "idle" | "syncing" | "saved" | "error" | "offline" | "synced";
   syncLabel?: string;
   notesCount?: number;
 }

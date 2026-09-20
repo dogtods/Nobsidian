@@ -39,6 +39,7 @@ export interface HeatmapData {
 export interface CoOccurNode {
   id: string;
   count: number;
+  folder?: string;
   x?: number;
   y?: number;
   fx?: number | null;

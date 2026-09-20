@@ -973,7 +973,13 @@ export default function App() {
       params.targetSsUrl = targetSsUrl.trim();
     }
     
-    return await fetchGasGet(url, params);
+    // 他の機能（強制アップロード・個別保存等）で安定して動作している POST 方式を最優先
+    try {
+      return await fetchGasPost(url, params);
+    } catch (postErr) {
+      console.warn("apiGet via POST failed, trying GET fallback:", postErr);
+      return await fetchGasGet(url, params);
+    }
   };
 
   // Set visual status

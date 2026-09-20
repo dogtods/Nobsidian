@@ -3,6 +3,46 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 
+function diagnoseGasError(text: string, status: number): string {
+  const trimmed = text.trim();
+  const lower = trimmed.toLowerCase();
+
+  const isGoogleLogin =
+    trimmed.includes("ppConfig") ||
+    trimmed.includes("accounts.google.com") ||
+    trimmed.includes("ServiceLogin") ||
+    trimmed.includes("Google Accounts") ||
+    trimmed.includes("identifierId") ||
+    trimmed.includes("ログイン - Google") ||
+    trimmed.includes("Sign in - Google") ||
+    (lower.includes("<!doctype html") && (lower.includes("google") || lower.includes("sign-in") || lower.includes("gaia")));
+
+  if (isGoogleLogin) {
+    return (
+      "Googleアカウントのログイン認証画面（HTML）が返されました。\n\n" +
+      "【原因】\n" +
+      "GAS Webアプリのアクセス権限が「全員」になっていないため、Googleがログインを要求しています。\n\n" +
+      "【解決手順】\n" +
+      "1. スプレッドシートの「拡張機能 ＞ Apps Script」を開く\n" +
+      "2. 右上の「デプロイ ＞ デプロイの管理」を開く\n" +
+      "3. 鉛筆マーク（編集）をクリックし：\n" +
+      "   ・【バージョン】: 『新バージョン』\n" +
+      "   ・【アクセスできるユーザー】: 『全員（Anyone）』に変更\n" +
+      "4. 「デプロイ」を押して完了してください。"
+    );
+  }
+
+  if (status === 404 || lower.includes("page cannot") || lower.includes("404 not found") || lower.includes("the page cannot be found")) {
+    return "GAS Webアプリが見つかりません(404)。デプロイ設定で「アクセスできるユーザー」が『全員（Anyone）』になっているか確認し、『新しいデプロイ』を作成してください。";
+  }
+
+  if (lower.includes("script error") || trimmed.includes("Google Apps Script")) {
+    return `GAS側でスクリプト実行エラーが発生しました: ${trimmed.substring(0, 200)}`;
+  }
+
+  return `GASからの応答がJSON形式ではありませんでした (HTTP ${status}): ${trimmed.substring(0, 100)}`;
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -31,12 +71,7 @@ async function startServer() {
         const data = JSON.parse(text);
         res.json(data);
       } catch (e) {
-        let errorMsg = `GASからの応答がJSONではありませんでした (HTTP ${fetchRes.status})`;
-        if (fetchRes.status === 404 || text.toLowerCase().includes("page cannot") || text.toLowerCase().includes("page could not")) {
-          errorMsg = "GAS Webアプリが見つかりません(404)。GASエディタのデプロイ設定で「アクセスできるユーザー」が『全員（Anyone）』になっているか確認し、『新しいデプロイ』を作成してください。";
-        } else if (text.includes("accounts.google.com") || text.includes("ServiceLogin") || text.includes("Google Accounts")) {
-          errorMsg = "Googleログイン画面にリダイレクトされました。GASのデプロイ設定で「アクセスできるユーザー」を『全員（Anyone）』に変更してください。";
-        }
+        const errorMsg = diagnoseGasError(text, fetchRes.status);
         res.status(fetchRes.status >= 400 ? fetchRes.status : 500).json({
           error: errorMsg,
           rawStatus: fetchRes.status,
@@ -67,12 +102,7 @@ async function startServer() {
         const data = JSON.parse(text);
         res.json(data);
       } catch (e) {
-        let errorMsg = `GASからの応答がJSONではありませんでした (HTTP ${fetchRes.status})`;
-        if (fetchRes.status === 404 || text.toLowerCase().includes("page cannot") || text.toLowerCase().includes("page could not")) {
-          errorMsg = "GAS Webアプリが見つかりません(404)。GASエディタのデプロイ設定で「アクセスできるユーザー」が『全員（Anyone）』になっているか確認し、『新しいデプロイ』を作成してください。";
-        } else if (text.includes("accounts.google.com") || text.includes("ServiceLogin") || text.includes("Google Accounts")) {
-          errorMsg = "Googleログイン画面にリダイレクトされました。GASのデプロイ設定で「アクセスできるユーザー」を『全員（Anyone）』に変更してください。";
-        }
+        const errorMsg = diagnoseGasError(text, fetchRes.status);
         res.status(fetchRes.status >= 400 ? fetchRes.status : 500).json({
           error: errorMsg,
           rawStatus: fetchRes.status,

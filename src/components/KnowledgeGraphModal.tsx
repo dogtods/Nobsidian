@@ -51,7 +51,7 @@ export default function KnowledgeGraphModal({
   const [highlightMode, setHighlightMode] = useState<"connection" | "folder">("connection");
   const [activeSelectedNode, setActiveSelectedNode] = useState<GraphNode | null>(null);
   const [activeSelectedFolder, setActiveSelectedFolder] = useState<string | null>(null);
-  const applyHighlightRef = useRef<((selNode: GraphNode | null, selFolder: string | null, mode: "connection" | "folder", reportNodes?: Map<string, {title: string, content: string}>) => void) | null>(null);
+  const applyHighlightRef = useRef<((selNode: GraphNode | null, selFolder: string | null, mode: "connection" | "folder", reportNodes?: Map<string, {title: string, content: string}>, searchQ?: string) => void) | null>(null);
 
   // Apply D3 highlight whenever selection states or modes change
   useEffect(() => {
