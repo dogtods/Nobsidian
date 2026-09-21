@@ -41,7 +41,8 @@ import {
   Compass,
   FoldHorizontal,
   Type,
-  Pin
+  Pin,
+  Moon
 } from "lucide-react";
 
 import { Note, FolderRelation } from "./types";
@@ -386,6 +387,15 @@ export default function App() {
     } catch (_) {}
     return 0.5;
   });
+
+  // ガイドライン暗転モード State（必要なE列の現在行文字以外を暗転させ読書に集中する）
+  const [isGuideLineDimmed, setIsGuideLineDimmed] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem("cn_guideline_dimmed");
+      if (saved !== null) return saved === "true";
+    } catch (_) {}
+    return true; // デフォルトで暗転有効
+  });
   const isAutoScrollingRef = useRef(false);
   const autoScrollTimerRef = useRef<any>(null);
 
@@ -707,6 +717,18 @@ export default function App() {
       } else {
         toast("ガイドライン位置固定: OFF（通常追従モードに戻しました）");
       }
+      return next;
+    });
+  };
+
+  // ガイドライン暗転モードトグル（必要なE列文字以外を暗転 ⇔ 通常表示）
+  const toggleGuideLineDimmed = () => {
+    setIsGuideLineDimmed(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem("cn_guideline_dimmed", String(next));
+      } catch (_) {}
+      toast(next ? "🌙 暗転モード: ON（必要な文字以外を暗転します）" : "暗転モード: OFF（通常表示に戻しました）");
       return next;
     });
   };
@@ -3767,9 +3789,9 @@ const renderMarkdownToElements = (contentStr: string) => {
       
       {/* SIDEBAR CANVASES */}
       <div
-        className={`w-[260px] min-w-[260px] bg-[#161b22] border border-[#30363d] rounded-2xl flex flex-col z-[100] transition-transform duration-200 absolute md:relative h-full md:m-0 print:hidden print:w-0 print:h-0 ${
+        className={`w-[260px] min-w-[260px] bg-[#161b22] border border-[#30363d] rounded-2xl flex flex-col z-[100] transition-all duration-300 absolute md:relative h-full md:m-0 print:hidden print:w-0 print:h-0 ${
           isFullScreen ? "hidden md:hidden" : (sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0")
-        }`}
+        } ${isGuideBarOpen && isGuideLineDimmed ? "opacity-20 pointer-events-none" : ""}`}
       >
         <div className="p-4 border-b border-[var(--border)] flex flex-col gap-3">
           <div className="flex items-center justify-between">
@@ -4285,9 +4307,9 @@ const renderMarkdownToElements = (contentStr: string) => {
             onTouchEnd={handleTouchEnd}
           >
             {/* TOOLBAR */}
-            <div className={`border-b border-[var(--border)] bg-[var(--bg)] z-10 select-none print:hidden ${
+            <div className={`border-b border-[var(--border)] bg-[var(--bg)] z-10 select-none print:hidden transition-opacity duration-300 ${
               isFullScreen ? "landscape:hidden" : ""
-            }`}>
+            } ${isGuideBarOpen && isGuideLineDimmed ? "opacity-25" : ""}`}>
               {/* 上段: タイトル・フォルダ & 基本操作（プレビュー/編集・保存・全画面） */}
               <div className="p-2.5 px-4 flex items-center justify-between gap-3 min-h-[48px]">
                 {!isFullScreen && (
@@ -4476,6 +4498,23 @@ const renderMarkdownToElements = (contentStr: string) => {
                       <Compass className={`w-3.5 h-3.5 shrink-0 ${isGuideBarOpen ? "text-yellow-400" : "text-[var(--subtle)]"}`} />
                       <span className="portrait:hidden">ガイドバー</span>
                     </button>
+
+                    {/* ガイドバー稼働時の暗転モードトグルボタン */}
+                    {isGuideBarOpen && (
+                      <button
+                        type="button"
+                        onClick={toggleGuideLineDimmed}
+                        className={`p-1 px-1.5 text-xs font-bold rounded cursor-pointer flex items-center gap-1 transition-all border-l border-[#30363d] ${
+                          isGuideLineDimmed
+                            ? "text-yellow-300 hover:text-yellow-100 bg-yellow-500/10"
+                            : "text-[var(--subtle)] hover:text-white"
+                        }`}
+                        title={isGuideLineDimmed ? "暗転モード: ON (クリックでOFF / Dキー)" : "暗転モード: OFF (クリックでON / Dキー)"}
+                      >
+                        <Moon className={`w-3 h-3 ${isGuideLineDimmed ? "fill-yellow-400 text-yellow-400" : ""}`} />
+                        <span className="portrait:hidden text-[11px]">{isGuideLineDimmed ? "暗転ON" : "暗転OFF"}</span>
+                      </button>
+                    )}
 
                     {/* 文字幅トグルボタン（4段階循環: 広 1/4 → 中 2/4 → 狭 3/4 → 最狭 4/4） */}
                     <button
@@ -4783,6 +4822,32 @@ const renderMarkdownToElements = (contentStr: string) => {
                       />
                     )}
 
+                    {/* 🌙 暗転モード: 必要なE列の現在行文字以外の上下テキストを暗転 */}
+                    {isGuideBarOpen && isGuideLineDimmed && visualLines[guideLineIndex] && (
+                      <>
+                        {/* 現在行の上部を暗転 */}
+                        <div
+                          id="visual-reading-guide-dim-top"
+                          className="pointer-events-none absolute left-0 right-0 top-0 z-10 transition-all duration-150 ease-out"
+                          style={{
+                            height: `${Math.max(0, visualLines[guideLineIndex].top - 3)}px`,
+                            backgroundColor: "rgba(10, 14, 20, 0.85)",
+                          }}
+                        />
+                        {/* 現在行の下部を暗転 */}
+                        <div
+                          id="visual-reading-guide-dim-bottom"
+                          className="pointer-events-none absolute left-0 right-0 z-10 transition-all duration-150 ease-out"
+                          style={{
+                            top: `${visualLines[guideLineIndex].top + visualLines[guideLineIndex].height + 3}px`,
+                            bottom: 0,
+                            minHeight: "100%",
+                            backgroundColor: "rgba(10, 14, 20, 0.85)",
+                          }}
+                        />
+                      </>
+                    )}
+
                     {/* E列 記事本文コンテナ（4段階の文字幅切り替え） */}
                     <div className={`mx-auto ${CONTENT_WIDTH_CONFIG[contentWidthLevel].className} print:w-full print:max-w-none transition-[max-width,width] duration-200 break-words [overflow-wrap:anywhere]`}>
                       <h1 className="hidden print:block text-3xl font-bold mb-6 text-black border-b pb-2">{activeNote.title || "Untitled Note"}</h1>
@@ -4824,9 +4889,9 @@ const renderMarkdownToElements = (contentStr: string) => {
               </div>
 
               {/* BACKLINKS RIGHT SIDE PANEL */}
-              <div className={`w-[210px] min-w-[210px] border-l border-[var(--border)] bg-[var(--surface)] p-4 overflow-y-auto print:hidden ${
+              <div className={`w-[210px] min-w-[210px] border-l border-[var(--border)] bg-[var(--surface)] p-4 overflow-y-auto print:hidden transition-all duration-300 ${
                 isFullScreen ? "hidden" : "hidden md:block"
-              }`}>
+              } ${isGuideBarOpen && isGuideLineDimmed ? "opacity-20 pointer-events-none" : ""}`}>
                 {/* Backlinks */}
                 {(() => {
                   const bls = getBacklinks(activeNote.title);
@@ -6133,6 +6198,8 @@ const renderMarkdownToElements = (contentStr: string) => {
           }}
           isPositionFixed={isGuideLineFixed}
           onTogglePositionFixed={toggleGuideLineFixed}
+          isDimmed={isGuideLineDimmed}
+          onToggleDimmed={toggleGuideLineDimmed}
         />
       )}
 

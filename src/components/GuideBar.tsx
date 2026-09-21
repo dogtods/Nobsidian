@@ -4,7 +4,8 @@ import {
   Pause,
   ChevronUp,
   ChevronDown,
-  X
+  X,
+  Moon,
 } from "lucide-react";
 import { Note } from "../types";
 
@@ -20,6 +21,8 @@ export interface GuideBarProps {
   isLastArticle?: boolean;
   isPositionFixed?: boolean;
   onTogglePositionFixed?: () => void;
+  isDimmed?: boolean;
+  onToggleDimmed?: () => void;
 }
 
 // スピード選択肢 (0.5, 0.8, 1.0, 1.2, 1.5, 2.0秒)
@@ -38,6 +41,8 @@ export const GuideBar: React.FC<GuideBarProps> = ({
   isLastArticle = false,
   isPositionFixed = false,
   onTogglePositionFixed,
+  isDimmed = false,
+  onToggleDimmed,
 }) => {
   // 自動送り再生ステート (デフォルト: 流す/再生中)
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
@@ -178,19 +183,22 @@ export const GuideBar: React.FC<GuideBarProps> = ({
       } else if (e.code === "ArrowUp" || e.key === "k") {
         e.preventDefault();
         handlePrevLine();
+      } else if (e.code === "KeyD" || e.key === "d" || e.key === "D") {
+        e.preventDefault();
+        onToggleDimmed?.();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, handleNextLine, handlePrevLine]);
+  }, [isOpen, handleNextLine, handlePrevLine, onToggleDimmed]);
 
   if (!isOpen || !activeNote) return null;
 
   return (
     <div
       id="reading-guidebar"
-      className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[500] max-w-[95vw] overflow-x-auto flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-[#30363d] bg-[#161b22]/95 backdrop-blur-md text-[#f0f6fc] shadow-[0_8px_32px_rgba(0,0,0,0.8),0_0_16px_rgba(250,204,21,0.25)] select-none print:hidden transition-all"
+      className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[600] max-w-[95vw] overflow-x-auto flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-[#30363d] bg-[#161b22]/95 backdrop-blur-md text-[#f0f6fc] shadow-[0_8px_32px_rgba(0,0,0,0.8),0_0_16px_rgba(250,204,21,0.25)] select-none print:hidden transition-all"
     >
       {/* 🟡 再生 / 一時停止ボタン */}
       <button
@@ -284,6 +292,30 @@ export const GuideBar: React.FC<GuideBarProps> = ({
             isPositionFixed ? "bg-black/20 text-black font-extrabold" : "bg-black/40 text-gray-400"
           }`}>
             {isPositionFixed ? "ON" : "OFF"}
+          </span>
+        </button>
+      )}
+
+      <div className="h-4 w-[1px] bg-[#30363d] mx-0.5" />
+
+      {/* 🟡 暗転モードトグルボタン (必要な文字以外を暗転) */}
+      {onToggleDimmed && (
+        <button
+          type="button"
+          onClick={onToggleDimmed}
+          className={`h-7 px-2.5 rounded-full flex items-center gap-1.5 text-xs font-bold transition-all cursor-pointer shrink-0 ${
+            isDimmed
+              ? "bg-yellow-400 text-black shadow-sm"
+              : "bg-[#0d1117] text-gray-400 hover:text-white border border-[#30363d]"
+          }`}
+          title={isDimmed ? "暗転モード: ON (現在行の文字以外を暗転して集中) [Dキー]" : "暗転モード: OFF [Dキー]"}
+        >
+          <Moon className={`w-3.5 h-3.5 ${isDimmed ? "fill-black" : ""}`} />
+          <span>暗転</span>
+          <span className={`text-[10px] font-mono px-1 rounded ${
+            isDimmed ? "bg-black/20 text-black font-extrabold" : "bg-black/40 text-gray-400"
+          }`}>
+            {isDimmed ? "ON" : "OFF"}
           </span>
         </button>
       )}
