@@ -47,6 +47,7 @@ import {
 
 import { Note, FolderRelation } from "./types";
 import { GuideBar } from "./components/GuideBar";
+import { ChemicalFormula, LatexMathViewer, isChemicalExpression } from "./components/ChemicalRenderer";
 import { getStoredPrompt, DEFAULT_PROMPTS } from "./components/PromptSettingsModal";
 import {
   getFolderFromKeywords,
@@ -1387,6 +1388,52 @@ export default function App() {
         }
       } catch (e) {}
 
+      // If no notes exist at all (first-time visitor), seed a helpful sample note showcasing chemical equations
+      if (isMounted && loadedNotes.length === 0) {
+        const sampleNote: Note = {
+          id: `note-${Date.now()}`,
+          title: "化学反応式とノート機能",
+          content: `# 化学反応式のレンダリング例
+
+ObsidianライクなMarkdown内で、化学反応式や化学式が自動的に美しく整形されます。
+
+## 1. 硝酸の生成反応
+$\\mathrm{NO_2 + OH \\rightarrow HNO_3}$ （硝酸）
+
+## 2. 係数を含む反応式
+$\\mathrm{2H_2 + O_2 \\rightarrow 2H_2O}$ （水の生成）
+
+## 3. 代表的な化学式とイオン
+- 水: $\\mathrm{H_2O}$
+- 二酸化炭素: $\\mathrm{CO_2}$
+- 二酸化硫黄: $\\mathrm{SO_2}$
+- 二酸化窒素: $\\mathrm{NO_2}$
+- 硝酸: $\\mathrm{HNO_3}$
+- アンモニウムイオン: $\\mathrm{NH_4^+}$
+- 硫酸イオン: $\\mathrm{SO_4^{2-}}$
+- 炭酸カルシウム: $\\mathrm{CaCO_3}$
+
+## 4. 可逆反応（化学平衡）
+$\\mathrm{N_2 + 3H_2 \\rightleftharpoons 2NH_3}$ （アンモニア合成）
+
+## 5. 通常の数学LaTeX数式との両立
+数学の数式はKaTeXによって適切にレンダリングされます：
+$E = mc^2$
+$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$
+`,
+          keywords: "化学反応式, 硝酸, LaTeX",
+          summary: "化学反応式（下付き文字、矢印、係数、イオン電荷、説明タグ）と通常数式の両立レンダリング",
+          sourceUrl: "",
+          columnN: "化学",
+          dateStr: formatDateStr(Date.now()),
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        setNotes([sampleNote]);
+        setActiveId(sampleNote.id);
+        triggerLocalSave([sampleNote], sampleNote.id);
+      }
+
       // 3. Ensure autoSync state is synchronized from IndexedDB if localStorage was cleared on mobile
       try {
         const idbAutoSync = await loadAutoSyncPreferenceAsync();
@@ -1983,6 +2030,154 @@ export default function App() {
     }
     parts = nextParts;
 
+    // Stage 1.5: LaTeX Math & Chemical Reactions / Formulas
+    // A. $$...$$ or $...$ with optional description like （硝酸）
+    nextParts = [];
+    const mathAndChemRegex = /\$\$([\s\S]+?)\$\$|\$((?:\\\$|[^$\n])+?)\$(?:[\s　]*([（\(][^）\)\n]+[）\)]))?/g;
+    for (const part of parts) {
+      if (typeof part !== "string") {
+        nextParts.push(part);
+        continue;
+      }
+
+      let lastIndex = 0;
+      let match;
+      mathAndChemRegex.lastIndex = 0;
+
+      while ((match = mathAndChemRegex.exec(part)) !== null) {
+        const matchIndex = match.index;
+        if (matchIndex > lastIndex) {
+          nextParts.push(part.slice(lastIndex, matchIndex));
+        }
+
+        const isBlock = !!match[1];
+        const expr = (match[1] || match[2] || "").trim();
+        const desc = match[3] || "";
+
+        if (isChemicalExpression(expr)) {
+          nextParts.push(
+            <ChemicalFormula
+              key={`chem-${matchIndex}`}
+              expression={expr}
+              description={desc}
+            />
+          );
+        } else {
+          nextParts.push(
+            <React.Fragment key={`math-${matchIndex}`}>
+              <LatexMathViewer math={expr} isBlock={isBlock} />
+              {desc && <span className="ml-1 text-[var(--subtle)]">{desc}</span>}
+            </React.Fragment>
+          );
+        }
+
+        lastIndex = mathAndChemRegex.lastIndex;
+      }
+      if (lastIndex < part.length) {
+        nextParts.push(part.slice(lastIndex));
+      }
+    }
+    parts = nextParts;
+
+    // Stage 1.6: Explicit \ce{...} (mhchem syntax)
+    nextParts = [];
+    const ceRegex = /\\ce\{([^}]+)\}(?:[\s　]*([（\(][^）\)\n]+[）\)]))?/g;
+    for (const part of parts) {
+      if (typeof part !== "string") {
+        nextParts.push(part);
+        continue;
+      }
+      let lastIndex = 0;
+      let match;
+      ceRegex.lastIndex = 0;
+      while ((match = ceRegex.exec(part)) !== null) {
+        const matchIndex = match.index;
+        if (matchIndex > lastIndex) {
+          nextParts.push(part.slice(lastIndex, matchIndex));
+        }
+        const expr = match[1].trim();
+        const desc = match[2] || "";
+        nextParts.push(
+          <ChemicalFormula
+            key={`ce-${matchIndex}`}
+            expression={expr}
+            description={desc}
+          />
+        );
+        lastIndex = ceRegex.lastIndex;
+      }
+      if (lastIndex < part.length) {
+        nextParts.push(part.slice(lastIndex));
+      }
+    }
+    parts = nextParts;
+
+    // Stage 1.7: Plain chemical reactions (e.g., 2H2 + O2 -> 2H2O, NO2 + OH -> HNO3 （硝酸）)
+    nextParts = [];
+    const plainReactionRegex = /(?:^|(?<=[\s\n]))([0-9]*[A-Z][a-zA-Z0-9_₀-₉⁺⁻²³\^\(\)\+\-\s]*?\s*(?:->|-->|→|<=>|⇄|⇌)\s*[0-9]*[A-Z][a-zA-Z0-9_₀-₉⁺⁻²³\^\(\)\+\-\s]+?)(?:[\s　]*([（\(][^）\)\n]+[）\)]))?(?=$|[\s\n.,!?;:])/g;
+    for (const part of parts) {
+      if (typeof part !== "string") {
+        nextParts.push(part);
+        continue;
+      }
+      let lastIndex = 0;
+      let match;
+      plainReactionRegex.lastIndex = 0;
+      while ((match = plainReactionRegex.exec(part)) !== null) {
+        const matchIndex = match.index;
+        const candidate = match[1].trim();
+        if (isChemicalExpression(candidate)) {
+          if (matchIndex > lastIndex) {
+            nextParts.push(part.slice(lastIndex, matchIndex));
+          }
+          const desc = match[2] || "";
+          nextParts.push(
+            <ChemicalFormula
+              key={`plainchem-${matchIndex}`}
+              expression={candidate}
+              description={desc}
+            />
+          );
+          lastIndex = plainReactionRegex.lastIndex;
+        }
+      }
+      if (lastIndex < part.length) {
+        nextParts.push(part.slice(lastIndex));
+      }
+    }
+    parts = nextParts;
+
+    // Stage 1.8: Common chemical species in plain text (e.g. H2O, CO2, SO2, NO2, HNO3, NH4+, SO4^2-, CaCO3, H₂O, CO₂, etc.)
+    nextParts = [];
+    const commonSpeciesRegex = /\b(H2O|CO2|SO2|NO2|HNO3|NH4\+|SO4\^?2\-?|CaCO3|NaCl|HCl|NaOH|CH4|C6H12O6)\b|(?:\b|^)(H₂O|CO₂|SO₂|NO₂|HNO₃|NH₄⁺|SO₄²⁻|CaCO₃)(?=\b|$|\s|[、。，．（\)])/g;
+    for (const part of parts) {
+      if (typeof part !== "string") {
+        nextParts.push(part);
+        continue;
+      }
+      let lastIndex = 0;
+      let match;
+      commonSpeciesRegex.lastIndex = 0;
+      while ((match = commonSpeciesRegex.exec(part)) !== null) {
+        const matchIndex = match.index;
+        const formula = match[0].trim();
+        if (matchIndex > lastIndex) {
+          nextParts.push(part.slice(lastIndex, matchIndex));
+        }
+        nextParts.push(
+          <ChemicalFormula
+            key={`species-${matchIndex}`}
+            expression={formula}
+          />
+        );
+        lastIndex = commonSpeciesRegex.lastIndex;
+      }
+      if (lastIndex < part.length) {
+        nextParts.push(part.slice(lastIndex));
+      }
+    }
+    parts = nextParts;
+
     // Stage 2: Markdown Links [text](url)
     nextParts = [];
     const mdLinkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/g;
@@ -2271,6 +2466,48 @@ const renderMarkdownToElements = (contentStr: string) => {
         );
       }
       i++; // 閉じ ``` を消費
+      continue;
+    }
+
+    // 1.5. 数式・化学式ブロック ($$ ... $$)
+    if (line.trim().startsWith("$$")) {
+      const trimmed = line.trim();
+      let mathBlockContent = "";
+      if (trimmed.length > 2 && trimmed.endsWith("$$")) {
+        // 単一行の $$...$$
+        mathBlockContent = trimmed.slice(2, -2).trim();
+        i++;
+      } else {
+        // 複数行の $$ ... $$
+        const mathLines: string[] = [];
+        const firstLineRest = trimmed.slice(2).trim();
+        if (firstLineRest) mathLines.push(firstLineRest);
+        i++;
+        while (i < lines.length && !lines[i].trim().endsWith("$$")) {
+          mathLines.push(lines[i]);
+          i++;
+        }
+        if (i < lines.length) {
+          const lastLineRest = lines[i].trim().slice(0, -2).trim();
+          if (lastLineRest) mathLines.push(lastLineRest);
+          i++; // 閉じ $$ を消費
+        }
+        mathBlockContent = mathLines.join("\n").trim();
+      }
+
+      if (isChemicalExpression(mathBlockContent)) {
+        elements.push(
+          <div key={`chem-block-${keySeq++}`} className="my-3 flex justify-center overflow-x-auto py-1">
+            <ChemicalFormula expression={mathBlockContent} className="text-base px-3.5 py-1.5" />
+          </div>
+        );
+      } else {
+        elements.push(
+          <div key={`math-block-${keySeq++}`} className="my-3">
+            <LatexMathViewer math={mathBlockContent} isBlock={true} />
+          </div>
+        );
+      }
       continue;
     }
 
