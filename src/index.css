@@ -86,7 +86,7 @@ body {
   --article-font-delta: 0pt;
 }
 
-.md h1, .md h2, .md h3, .md p, .md .list-item, .md .check-row, .md blockquote, .md pre, .md table {
+.md h1, .md h2, .md h3, .md h4, .md h5, .md h6, .md p, .md .list-item, .md .check-row, .md blockquote, .md pre, .md table {
   overflow-wrap: anywhere;
   word-break: break-word;
 }
@@ -115,6 +115,27 @@ body {
   margin: 14px 0 7px;
 }
 
+.md h4 {
+  font-size: calc(14px + var(--article-font-delta, 0pt));
+  font-weight: 600;
+  color: var(--text);
+  margin: 12px 0 6px;
+}
+
+.md h5 {
+  font-size: calc(13px + var(--article-font-delta, 0pt));
+  font-weight: 600;
+  color: var(--subtle);
+  margin: 10px 0 5px;
+}
+
+.md h6 {
+  font-size: calc(12px + var(--article-font-delta, 0pt));
+  font-weight: 600;
+  color: var(--muted);
+  margin: 8px 0 4px;
+}
+
 .md p {
   font-size: calc(14px + var(--article-font-delta, 0pt));
   line-height: 1.85;
@@ -129,6 +150,16 @@ body {
   font-size: calc(14px + var(--article-font-delta, 0pt));
   color: var(--text);
   margin: 3px 0 3px 8px;
+}
+
+.md .list-num {
+  color: var(--blue);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: calc(12px + var(--article-font-delta, 0pt));
+  font-weight: 600;
+  min-width: 18px;
+  flex-shrink: 0;
+  text-align: right;
 }
 
 .md .bullet {

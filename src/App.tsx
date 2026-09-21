@@ -1420,6 +1420,12 @@ $\\mathrm{N_2 + 3H_2 \\rightleftharpoons 2NH_3}$ （アンモニア合成）
 数学の数式はKaTeXによって適切にレンダリングされます：
 $E = mc^2$
 $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$
+
+## 6. Markdown記法と装飾のネスト
+- **太字** と *斜体*、そして \`inline code\`
+- **塩素原子（\`Cl\`）** や **硝酸分子（\`HNO3\`）** のように太字内のコード記法も正しく解析されます。
+- [リンク表記](https://ja.wikipedia.org/wiki/化学反応式)
+- > これは引用文ブロックです。Markdown記法をそのまま保持し、プレビューモードで美しくレンダリングされます。
 `,
           keywords: "化学反応式, 硝酸, LaTeX",
           summary: "化学反応式（下付き文字、矢印、係数、イオン電荷、説明タグ）と通常数式の両立レンダリング",
@@ -2259,99 +2265,86 @@ $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$
     }
     parts = nextParts;
 
-    // Stage 4: Bold form formatting
-    nextParts = [];
-    const boldRegex = /\*\*(.*?)\*\*/g;
-    for (const part of parts) {
-      if (typeof part !== "string") {
-        nextParts.push(part);
-        continue;
-      }
-      
-      let lastIndex = 0;
-      let match;
-      boldRegex.lastIndex = 0;
-      
-      while ((match = boldRegex.exec(part)) !== null) {
-        const matchIndex = match.index;
-        if (matchIndex > lastIndex) {
-          nextParts.push(part.slice(lastIndex, matchIndex));
-        }
-        
-        const boldText = match[1];
-        
-        nextParts.push(
-          <strong key={`bold-${matchIndex}`}>
-            {boldText}
-          </strong>
-        );
-        lastIndex = boldRegex.lastIndex;
-      }
-      if (lastIndex < part.length) {
-        nextParts.push(part.slice(lastIndex));
-      }
-    }
-    parts = nextParts;
+    // Stage 4: Inline formatting with nesting support (code, bold, italic, strikethrough, br)
+    const parseFormatting = (rawStr: string, depth = 0): React.ReactNode[] => {
+      if (!rawStr) return [];
+      if (depth > 5) return [rawStr]; // Guard against infinite recursion
 
-    // Stage 5: Mono code formatting
+      // Matches:
+      // 1. `inline code`
+      // 2. **bold** or __bold__
+      // 3. *italic* or _italic_
+      // 4. ~~strikethrough~~
+      // 5. <br> / <br/>
+      const inlineRegex = /(`([^`\n]+)`)|(\*\*([^*]+?)\*\*|__([^_]+?)__)|(\*([^*]+?)\*|_([^_]+?)_)|(~~([^~]+?)~~)|(<br\s*\/?>)/gi;
+      const result: React.ReactNode[] = [];
+      let lastIndex = 0;
+      let match;
+      inlineRegex.lastIndex = 0;
+
+      while ((match = inlineRegex.exec(rawStr)) !== null) {
+        const matchIndex = match.index;
+        if (matchIndex > lastIndex) {
+          result.push(rawStr.slice(lastIndex, matchIndex));
+        }
+
+        if (match[1]) {
+          // Inline code `...`
+          const codeContent = match[2];
+          result.push(
+            <code
+              key={`code-${depth}-${matchIndex}`}
+              className="bg-[var(--surface)] text-[var(--orange)] border border-[var(--border2)]/50 px-1.5 py-0.5 rounded font-mono text-[13px] inline-block align-baseline mx-0.5"
+            >
+              {codeContent}
+            </code>
+          );
+        } else if (match[3]) {
+          // Bold **...** or __...__
+          const boldContent = match[4] || match[5] || "";
+          result.push(
+            <strong key={`bold-${depth}-${matchIndex}`} className="font-bold text-[var(--bright)]">
+              {parseFormatting(boldContent, depth + 1)}
+            </strong>
+          );
+        } else if (match[6]) {
+          // Italic *...* or _..._
+          const italicContent = match[7] || match[8] || "";
+          result.push(
+            <em key={`italic-${depth}-${matchIndex}`} className="italic text-[var(--subtle)]">
+              {parseFormatting(italicContent, depth + 1)}
+            </em>
+          );
+        } else if (match[9]) {
+          // Strikethrough ~~...~~
+          const strikeContent = match[10] || "";
+          result.push(
+            <del key={`del-${depth}-${matchIndex}`} className="line-through text-[var(--muted)]">
+              {parseFormatting(strikeContent, depth + 1)}
+            </del>
+          );
+        } else if (match[11]) {
+          // <br>
+          result.push(<br key={`br-${depth}-${matchIndex}`} />);
+        }
+
+        lastIndex = inlineRegex.lastIndex;
+      }
+
+      if (lastIndex < rawStr.length) {
+        result.push(rawStr.slice(lastIndex));
+      }
+
+      return result;
+    };
+
     nextParts = [];
-    const codeRegex = /`(.*?)`/g;
     for (const part of parts) {
       if (typeof part !== "string") {
         nextParts.push(part);
         continue;
       }
-      
-      let lastIndex = 0;
-      let match;
-      codeRegex.lastIndex = 0;
-      
-      while ((match = codeRegex.exec(part)) !== null) {
-        const matchIndex = match.index;
-        if (matchIndex > lastIndex) {
-          nextParts.push(part.slice(lastIndex, matchIndex));
-        }
-        
-        const codeText = match[1];
-        
-        nextParts.push(
-          <code key={`code-${matchIndex}`} className="bg-[var(--surface)] text-[var(--orange)] p-0.5 rounded px-1.5 font-mono text-xs">
-            {codeText}
-          </code>
-        );
-        lastIndex = codeRegex.lastIndex;
-      }
-      if (lastIndex < part.length) {
-        nextParts.push(part.slice(lastIndex));
-      }
-    }
-    // Stage 6: <br> formatting
-    nextParts = [];
-    const brRegex = /<br\s*\/?>/gi;
-    for (const part of parts) {
-      if (typeof part !== "string") {
-        nextParts.push(part);
-        continue;
-      }
-      
-      let lastIndex = 0;
-      let match;
-      brRegex.lastIndex = 0;
-      
-      while ((match = brRegex.exec(part)) !== null) {
-        const matchIndex = match.index;
-        if (matchIndex > lastIndex) {
-          nextParts.push(part.slice(lastIndex, matchIndex));
-        }
-        
-        nextParts.push(
-          <br key={`br-${matchIndex}`} />
-        );
-        lastIndex = brRegex.lastIndex;
-      }
-      if (lastIndex < part.length) {
-        nextParts.push(part.slice(lastIndex));
-      }
+      nextParts.push(...parseFormatting(part, 0));
     }
     parts = nextParts;
 
@@ -2521,71 +2514,140 @@ const renderMarkdownToElements = (contentStr: string) => {
       }
     }
 
-    // 3. その他単一行要素の処理
-    if (line.startsWith("# ")) {
+    // 3. 引用ブロック処理 (> ...)
+    if (line.startsWith(">")) {
+      const quoteLines: string[] = [];
+      while (i < lines.length && (lines[i].startsWith(">") || (quoteLines.length > 0 && lines[i].trim() !== "" && !lines[i].startsWith("#") && !lines[i].startsWith("```") && !lines[i].startsWith("- ") && !lines[i].match(/^\d+\.\s/)))) {
+        const qLine = lines[i].startsWith(">") ? lines[i].replace(/^>\s?/, "") : lines[i];
+        quoteLines.push(qLine);
+        i++;
+      }
       elements.push(
-        <h1 key={keySeq++}>
-          {parseInlineMarkdownToElements(line.slice(2))}
-        </h1>
-      );
-    } else if (line.startsWith("## ")) {
-      elements.push(
-        <h2 key={keySeq++}>
-          {parseInlineMarkdownToElements(line.slice(3))}
-        </h2>
-      );
-    } else if (line.startsWith("### ")) {
-      elements.push(
-        <h3 key={keySeq++}>
-          {parseInlineMarkdownToElements(line.slice(4))}
-        </h3>
-      );
-    } else if (line.startsWith("> ")) {
-      elements.push(
-        <blockquote key={keySeq++} className="border-l-4 border-[var(--border)] pl-4 italic my-2 text-[var(--fg-muted)]">
-          {parseInlineMarkdownToElements(line.slice(2))}
+        <blockquote key={keySeq++} className="border-l-4 border-[var(--blue)]/60 bg-[var(--surface)]/50 pl-4 py-2 my-3 rounded-r-md text-[var(--subtle)] italic leading-relaxed">
+          {quoteLines.map((ql, qIdx) => (
+            <div key={qIdx} className={qIdx > 0 ? "mt-1.5" : ""}>
+              {parseInlineMarkdownToElements(ql)}
+            </div>
+          ))}
         </blockquote>
       );
-    } else if (line.startsWith("- [x] ")) {
+      continue;
+    }
+
+    // 4. 見出し (# 〜 ######)
+    const headingMatch = line.match(/^(#{1,6})\s+(.*)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const headingContent = headingMatch[2];
+      const parsedHeading = parseInlineMarkdownToElements(headingContent);
+
+      if (level === 1) {
+        elements.push(<h1 key={keySeq++}>{parsedHeading}</h1>);
+      } else if (level === 2) {
+        elements.push(<h2 key={keySeq++}>{parsedHeading}</h2>);
+      } else if (level === 3) {
+        elements.push(<h3 key={keySeq++}>{parsedHeading}</h3>);
+      } else if (level === 4) {
+        elements.push(<h4 key={keySeq++}>{parsedHeading}</h4>);
+      } else if (level === 5) {
+        elements.push(<h5 key={keySeq++}>{parsedHeading}</h5>);
+      } else {
+        elements.push(<h6 key={keySeq++}>{parsedHeading}</h6>);
+      }
+      i++;
+      continue;
+    }
+
+    // 5. チェックボックスリスト (- [ ] / - [x])
+    const taskMatch = line.match(/^(\s*)-\s+\[([ xX])\]\s+(.*)$/);
+    if (taskMatch) {
+      const indentSpaces = taskMatch[1].length;
+      const isDone = taskMatch[2].toLowerCase() === "x";
+      const taskText = taskMatch[3];
       elements.push(
-        <div key={keySeq++} className="check-row">
-          <span className="check-icon done">✓</span>
-          <span className="done-text">{parseInlineMarkdownToElements(line.slice(6))}</span>
+        <div
+          key={keySeq++}
+          className="check-row"
+          style={{ paddingLeft: `${indentSpaces * 8}px` }}
+        >
+          <span className={`check-icon ${isDone ? "done" : "todo"}`}>
+            {isDone ? "✓" : "○"}
+          </span>
+          <span className={isDone ? "done-text" : ""}>
+            {parseInlineMarkdownToElements(taskText)}
+          </span>
         </div>
       );
-    } else if (line.startsWith("- [ ] ")) {
+      i++;
+      continue;
+    }
+
+    // 6. 番号付きリスト (1. 2. 3. ...)
+    const orderedMatch = line.match(/^(\s*)(\d+)\.\s+(.*)$/);
+    if (orderedMatch) {
+      const indentSpaces = orderedMatch[1].length;
+      const num = orderedMatch[2];
+      const itemText = orderedMatch[3];
       elements.push(
-        <div key={keySeq++} className="check-row">
-          <span className="check-icon todo">○</span>
-          <span>{parseInlineMarkdownToElements(line.slice(6))}</span>
+        <div
+          key={keySeq++}
+          className="list-item"
+          style={{ paddingLeft: `${indentSpaces * 8}px` }}
+        >
+          <span className="list-num">{num}.</span>
+          <div className="flex-1">{parseInlineMarkdownToElements(itemText)}</div>
         </div>
       );
-    } else if (line.startsWith("- ")) {
+      i++;
+      continue;
+    }
+
+    // 7. 箇条書きリスト (- または * または +)
+    const bulletMatch = line.match(/^(\s*)(?:[-*+])\s+(.*)$/);
+    if (bulletMatch) {
+      const indentSpaces = bulletMatch[1].length;
+      const bulletText = bulletMatch[2];
       elements.push(
-        <div key={keySeq++} className="list-item">
+        <div
+          key={keySeq++}
+          className="list-item"
+          style={{ paddingLeft: `${indentSpaces * 8}px` }}
+        >
           <span className="bullet">▸</span>
-          <span>{parseInlineMarkdownToElements(line.slice(2))}</span>
+          <div className="flex-1">{parseInlineMarkdownToElements(bulletText)}</div>
         </div>
       );
-    } else if (line === "---" || line === "***") {
+      i++;
+      continue;
+    }
+
+    // 8. 水平線 (---, ***, ___)
+    if (/^(?:-{3,}|\*{3,}|_{3,})$/.test(line.trim())) {
       elements.push(
         <hr
           key={keySeq++}
-          style={{ border: "none", borderTop: "1px solid var(--border)", margin: "14px 0" }}
+          style={{ border: "none", borderTop: "1px solid var(--border)", margin: "18px 0" }}
         />
       );
-    } else if (line === "") {
+      i++;
+      continue;
+    }
+
+    // 9. 空行 (スペーサー)
+    if (line.trim() === "") {
       elements.push(
         <div key={keySeq++} className="spacer" />
       );
-    } else {
-      elements.push(
-        <p key={keySeq++}>
-          {parseInlineMarkdownToElements(line)}
-        </p>
-      );
+      i++;
+      continue;
     }
 
+    // 10. 通常のパラグラフ
+    elements.push(
+      <p key={keySeq++}>
+        {parseInlineMarkdownToElements(line)}
+      </p>
+    );
     i++;
   }
 
@@ -5240,8 +5302,8 @@ const renderMarkdownToElements = (contentStr: string) => {
                     {aiResults.summary && (
                       <div>
                         <div className="text-[10px] font-bold text-[var(--purple)] tracking-wider uppercase mb-2">✦ AI要約</div>
-                        <div className="p-3 bg-[var(--surface)] border border-[var(--border)] rounded-md text-[var(--subtle)] italic leading-relaxed whitespace-pre-wrap">
-                          {aiResults.summary}
+                        <div className="p-3 bg-[var(--surface)] border border-[var(--border)] rounded-md text-[var(--subtle)] leading-relaxed md">
+                          {renderMarkdownToElements(aiResults.summary)}
                         </div>
                         <button
                           className="mt-2 text-[11px] text-[var(--blue)] border border-[#58a6ff33] rounded p-1.5 px-3 hover:bg-[#58a6ff1a] cursor-pointer font-semibold transition-all flex items-center gap-1"
