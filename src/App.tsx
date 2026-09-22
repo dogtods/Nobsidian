@@ -34,6 +34,8 @@ import {
   Clipboard,
   Volume2,
   Square,
+  Play,
+  MapPin,
   Save,
   Check,
   Calendar,
@@ -308,6 +310,10 @@ export default function App() {
     return isNaN(v) ? 1.2 : v;
   });
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const isDeviceSpeakingRef = useRef(false);
+  const keepAliveTimerRef = useRef<any>(null);
+  const [ttsSelectionPopup, setTtsSelectionPopup] = useState<{ top: number; left: number; text: string } | null>(null);
+  const [isTtsMenuOpen, setIsTtsMenuOpen] = useState(false);
 
   // Auto-complete Wiki suggestions state
   const [suggest, setSuggest] = useState<{
@@ -3455,14 +3461,106 @@ const renderMarkdownToElements = (contentStr: string) => {
 
   useEffect(() => {
     if (isTtsPlaying && !isTtsLoading && ttsQueue.length > 0) {
-      if (!audioRef.current || audioRef.current.paused) {
-        playNextTts();
+      const isDevice = localStorage.getItem("cn_use_device_speech") === "true";
+      if (isDevice) {
+        if (!isDeviceSpeakingRef.current) {
+          playNextTts();
+        }
+      } else {
+        if (!audioRef.current || audioRef.current.paused) {
+          playNextTts();
+        }
       }
     } else if (ttsQueue.length === 0 && isTtsPlaying) {
       setIsTtsPlaying(false);
-      toast("フォルダ内のすべてのノートの読み上げが完了しました ✦");
+      isDeviceSpeakingRef.current = false;
+      toast("すべての記事の読み上げが完了しました ✦");
     }
   }, [isTtsPlaying, ttsQueue, isTtsLoading]);
+
+  // 端末内蔵音声エンジン（Web Speech API）での発話処理
+  const playDeviceSpeech = (
+    text: string,
+    currentNote: Note,
+    onEnd: () => void,
+    onError: (e: any) => void
+  ) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      toast("お使いのブラウザは端末音声合成に対応していません");
+      onError(new Error("Web Speech API not supported"));
+      return;
+    }
+
+    try {
+      window.speechSynthesis.cancel();
+      isDeviceSpeakingRef.current = true;
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = "ja-JP";
+      utterance.rate = ttsSpeed;
+
+      const savedVoiceUri = localStorage.getItem("cn_selected_voice_uri");
+      const voices = window.speechSynthesis.getVoices();
+      if (savedVoiceUri) {
+        const matched = voices.find(v => v.voiceURI === savedVoiceUri);
+        if (matched) utterance.voice = matched;
+      } else {
+        const jaVoice = voices.find(v => v.lang.startsWith("ja") || v.lang.includes("JP"));
+        if (jaVoice) utterance.voice = jaVoice;
+      }
+
+      utterance.onend = () => {
+        isDeviceSpeakingRef.current = false;
+        if (keepAliveTimerRef.current) {
+          clearInterval(keepAliveTimerRef.current);
+          keepAliveTimerRef.current = null;
+        }
+        onEnd();
+      };
+
+      utterance.onerror = (e) => {
+        isDeviceSpeakingRef.current = false;
+        if (keepAliveTimerRef.current) {
+          clearInterval(keepAliveTimerRef.current);
+          keepAliveTimerRef.current = null;
+        }
+        if (e.error !== "canceled" && e.error !== "interrupted") {
+          console.warn("Device Speech error:", e);
+          onError(e);
+        }
+      };
+
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: currentNote.title || 'Connected Notes',
+          artist: getFolder(currentNote) || '端末内蔵音声',
+          album: 'Connected Notes'
+        });
+        navigator.mediaSession.setActionHandler('nexttrack', () => {
+          stopTts();
+          setTtsQueue(prev => prev.slice(1));
+        });
+        navigator.mediaSession.setActionHandler('stop', () => stopTts());
+      }
+
+      // Chrome等で長時間発話が約15秒で停止する既知バグの対策タイマー
+      if (keepAliveTimerRef.current) clearInterval(keepAliveTimerRef.current);
+      keepAliveTimerRef.current = setInterval(() => {
+        if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
+          window.speechSynthesis.pause();
+          window.speechSynthesis.resume();
+        } else {
+          clearInterval(keepAliveTimerRef.current);
+          keepAliveTimerRef.current = null;
+        }
+      }, 10000);
+
+      window.speechSynthesis.speak(utterance);
+    } catch (err) {
+      isDeviceSpeakingRef.current = false;
+      onError(err);
+    }
+  };
 
   const playNextTts = async () => {
     if (ttsQueue.length === 0) return;
@@ -3480,9 +3578,11 @@ const renderMarkdownToElements = (contentStr: string) => {
       rawText = rawText.split(/保存日時|保存:|保存：/)[0];
       
       // Remove the title from the start of the note if it exists
-      const escapedTitle = currentNote.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const titleRegex = new RegExp(`^\\s*#*\\s*${escapedTitle}\\s*`, 'i');
-      rawText = rawText.replace(titleRegex, '');
+      const escapedTitle = (currentNote.title || "").replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (escapedTitle) {
+        const titleRegex = new RegExp(`^\\s*#*\\s*${escapedTitle}\\s*`, 'i');
+        rawText = rawText.replace(titleRegex, '');
+      }
 
       const cleanText = rawText.replace(/#+\s/g, '').replace(/\[\[(.*?)\]\]/g, '$1').replace(/\*/g, '').trim();
       
@@ -3491,12 +3591,8 @@ const renderMarkdownToElements = (contentStr: string) => {
         setIsTtsLoading(false);
         return;
       }
-      
-      const apiKey = localStorage.getItem("cn_gcp_tts_key");
 
-      if (!apiKey) {
-        throw new Error("APIキーが設定されていません。設定画面からGoogle Cloud TTS APIキーを入力してください。");
-      }
+      const isDeviceSpeech = localStorage.getItem("cn_use_device_speech") === "true";
 
       let textToRead = cleanText;
       if (cleanText.length > 1500) {
@@ -3509,6 +3605,30 @@ const renderMarkdownToElements = (contentStr: string) => {
           newQueue.splice(1, 0, { ...currentNote, content: remainingText, title: "" });
           return newQueue;
         });
+      }
+
+      // 端末標準音声が有効な場合
+      if (isDeviceSpeech) {
+        playDeviceSpeech(
+          textToRead,
+          currentNote,
+          () => {
+            setTtsQueue(prev => prev.slice(1));
+          },
+          (err) => {
+            console.error("Device speech error", err);
+            toast("端末音声の再生でエラーが発生しました");
+            setIsTtsPlaying(false);
+          }
+        );
+        return;
+      }
+      
+      // Google Cloud TTS API を使用する場合
+      const apiKey = localStorage.getItem("cn_gcp_tts_key");
+
+      if (!apiKey) {
+        throw new Error("Google Cloud APIキーが設定されていません。設定画面でキーを入力するか、『端末内蔵の音声を使用する』にチェックを入れてください。");
       }
 
       const res = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`, {
@@ -3562,9 +3682,9 @@ const renderMarkdownToElements = (contentStr: string) => {
           await audioRef.current.play();
         }
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      toast("音声の取得に失敗しました");
+      toast(e?.message || "音声の取得に失敗しました");
       setIsTtsPlaying(false);
     } finally {
       setIsTtsLoading(false);
@@ -3602,15 +3722,157 @@ const renderMarkdownToElements = (contentStr: string) => {
     toast(`${queue.length}件の記事の連続読み上げを開始します ✦`);
   };
 
+  // 指定した場所（選択テキストまたはカーソル位置）から音声を流す
+  const startTtsFromSpecified = (option: 'from_selection' | 'selection_only' = 'from_selection') => {
+    const active = getActiveNote();
+    if (!active) return;
+
+    let contentToRead = "";
+    let displayMsg = "";
+
+    // 1. エディタモードの場合
+    if (mode === "edit" && editorRef.current) {
+      const start = editorRef.current.selectionStart || 0;
+      const end = editorRef.current.selectionEnd || 0;
+      if (start !== end && option === 'selection_only') {
+        contentToRead = active.content.substring(start, end);
+        displayMsg = "選択範囲の読み上げを開始します ✦";
+      } else {
+        contentToRead = active.content.substring(start);
+        displayMsg = `指定位置（カーソル以降）から読み上げを開始します ✦`;
+      }
+    } else {
+      // 2. プレビューモード等の場合
+      const sel = window.getSelection();
+      const selectedText = sel ? sel.toString().trim() : "";
+
+      if (selectedText) {
+        if (option === 'selection_only') {
+          contentToRead = selectedText;
+          displayMsg = "選択箇所の読み上げを開始します ✦";
+        } else {
+          // 選択テキストの位置を本文から検索
+          const foundIdx = active.content.indexOf(selectedText);
+          if (foundIdx !== -1) {
+            contentToRead = active.content.substring(foundIdx);
+            displayMsg = "指定した場所から末尾まで読み上げを開始します ✦";
+          } else {
+            contentToRead = selectedText;
+            displayMsg = "指定箇所の読み上げを開始します ✦";
+          }
+        }
+      } else {
+        // 選択がない場合は通常通り最初から
+        startTtsFromCurrent();
+        return;
+      }
+    }
+
+    if (!contentToRead.trim()) {
+      toast("指定位置以降に読み上げるテキストがありません");
+      return;
+    }
+
+    // 既存再生を停止
+    stopTts();
+
+    const { groups } = getCategorizedNotes();
+    const folder = getFolder(active);
+    const groupList = groups[folder] || [];
+    const startIndex = groupList.findIndex(n => n.id === active.id);
+    const subsequent = startIndex !== -1 ? groupList.slice(startIndex + 1) : [];
+
+    const customFirstNote: Note = {
+      ...active,
+      content: contentToRead
+    };
+
+    setTtsQueue([customFirstNote, ...subsequent]);
+    setIsTtsPlaying(true);
+    toast(displayMsg);
+  };
+
   const stopTts = () => {
     setIsTtsPlaying(false);
+    setIsTtsLoading(false);
+    isDeviceSpeakingRef.current = false;
     setTtsQueue([]);
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    if (keepAliveTimerRef.current) {
+      clearInterval(keepAliveTimerRef.current);
+      keepAliveTimerRef.current = null;
+    }
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.removeAttribute("src");
       audioRef.current.load();
     }
   };
+
+  // 画面上でテキストを選択した際に「ここから流す」フローティングバーを表示
+  useEffect(() => {
+    const handleSelectionCheck = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed) {
+        return;
+      }
+      const text = sel.toString().trim();
+      if (text.length < 2) return;
+
+      try {
+        if (sel.rangeCount > 0) {
+          const range = sel.getRangeAt(0);
+          const rect = range.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) {
+            const inPreview = previewRef.current?.contains(range.commonAncestorContainer);
+            const inEditor = editorRef.current?.contains(range.commonAncestorContainer) || document.activeElement === editorRef.current;
+            if (inPreview || inEditor) {
+              setTtsSelectionPopup({
+                top: Math.max(20, rect.top - 12),
+                left: Math.max(120, Math.min(window.innerWidth - 120, rect.left + rect.width / 2)),
+                text
+              });
+            }
+          }
+        }
+      } catch (_) {}
+    };
+
+    const handleMouseUp = () => {
+      setTimeout(handleSelectionCheck, 60);
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setTtsSelectionPopup(null);
+      } else if (e.key === "Shift" || e.key.startsWith("Arrow")) {
+        setTimeout(handleSelectionCheck, 60);
+      }
+    };
+
+    const handleMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest("#tts-selection-floating-bar")) {
+        setTimeout(() => {
+          const sel = window.getSelection();
+          if (!sel || sel.isCollapsed) {
+            setTtsSelectionPopup(null);
+          }
+        }, 120);
+      }
+    };
+
+    document.addEventListener("mouseup", handleMouseUp);
+    document.addEventListener("keyup", handleKeyUp);
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => {
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.removeEventListener("keyup", handleKeyUp);
+      document.removeEventListener("mousedown", handleMouseDown);
+    };
+  }, []);
 
   const copyNoteToClipboard = async () => {
     const activeNote = getActiveNote();
@@ -4757,13 +5019,13 @@ const renderMarkdownToElements = (contentStr: string) => {
                   </div>
 
                   {/* 2. 閲覧支援グループ */}
-                  <div className="flex items-center bg-[#1c2128] border border-[var(--border2)] rounded-md p-0.5 gap-0.5 shrink-0">
+                  <div className="relative flex items-center bg-[#1c2128] border border-[var(--border2)] rounded-md p-0.5 gap-0.5 shrink-0">
                     <button
                       onClick={isTtsPlaying ? stopTts : startTtsFromCurrent}
-                      className={`p-1 px-2 portrait:px-1.5 text-xs font-medium rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all ${
+                      className={`p-1 px-2 portrait:px-1.5 text-xs font-medium rounded-l cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all ${
                         isTtsPlaying ? "text-red-400 bg-red-900/30" : "text-[var(--subtle)] hover:text-white hover:bg-[var(--border)]"
                       }`}
-                      title="このフォルダの末尾まで記事を連続で読み上げます"
+                      title={isTtsPlaying ? "読み上げを停止" : "このフォルダの末尾まで記事を連続で読み上げます"}
                     >
                       {isTtsLoading ? (
                         <RefreshCw className="w-3.5 h-3.5 animate-spin text-[var(--blue)] shrink-0" />
@@ -4774,6 +5036,67 @@ const renderMarkdownToElements = (contentStr: string) => {
                       )}
                       <span className="portrait:hidden">{isTtsPlaying ? "停止" : "読み上げ"}</span>
                     </button>
+
+                    {/* 読み上げメニュー（指定した場所から流す機能） */}
+                    <button
+                      type="button"
+                      onClick={() => setIsTtsMenuOpen(prev => !prev)}
+                      className="px-1 py-1 text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] rounded cursor-pointer transition-all"
+                      title="読み上げメニュー（指定した場所から流す）"
+                    >
+                      <ChevronDown className="w-3 h-3" />
+                    </button>
+
+                    {isTtsMenuOpen && (
+                      <>
+                        <div className="fixed inset-0 z-[120]" onClick={() => setIsTtsMenuOpen(false)} />
+                        <div
+                          className="absolute top-full left-0 mt-1 bg-[#161b22] border border-[var(--border2)] shadow-2xl rounded-md py-1 z-[130] min-w-[210px] text-xs animate-[fadeIn_0.1s_ease-out]"
+                          onClick={() => setIsTtsMenuOpen(false)}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isTtsPlaying) stopTts();
+                              startTtsFromCurrent();
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-[#1f2d3d] text-[var(--text)] flex items-center gap-2 cursor-pointer transition-colors"
+                          >
+                            <Play className="w-3.5 h-3.5 text-green-400 shrink-0" />
+                            <div>
+                              <div className="font-semibold">最初から読み上げ</div>
+                              <div className="text-[10px] text-[var(--subtle)]">記事先頭からフォルダ末尾まで</div>
+                            </div>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              startTtsFromSpecified('from_selection');
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-[#1f2d3d] text-[var(--text)] flex items-center gap-2 cursor-pointer transition-colors border-t border-[#30363d]"
+                          >
+                            <MapPin className="w-3.5 h-3.5 text-[var(--purple)] shrink-0" />
+                            <div>
+                              <div className="font-semibold text-white">指定した場所から流す</div>
+                              <div className="text-[10px] text-[var(--subtle)]">選択テキストまたはカーソル位置以降</div>
+                            </div>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              startTtsFromSpecified('selection_only');
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-[#1f2d3d] text-[var(--text)] flex items-center gap-2 cursor-pointer transition-colors"
+                          >
+                            <Volume2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                            <div>
+                              <div className="font-semibold text-white">選択箇所のみ流す</div>
+                              <div className="text-[10px] text-[var(--subtle)]">選択中のテキストだけを再生</div>
+                            </div>
+                          </button>
+                        </div>
+                      </>
+                    )}
 
                     {/* 音声読み上げスピード切り替えボタン */}
                     <button
@@ -6500,6 +6823,51 @@ const renderMarkdownToElements = (contentStr: string) => {
           isDimmed={isGuideLineDimmed}
           onToggleDimmed={toggleGuideLineDimmed}
         />
+      )}
+
+      {/* 選択テキストからの読み上げフローティングバー */}
+      {ttsSelectionPopup && (
+        <div
+          id="tts-selection-floating-bar"
+          className="fixed z-[9990] bg-[#161b22] border border-[var(--purple)] shadow-2xl rounded-lg p-1 px-1.5 flex items-center gap-1.5 animate-[fadeIn_0.15s_ease-out] backdrop-blur-md select-none"
+          style={{
+            top: `${ttsSelectionPopup.top}px`,
+            left: `${ttsSelectionPopup.left}px`,
+            transform: "translate(-50%, -100%)",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              startTtsFromSpecified('from_selection');
+              setTtsSelectionPopup(null);
+            }}
+            className="px-2.5 py-1 text-xs font-bold text-white bg-[var(--purple)] hover:brightness-110 rounded flex items-center gap-1 cursor-pointer transition-all shadow-sm active:scale-95"
+            title="選択した位置からノートの末尾まで連続で読み上げます"
+          >
+            <Volume2 className="w-3.5 h-3.5 shrink-0 text-white" />
+            <span>ここから流す</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              startTtsFromSpecified('selection_only');
+              setTtsSelectionPopup(null);
+            }}
+            className="px-2 py-1 text-xs font-medium text-gray-300 hover:text-white hover:bg-[#30363d] rounded flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+            title="選択したテキストのみを読み上げます"
+          >
+            <span>選択箇所のみ</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setTtsSelectionPopup(null)}
+            className="p-1 text-gray-400 hover:text-white rounded hover:bg-[#30363d] cursor-pointer text-xs"
+            title="閉じる"
+          >
+            ✕
+          </button>
+        </div>
       )}
 
       {/* Central Notification Toast element */}

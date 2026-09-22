@@ -18,6 +18,9 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
   const [apiKey, setApiKey] = useState("");
   const [ttsApiKey, setTtsApiKey] = useState("");
   const [ttsSpeed, setTtsSpeed] = useState("1.2");
+  const [useDeviceSpeech, setUseDeviceSpeech] = useState(false);
+  const [deviceVoices, setDeviceVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [selectedVoiceURI, setSelectedVoiceURI] = useState("");
   const [model, setModel] = useState("gemini-2.5-flash");
   const [temp, setTemp] = useState("0.1");
   const [tokens, setTokens] = useState("1024");
@@ -28,10 +31,24 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
   const [maxContentLength, setMaxContentLength] = useState("2500");
 
   useEffect(() => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      const loadVoices = () => {
+        const voices = window.speechSynthesis.getVoices();
+        const jaVoices = voices.filter(v => v.lang.startsWith("ja") || v.lang.includes("JP"));
+        setDeviceVoices(jaVoices.length > 0 ? jaVoices : voices);
+      };
+      loadVoices();
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+  }, []);
+
+  useEffect(() => {
     if (isOpen) {
       setApiKey(localStorage.getItem("cn_gemini_key") || "");
       setTtsApiKey(localStorage.getItem("cn_gcp_tts_key") || "");
       setTtsSpeed(localStorage.getItem("cn_tts_speed") || "1.2");
+      setUseDeviceSpeech(localStorage.getItem("cn_use_device_speech") === "true");
+      setSelectedVoiceURI(localStorage.getItem("cn_selected_voice_uri") || "");
       let m = localStorage.getItem("cn_gemini_model") || "gemini-2.5-flash"; setModel(m);
       setTemp(localStorage.getItem("cn_gemini_temp") || "0.1");
       setTokens(localStorage.getItem("cn_gemini_tokens") || "1024");
@@ -58,6 +75,8 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
     }
 
     localStorage.setItem("cn_tts_speed", ttsSpeed);
+    localStorage.setItem("cn_use_device_speech", useDeviceSpeech ? "true" : "false");
+    localStorage.setItem("cn_selected_voice_uri", selectedVoiceURI);
     localStorage.setItem("cn_gemini_model", model);
     localStorage.setItem("cn_gemini_temp", temp);
     localStorage.setItem("cn_gemini_tokens", tokens);
@@ -113,12 +132,66 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
         <div>
           <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1">Google Cloud API キー (音声TTS用)</label>
           <input
-            className="w-full font-mono text-xs p-2.5 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all mb-3"
+            className={`w-full font-mono text-xs p-2.5 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all mb-2 ${
+              useDeviceSpeech ? "opacity-60" : ""
+            }`}
             type="password"
-            placeholder="AIzaSy..."
+            placeholder={useDeviceSpeech ? "端末標準音声が有効なため入力不要です" : "AIzaSy..."}
             value={ttsApiKey}
             onChange={(e) => setTtsApiKey(e.target.value)}
           />
+
+          {/* 端末（スマホやWindows）の標準音声機能を使用するチェックボックス */}
+          <div className="bg-[var(--bg)] border border-[var(--border2)] rounded-lg p-2.5 mb-3 flex flex-col gap-2">
+            <label className="flex items-start gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="mt-0.5 accent-[var(--purple)] cursor-pointer"
+                checked={useDeviceSpeech}
+                onChange={(e) => setUseDeviceSpeech(e.target.checked)}
+              />
+              <div className="flex-1">
+                <span className="text-[11px] font-bold text-white flex items-center gap-1.5 flex-wrap">
+                  スマホやWindowsの標準音声を使用する
+                  <span className="text-[9px] bg-green-500/20 text-green-300 border border-green-500/30 px-1.5 py-0.2 rounded font-normal">
+                    完全無料・APIキー不要
+                  </span>
+                </span>
+                <p className="text-[10px] text-[var(--subtle)] mt-0.5 leading-relaxed">
+                  チェックを入れるとGoogle Cloud TTSを使用せず、お使いの端末（Windows、スマホ、Mac等）に内蔵された標準音声で読み上げます。
+                </p>
+              </div>
+            </label>
+
+            {useDeviceSpeech && (
+              <div className="mt-1 pt-2 border-t border-[var(--border2)] flex flex-col gap-1.5 animate-[fadeIn_0.15s_ease-out]">
+                <div className="flex justify-between items-center text-[10px] text-[var(--subtle)] font-bold">
+                  <span>端末の音声（ボイス）</span>
+                  <span className="text-[9px] text-[var(--purple)] font-normal">
+                    {deviceVoices.length > 0 ? `${deviceVoices.length}個の音声を検出` : "標準音声"}
+                  </span>
+                </div>
+                {deviceVoices.length > 0 ? (
+                  <select
+                    value={selectedVoiceURI}
+                    onChange={(e) => setSelectedVoiceURI(e.target.value)}
+                    className="w-full text-xs p-1.5 bg-[var(--surface)] border border-[var(--border2)] rounded text-[var(--text)] outline-none focus:border-[var(--purple)] cursor-pointer"
+                  >
+                    <option value="">自動選択（システムの標準日本語音声）</option>
+                    {deviceVoices.map((v) => (
+                      <option key={v.voiceURI} value={v.voiceURI}>
+                        {v.name} {v.lang ? `(${v.lang})` : ""} {v.default ? "★標準" : ""}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="text-[10px] text-gray-400 italic">
+                    端末内蔵の標準音声エンジンを使用します。
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
           <label className="text-[11px] text-[var(--subtle)] font-bold flex justify-between mb-1">
             <span>読み上げ速度</span>
             <span className="font-mono text-[var(--purple)]">{ttsSpeed}x</span>

@@ -19,6 +19,13 @@
       window.pdfjsLib = window['pdfjs-dist/build/pdf'];
       pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     </script>
+      <script>
+      // Automatically handle Vite dynamic import / chunk load errors caused by app redeployments
+      window.addEventListener("vite:preloadError", (event) => {
+        console.warn("Vite dynamic chunk load failed. Reloading window to fetch latest assets...", event);
+        window.location.reload();
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>
