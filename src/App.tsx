@@ -44,7 +44,8 @@ import {
   FoldHorizontal,
   Type,
   Pin,
-  Moon
+  Moon,
+  Bookmark
 } from "lucide-react";
 
 import { Note, FolderRelation } from "./types";
@@ -314,6 +315,33 @@ export default function App() {
   const keepAliveTimerRef = useRef<any>(null);
   const [ttsSelectionPopup, setTtsSelectionPopup] = useState<{ top: number; left: number; text: string } | null>(null);
   const [isTtsMenuOpen, setIsTtsMenuOpen] = useState(false);
+
+  // Bookmarks State
+  const [bookmarkedIds, setBookmarkedIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("cn_bookmarks");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [isBookmarksModalOpen, setIsBookmarksModalOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("cn_bookmarks", JSON.stringify(bookmarkedIds));
+    } catch (_) {}
+  }, [bookmarkedIds]);
+
+  const toggleBookmark = (noteId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setBookmarkedIds(prev => {
+      const exists = prev.includes(noteId);
+      const next = exists ? prev.filter(id => id !== noteId) : [...prev, noteId];
+      toast(exists ? "しおりを外しました 🔖" : "しおりを挟みました 🔖");
+      return next;
+    });
+  };
 
   // Auto-complete Wiki suggestions state
   const [suggest, setSuggest] = useState<{
@@ -3478,7 +3506,7 @@ const renderMarkdownToElements = (contentStr: string) => {
     }
   }, [isTtsPlaying, ttsQueue, isTtsLoading]);
 
-  // 端末内蔵音声エンジン（Web Speech API）での発話処理
+  // 端末内蔵音声エンジン（Web Speech API）での発話処理（長文対応・連続自動つなぎ方式）
   const playDeviceSpeech = (
     text: string,
     currentNote: Note,
@@ -3495,39 +3523,67 @@ const renderMarkdownToElements = (contentStr: string) => {
       window.speechSynthesis.cancel();
       isDeviceSpeakingRef.current = true;
 
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = "ja-JP";
-      utterance.rate = ttsSpeed;
+      // 1. 長いテキストを句点や改行（。！？\n）などで安全なチャンク（文ごと）に分割する
+      // これによりブラウザの自動停止バグや文字数制限を完全に回避し、最後までスムーズに発話させます
+      const rawChunks = text.split(/(?<=[。！？\n])/g).map(s => s.trim()).filter(Boolean);
+      const chunks = rawChunks.length > 0 ? rawChunks : [text];
 
-      const savedVoiceUri = localStorage.getItem("cn_selected_voice_uri");
-      const voices = window.speechSynthesis.getVoices();
-      if (savedVoiceUri) {
-        const matched = voices.find(v => v.voiceURI === savedVoiceUri);
-        if (matched) utterance.voice = matched;
-      } else {
-        const jaVoice = voices.find(v => v.lang.startsWith("ja") || v.lang.includes("JP"));
-        if (jaVoice) utterance.voice = jaVoice;
-      }
+      let currentIndex = 0;
 
-      utterance.onend = () => {
-        isDeviceSpeakingRef.current = false;
-        if (keepAliveTimerRef.current) {
-          clearInterval(keepAliveTimerRef.current);
-          keepAliveTimerRef.current = null;
+      const speakNextChunk = () => {
+        if (!isTtsPlaying || !isDeviceSpeakingRef.current) {
+          return;
         }
-        onEnd();
-      };
 
-      utterance.onerror = (e) => {
-        isDeviceSpeakingRef.current = false;
-        if (keepAliveTimerRef.current) {
-          clearInterval(keepAliveTimerRef.current);
-          keepAliveTimerRef.current = null;
+        if (currentIndex >= chunks.length) {
+          isDeviceSpeakingRef.current = false;
+          if (keepAliveTimerRef.current) {
+            clearInterval(keepAliveTimerRef.current);
+            keepAliveTimerRef.current = null;
+          }
+          onEnd();
+          return;
         }
-        if (e.error !== "canceled" && e.error !== "interrupted") {
-          console.warn("Device Speech error:", e);
-          onError(e);
+
+        const chunkText = chunks[currentIndex++];
+        const utterance = new SpeechSynthesisUtterance(chunkText);
+        utterance.lang = "ja-JP";
+        utterance.rate = ttsSpeed;
+
+        const savedVoiceUri = localStorage.getItem("cn_selected_voice_uri");
+        const voices = window.speechSynthesis.getVoices();
+        if (savedVoiceUri) {
+          const matched = voices.find(v => v.voiceURI === savedVoiceUri);
+          if (matched) utterance.voice = matched;
+        } else {
+          const jaVoice = voices.find(v => v.lang.startsWith("ja") || v.lang.includes("JP"));
+          if (jaVoice) utterance.voice = jaVoice;
         }
+
+        utterance.onend = () => {
+          // 次のチャンクへ
+          if (isTtsPlaying && isDeviceSpeakingRef.current) {
+            speakNextChunk();
+          }
+        };
+
+        utterance.onerror = (e) => {
+          if (e.error !== "canceled" && e.error !== "interrupted") {
+            console.warn("Device Speech chunk error:", e);
+          }
+          if (currentIndex < chunks.length && isTtsPlaying) {
+            speakNextChunk();
+          } else {
+            isDeviceSpeakingRef.current = false;
+            if (keepAliveTimerRef.current) {
+              clearInterval(keepAliveTimerRef.current);
+              keepAliveTimerRef.current = null;
+            }
+            onEnd();
+          }
+        };
+
+        window.speechSynthesis.speak(utterance);
       };
 
       if ('mediaSession' in navigator) {
@@ -3543,19 +3599,22 @@ const renderMarkdownToElements = (contentStr: string) => {
         navigator.mediaSession.setActionHandler('stop', () => stopTts());
       }
 
-      // Chrome等で長時間発話が約15秒で停止する既知バグの対策タイマー
+      // Chrome等で発話が約15秒で止まる既知バグの対策タイマー（5秒ごとにpaused状態をチェックして再開）
       if (keepAliveTimerRef.current) clearInterval(keepAliveTimerRef.current);
       keepAliveTimerRef.current = setInterval(() => {
-        if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
-          window.speechSynthesis.pause();
-          window.speechSynthesis.resume();
+        if (window.speechSynthesis.speaking) {
+          if (window.speechSynthesis.paused) {
+            window.speechSynthesis.resume();
+          }
         } else {
           clearInterval(keepAliveTimerRef.current);
           keepAliveTimerRef.current = null;
         }
-      }, 10000);
+      }, 5000);
 
-      window.speechSynthesis.speak(utterance);
+      // 初回チャンク発話スタート
+      speakNextChunk();
+
     } catch (err) {
       isDeviceSpeakingRef.current = false;
       onError(err);
@@ -4791,18 +4850,30 @@ const renderMarkdownToElements = (contentStr: string) => {
                             <FileText className={`w-3.5 h-3.5 flex-shrink-0 ${activeId === n.id ? "text-[var(--blue)]" : "text-[var(--muted)]"}`} />
                           )}
                           <span className={`${isEmpty ? "text-[var(--muted)] italic" : ""} flex-1 min-w-0 truncate`}>{n.title}</span>
+                          {bookmarkedIds.includes(n.id) && (
+                            <Bookmark className="w-3 h-3 text-amber-400 fill-amber-400 shrink-0" />
+                          )}
                           {displayDate && (
                             <span className="text-[10px] text-[var(--muted)] font-mono shrink-0 group-hover:opacity-0 transition-opacity">
                               {displayDate.split(" ")[0]}
                             </span>
                           )}
-                          <button
-                            onClick={(e) => handleDeleteNote(n.id, e)}
-                            className="absolute right-2 opacity-0 group-hover:opacity-100 hover:opacity-100 border-0 bg-transparent text-[var(--muted)] hover:text-[var(--red)] p-0.5 cursor-pointer"
-                            title="ノートを削除"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="absolute right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={(e) => toggleBookmark(n.id, e)}
+                              className="border-0 bg-transparent text-[var(--muted)] hover:text-amber-400 p-0.5 cursor-pointer"
+                              title={bookmarkedIds.includes(n.id) ? "しおりを外す" : "しおりを挟む"}
+                            >
+                              <Bookmark className={`w-3.5 h-3.5 ${bookmarkedIds.includes(n.id) ? "fill-amber-400 text-amber-400" : ""}`} />
+                            </button>
+                            <button
+                              onClick={(e) => handleDeleteNote(n.id, e)}
+                              className="border-0 bg-transparent text-[var(--muted)] hover:text-[var(--red)] p-0.5 cursor-pointer"
+                              title="ノートを削除"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
                       );
                     })}
@@ -5121,6 +5192,21 @@ const renderMarkdownToElements = (contentStr: string) => {
                       <span className="portrait:hidden">ガイドバー</span>
                     </button>
 
+                    {/* しおり一覧ボタン */}
+                    <button
+                      onClick={() => setIsBookmarksModalOpen(true)}
+                      className="p-1 px-2 portrait:px-1.5 text-xs font-medium text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] rounded cursor-pointer flex items-center gap-1 transition-all border-l border-[#30363d]"
+                      title="しおりを挟んだノートの一覧を開く"
+                    >
+                      <Bookmark className="w-3.5 h-3.5 text-amber-400 shrink-0 fill-amber-400" />
+                      <span className="portrait:hidden">しおり</span>
+                      {bookmarkedIds.length > 0 && (
+                        <span className="bg-amber-500 text-black text-[10px] font-bold px-1 py-0.2 rounded-full min-w-[16px] text-center">
+                          {bookmarkedIds.length}
+                        </span>
+                      )}
+                    </button>
+
                     {/* ガイドバー稼働時の暗転モードトグルボタン */}
                     {isGuideBarOpen && (
                       <button
@@ -5205,6 +5291,21 @@ const renderMarkdownToElements = (contentStr: string) => {
 
                   {/* 3. 編集・ツールグループ */}
                   <div className="flex items-center bg-[#1c2128] border border-[var(--border2)] rounded-md p-0.5 gap-0.5 shrink-0">
+                    {activeNote && (
+                      <button
+                        onClick={() => toggleBookmark(activeNote.id)}
+                        className={`p-1 px-2 portrait:px-1.5 text-xs font-medium rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all ${
+                          bookmarkedIds.includes(activeNote.id)
+                            ? "bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30"
+                            : "text-[var(--subtle)] hover:text-white hover:bg-[var(--border)]"
+                        }`}
+                        title={bookmarkedIds.includes(activeNote.id) ? "しおりを外す" : "この記事にしおりを挟む"}
+                      >
+                        <Bookmark className={`w-3.5 h-3.5 shrink-0 ${bookmarkedIds.includes(activeNote.id) ? "text-amber-400 fill-amber-400" : "text-[var(--subtle)]"}`} />
+                        <span className="portrait:hidden">{bookmarkedIds.includes(activeNote.id) ? "しおり中" : "しおり"}</span>
+                      </button>
+                    )}
+
                     <button
                       onClick={copyNoteToClipboard}
                       className="p-1 px-2 portrait:px-1.5 text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all"
@@ -6593,6 +6694,86 @@ const renderMarkdownToElements = (contentStr: string) => {
         onSaveToast={toast}
         onFilterChange={handleCommonDateFilterChange}
       />
+
+      {/* しおり一覧モーダル */}
+      {isBookmarksModalOpen && (
+        <div className="fixed inset-0 z-[150] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm animate-[fadeIn_0.15s_ease-out]">
+          <div className="bg-[#161b22] border border-[var(--border2)] rounded-xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="flex justify-between items-center p-4 border-b border-[var(--border2)] bg-[#1c2128]">
+              <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                <Bookmark className="w-4 h-4 text-amber-400 fill-amber-400" />
+                しおりを挟んだノート一覧 ({bookmarkedIds.length}件)
+              </h2>
+              <button
+                onClick={() => setIsBookmarksModalOpen(false)}
+                className="text-[var(--subtle)] hover:text-white cursor-pointer p-1 rounded hover:bg-[#30363d]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div className="p-4 overflow-y-auto flex-1 flex flex-col gap-2">
+              {bookmarkedIds.length === 0 ? (
+                <div className="text-center py-10 text-[var(--subtle)] text-xs flex flex-col items-center gap-2">
+                  <Bookmark className="w-8 h-8 text-gray-600 stroke-1" />
+                  <p>しおりが挟まれたノートはありません。<br />各ノートの「しおり」ボタンを押して登録できます。</p>
+                </div>
+              ) : (
+                notes
+                  .filter(n => bookmarkedIds.includes(n.id))
+                  .map(n => {
+                    const folderName = getFolder(n);
+                    const displayDate = getNoteDisplayDate(n);
+                    return (
+                      <div
+                        key={n.id}
+                        onClick={() => {
+                          selectNote(n.id);
+                          setIsBookmarksModalOpen(false);
+                        }}
+                        className="group flex items-center justify-between p-3 bg-[#1c2128] hover:bg-[#21262d] border border-[var(--border2)] hover:border-[var(--purple)] rounded-lg cursor-pointer transition-all"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <Bookmark className="w-4 h-4 text-amber-400 fill-amber-400 shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <div className="text-xs font-bold text-white truncate">{n.title}</div>
+                            <div className="text-[10px] text-[var(--subtle)] flex items-center gap-2 mt-0.5">
+                              <span className="bg-[#30363d] px-1.5 py-0.5 rounded text-gray-300">{folderName}</span>
+                              {displayDate && <span className="font-mono">{displayDate}</span>}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleBookmark(n.id);
+                            }}
+                            className="text-gray-400 hover:text-red-400 p-1.5 rounded hover:bg-[#30363d] cursor-pointer transition-colors"
+                            title="しおりを外す"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+
+            <div className="p-3 border-t border-[var(--border2)] bg-[#1c2128] flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsBookmarksModalOpen(false)}
+                className="px-4 py-1.5 text-xs bg-[var(--surface)] hover:bg-[var(--border)] text-white rounded font-medium cursor-pointer transition-colors"
+              >
+                閉じる
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <PromptSettingsModal
         isOpen={isPromptOpen}
