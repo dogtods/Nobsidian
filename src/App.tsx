@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   FileText,
   BookOpen,
@@ -316,30 +316,52 @@ export default function App() {
   const [ttsSelectionPopup, setTtsSelectionPopup] = useState<{ top: number; left: number; text: string } | null>(null);
   const [isTtsMenuOpen, setIsTtsMenuOpen] = useState(false);
 
-  // Bookmarks State
-  const [bookmarkedIds, setBookmarkedIds] = useState<string[]>(() => {
+  // Bookmarks State with scroll position & line focus
+  interface BookmarkItem {
+    noteId: string;
+    scrollRatio?: number;
+    timestamp: number;
+  }
+  const [bookmarks, setBookmarks] = useState<BookmarkItem[]>(() => {
     try {
       const saved = localStorage.getItem("cn_bookmarks");
-      return saved ? JSON.parse(saved) : [];
+      if (!saved) return [];
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        // Migration from string[] to BookmarkItem[]
+        return parsed.map((item: any) => typeof item === "string" ? { noteId: item, scrollRatio: 0, timestamp: Date.now() } : item);
+      }
+      return [];
     } catch {
       return [];
     }
   });
   const [isBookmarksModalOpen, setIsBookmarksModalOpen] = useState(false);
 
+  const bookmarkedIds = useMemo(() => bookmarks.map(b => b.noteId), [bookmarks]);
+
   useEffect(() => {
     try {
-      localStorage.setItem("cn_bookmarks", JSON.stringify(bookmarkedIds));
+      localStorage.setItem("cn_bookmarks", JSON.stringify(bookmarks));
     } catch (_) {}
-  }, [bookmarkedIds]);
+  }, [bookmarks]);
 
   const toggleBookmark = (noteId: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    setBookmarkedIds(prev => {
-      const exists = prev.includes(noteId);
-      const next = exists ? prev.filter(id => id !== noteId) : [...prev, noteId];
-      toast(exists ? "しおりを外しました 🔖" : "しおりを挟みました 🔖");
-      return next;
+    setBookmarks(prev => {
+      const exists = prev.some(b => b.noteId === noteId);
+      if (exists) {
+        toast("しおりを外しました 🔖");
+        return prev.filter(b => b.noteId !== noteId);
+      } else {
+        let scrollRatio = 0;
+        const container = previewRef.current || editorRef.current;
+        if (container && container.scrollHeight > 0) {
+          scrollRatio = container.scrollTop / container.scrollHeight;
+        }
+        toast("しおりを挟みました（現在の表示位置を記憶） 🔖");
+        return [...prev, { noteId, scrollRatio, timestamp: Date.now() }];
+      }
     });
   };
 
@@ -5198,7 +5220,7 @@ const renderMarkdownToElements = (contentStr: string) => {
                       className="p-1 px-2 portrait:px-1.5 text-xs font-medium text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] rounded cursor-pointer flex items-center gap-1 transition-all border-l border-[#30363d]"
                       title="しおりを挟んだノートの一覧を開く"
                     >
-                      <Bookmark className="w-3.5 h-3.5 text-amber-400 shrink-0 fill-amber-400" />
+                      <span className="text-amber-400 text-sm shrink-0 select-none">🔖</span>
                       <span className="portrait:hidden">しおり</span>
                       {bookmarkedIds.length > 0 && (
                         <span className="bg-amber-500 text-black text-[10px] font-bold px-1 py-0.2 rounded-full min-w-[16px] text-center">
@@ -5301,7 +5323,7 @@ const renderMarkdownToElements = (contentStr: string) => {
                         }`}
                         title={bookmarkedIds.includes(activeNote.id) ? "しおりを外す" : "この記事にしおりを挟む"}
                       >
-                        <Bookmark className={`w-3.5 h-3.5 shrink-0 ${bookmarkedIds.includes(activeNote.id) ? "text-amber-400 fill-amber-400" : "text-[var(--subtle)]"}`} />
+                        <span className="text-amber-400 text-sm shrink-0 select-none">🔖</span>
                         <span className="portrait:hidden">{bookmarkedIds.includes(activeNote.id) ? "しおり中" : "しおり"}</span>
                       </button>
                     )}
@@ -6701,7 +6723,7 @@ const renderMarkdownToElements = (contentStr: string) => {
           <div className="bg-[#161b22] border border-[var(--border2)] rounded-xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
             <div className="flex justify-between items-center p-4 border-b border-[var(--border2)] bg-[#1c2128]">
               <h2 className="text-sm font-bold text-white flex items-center gap-2">
-                <Bookmark className="w-4 h-4 text-amber-400 fill-amber-400" />
+                <span className="text-amber-400 text-sm shrink-0 select-none">🔖</span>
                 しおりを挟んだノート一覧 ({bookmarkedIds.length}件)
               </h2>
               <button
@@ -6730,6 +6752,18 @@ const renderMarkdownToElements = (contentStr: string) => {
                         onClick={() => {
                           selectNote(n.id);
                           setIsBookmarksModalOpen(false);
+                          const bm = bookmarks.find(b => b.noteId === n.id);
+                          if (bm && typeof bm.scrollRatio === "number") {
+                            setTimeout(() => {
+                              const container = previewRef.current || editorRef.current;
+                              if (container) {
+                                container.scrollTo({
+                                  top: bm.scrollRatio * container.scrollHeight,
+                                  behavior: "smooth"
+                                });
+                              }
+                            }, 150);
+                          }
                         }}
                         className="group flex items-center justify-between p-3 bg-[#1c2128] hover:bg-[#21262d] border border-[var(--border2)] hover:border-[var(--purple)] rounded-lg cursor-pointer transition-all"
                       >
