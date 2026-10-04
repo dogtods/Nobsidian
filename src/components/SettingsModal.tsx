@@ -156,9 +156,12 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
                   <span className="text-[9px] bg-green-500/20 text-green-300 border border-green-500/30 px-1.5 py-0.2 rounded font-normal">
                     完全無料・APIキー不要
                   </span>
+                  <span className="text-[9px] bg-blue-500/20 text-blue-300 border border-blue-500/30 px-1.5 py-0.2 rounded font-normal">
+                    消灯・バックグラウンド再生対応
+                  </span>
                 </span>
                 <p className="text-[10px] text-[var(--subtle)] mt-0.5 leading-relaxed">
-                  チェックを入れるとGoogle Cloud TTSを使用せず、お使いの端末（Windows、スマホ、Mac等）に内蔵された標準音声で読み上げます。
+                  端末内蔵の音声で読み上げます。画面消灯中や他アプリ操作中もバックグラウンドで連続再生し、記事の最後まで来たら音声を自動停止します。
                 </p>
               </div>
             </label>

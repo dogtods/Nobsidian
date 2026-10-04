@@ -311,6 +311,8 @@ export default function App() {
     return isNaN(v) ? 1.2 : v;
   });
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const keepAliveAudioRef = useRef<HTMLAudioElement | null>(null);
+  const wakeLockRef = useRef<any>(null);
   const isDeviceSpeakingRef = useRef(false);
   const keepAliveTimerRef = useRef<any>(null);
   const [ttsSelectionPopup, setTtsSelectionPopup] = useState<{ top: number; left: number; text: string } | null>(null);
@@ -3490,6 +3492,132 @@ const renderMarkdownToElements = (contentStr: string) => {
     toast("全てのフォルダを展開しました ✦");
   };
 
+  // バックグラウンド・画面消灯時再生用の無音オーディオURL生成（Web Speech APIの停止を防ぐキープアライブ）
+  const getSilentAudioUrl = (): string => {
+    try {
+      const sampleRate = 8000;
+      const numSamples = sampleRate * 2; // 2秒の無音
+      const buffer = new ArrayBuffer(44 + numSamples);
+      const view = new DataView(buffer);
+
+      view.setUint32(0, 0x52494646, false); // 'RIFF'
+      view.setUint32(4, 36 + numSamples, true);
+      view.setUint32(8, 0x57415645, false); // 'WAVE'
+      view.setUint32(12, 0x666d7420, false); // 'fmt '
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true); // PCM
+      view.setUint16(22, 1, true); // Mono
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate, true);
+      view.setUint16(32, 1, true);
+      view.setUint16(34, 8, true);
+      view.setUint32(36, 0x64617461, false); // 'data'
+      view.setUint32(40, numSamples, true);
+
+      const uint8 = new Uint8Array(buffer, 44, numSamples);
+      uint8.fill(128); // 8-bit PCM 無音中心値
+
+      const blob = new Blob([buffer], { type: "audio/wav" });
+      return URL.createObjectURL(blob);
+    } catch (e) {
+      console.warn("Failed to generate silent audio blob", e);
+      return "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+    }
+  };
+
+  const startAudioKeepAlive = (note?: Note) => {
+    try {
+      if (!keepAliveAudioRef.current) {
+        const el = new Audio();
+        el.loop = true;
+        el.volume = 0.01;
+        keepAliveAudioRef.current = el;
+      }
+      const audio = keepAliveAudioRef.current;
+      if (audio.paused || !audio.src) {
+        audio.src = getSilentAudioUrl();
+        audio.play().catch(e => {
+          console.warn("Keepalive audio play:", e);
+        });
+      }
+
+      // 画面の自動消灯を防止（利用中の画面保持）
+      if (typeof navigator !== "undefined" && 'wakeLock' in navigator && !wakeLockRef.current) {
+        (navigator as any).wakeLock.request('screen').then((lock: any) => {
+          wakeLockRef.current = lock;
+          lock.addEventListener('release', () => {
+            wakeLockRef.current = null;
+          });
+        }).catch(() => {});
+      }
+
+      // MediaSession 設定（画面消灯時や他アプリ利用時でもバックグラウンド再生を維持・通知バー操作対応）
+      if (typeof navigator !== "undefined" && 'mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: note?.title || 'Connected Notes',
+          artist: `${(note ? getFolder(note) : '') || 'ノート'} (読み上げ中)`,
+          album: 'Connected Notes'
+        });
+        navigator.mediaSession.playbackState = 'playing';
+        navigator.mediaSession.setActionHandler('play', () => {
+          if (typeof window !== "undefined" && "speechSynthesis" in window && window.speechSynthesis.paused) {
+            window.speechSynthesis.resume();
+          }
+        });
+        navigator.mediaSession.setActionHandler('pause', () => {
+          stopTts();
+        });
+        navigator.mediaSession.setActionHandler('stop', () => {
+          stopTts();
+        });
+        navigator.mediaSession.setActionHandler('nexttrack', () => {
+          stopTts();
+          setTtsQueue(prev => prev.slice(1));
+        });
+      }
+    } catch (err) {
+      console.warn("startAudioKeepAlive error:", err);
+    }
+  };
+
+  const stopAudioKeepAlive = () => {
+    try {
+      if (keepAliveAudioRef.current) {
+        keepAliveAudioRef.current.pause();
+        keepAliveAudioRef.current.removeAttribute('src');
+        keepAliveAudioRef.current.load();
+      }
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release().catch(() => {});
+        wakeLockRef.current = null;
+      }
+      if (typeof navigator !== "undefined" && 'mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = 'none';
+      }
+    } catch (err) {
+      console.warn("stopAudioKeepAlive error:", err);
+    }
+  };
+
+  // 画面点灯や他アプリからブラウザ復帰時の音声再開ハンドラ
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        if (isTtsPlaying && isDeviceSpeakingRef.current) {
+          if (typeof window !== "undefined" && "speechSynthesis" in window) {
+            if (window.speechSynthesis.paused) {
+              window.speechSynthesis.resume();
+            }
+          }
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [isTtsPlaying]);
+
   // TTS Initialization and Handlers
   useEffect(() => {
     const audio = new Audio();
@@ -3506,6 +3634,7 @@ const renderMarkdownToElements = (contentStr: string) => {
     return () => {
       audio.pause();
       audio.src = "";
+      stopAudioKeepAlive();
     };
   }, []);
 
@@ -3524,11 +3653,12 @@ const renderMarkdownToElements = (contentStr: string) => {
     } else if (ttsQueue.length === 0 && isTtsPlaying) {
       setIsTtsPlaying(false);
       isDeviceSpeakingRef.current = false;
+      stopAudioKeepAlive();
       toast("すべての記事の読み上げが完了しました ✦");
     }
   }, [isTtsPlaying, ttsQueue, isTtsLoading]);
 
-  // 端末内蔵音声エンジン（Web Speech API）での発話処理（長文対応・連続自動つなぎ方式）
+  // 端末内蔵音声エンジン（Web Speech API）での発話処理（長文対応・連続自動つなぎ方式・消灯/バックグラウンド対応）
   const playDeviceSpeech = (
     text: string,
     currentNote: Note,
@@ -3545,12 +3675,17 @@ const renderMarkdownToElements = (contentStr: string) => {
       window.speechSynthesis.cancel();
       isDeviceSpeakingRef.current = true;
 
+      // バックグラウンド・消灯時の音声停止を防ぐキープアライブオーディオを開始
+      startAudioKeepAlive(currentNote);
+
       // 1. 長いテキストを句点や改行（。！？\n）などで安全なチャンク（文ごと）に分割する
       // これによりブラウザの自動停止バグや文字数制限を完全に回避し、最後までスムーズに発話させます
       const rawChunks = text.split(/(?<=[。！？\n])/g).map(s => s.trim()).filter(Boolean);
       const chunks = rawChunks.length > 0 ? rawChunks : [text];
 
       let currentIndex = 0;
+      let lastSpokenChunk = -1;
+      let lastActivityTime = Date.now();
 
       const speakNextChunk = () => {
         if (!isTtsPlaying || !isDeviceSpeakingRef.current) {
@@ -3567,6 +3702,8 @@ const renderMarkdownToElements = (contentStr: string) => {
           return;
         }
 
+        lastSpokenChunk = currentIndex;
+        lastActivityTime = Date.now();
         const chunkText = chunks[currentIndex++];
         const utterance = new SpeechSynthesisUtterance(chunkText);
         utterance.lang = "ja-JP";
@@ -3583,6 +3720,7 @@ const renderMarkdownToElements = (contentStr: string) => {
         }
 
         utterance.onend = () => {
+          lastActivityTime = Date.now();
           // 次のチャンクへ
           if (isTtsPlaying && isDeviceSpeakingRef.current) {
             speakNextChunk();
@@ -3593,6 +3731,7 @@ const renderMarkdownToElements = (contentStr: string) => {
           if (e.error !== "canceled" && e.error !== "interrupted") {
             console.warn("Device Speech chunk error:", e);
           }
+          lastActivityTime = Date.now();
           if (currentIndex < chunks.length && isTtsPlaying) {
             speakNextChunk();
           } else {
@@ -3608,31 +3747,37 @@ const renderMarkdownToElements = (contentStr: string) => {
         window.speechSynthesis.speak(utterance);
       };
 
-      if ('mediaSession' in navigator) {
-        navigator.mediaSession.metadata = new MediaMetadata({
-          title: currentNote.title || 'Connected Notes',
-          artist: getFolder(currentNote) || '端末内蔵音声',
-          album: 'Connected Notes'
-        });
-        navigator.mediaSession.setActionHandler('nexttrack', () => {
-          stopTts();
-          setTtsQueue(prev => prev.slice(1));
-        });
-        navigator.mediaSession.setActionHandler('stop', () => stopTts());
-      }
-
-      // Chrome等で発話が約15秒で止まる既知バグの対策タイマー（5秒ごとにpaused状態をチェックして再開）
+      // Chrome等で発話が約15秒で止まる既知バグ & 画面消灯やバックグラウンド移行時の復帰タイマー
       if (keepAliveTimerRef.current) clearInterval(keepAliveTimerRef.current);
       keepAliveTimerRef.current = setInterval(() => {
+        if (!isTtsPlaying || !isDeviceSpeakingRef.current) {
+          if (keepAliveTimerRef.current) {
+            clearInterval(keepAliveTimerRef.current);
+            keepAliveTimerRef.current = null;
+          }
+          return;
+        }
+
+        // 1. paused状態になっている場合は再開
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+          lastActivityTime = Date.now();
+        }
+
+        // 2. 発話中フラグがあるのに12秒以上同じチャンクで膠着している場合（Chromeの15秒バグ対策）
         if (window.speechSynthesis.speaking) {
-          if (window.speechSynthesis.paused) {
+          if (currentIndex === lastSpokenChunk && Date.now() - lastActivityTime > 12000) {
+            window.speechSynthesis.pause();
             window.speechSynthesis.resume();
+            lastActivityTime = Date.now();
           }
         } else {
-          clearInterval(keepAliveTimerRef.current);
-          keepAliveTimerRef.current = null;
+          // 発話中でないがまだ未発話チャンクが残っている場合（画面消灯時などにonendがスキップされた場合の復元）
+          if (currentIndex < chunks.length && Date.now() - lastActivityTime > 2500) {
+            speakNextChunk();
+          }
         }
-      }, 5000);
+      }, 3000);
 
       // 初回チャンク発話スタート
       speakNextChunk();
@@ -3753,11 +3898,13 @@ const renderMarkdownToElements = (contentStr: string) => {
               artist: getFolder(currentNote),
               album: 'Connected Notes'
             });
+            navigator.mediaSession.playbackState = 'playing';
             navigator.mediaSession.setActionHandler('nexttrack', () => {
               if (audioRef.current) audioRef.current.pause();
               setTtsQueue(prev => prev.slice(1));
             });
             navigator.mediaSession.setActionHandler('stop', () => stopTts());
+            navigator.mediaSession.setActionHandler('pause', () => stopTts());
           }
           
           await audioRef.current.play();
@@ -3790,6 +3937,9 @@ const renderMarkdownToElements = (contentStr: string) => {
     const active = getActiveNote();
     if (!active) return;
     
+    stopTts();
+    startAudioKeepAlive(active);
+
     const { groups } = getCategorizedNotes();
     const folder = getFolder(active);
     const groupList = groups[folder] || [];
@@ -3801,6 +3951,18 @@ const renderMarkdownToElements = (contentStr: string) => {
     setTtsQueue(queue);
     setIsTtsPlaying(true);
     toast(`${queue.length}件の記事の連続読み上げを開始します ✦`);
+  };
+
+  // 現在開いている1記事のみを読み上げて末尾で自動停止
+  const startTtsCurrentNoteOnly = () => {
+    const active = getActiveNote();
+    if (!active) return;
+
+    stopTts();
+    startAudioKeepAlive(active);
+    setTtsQueue([active]);
+    setIsTtsPlaying(true);
+    toast(`「${active.title || '現在の記事'}」の読み上げを開始します ✦（記事末尾で自動停止）`);
   };
 
   // 指定した場所（選択テキストまたはカーソル位置）から音声を流す
@@ -3856,6 +4018,7 @@ const renderMarkdownToElements = (contentStr: string) => {
 
     // 既存再生を停止
     stopTts();
+    startAudioKeepAlive(active);
 
     const { groups } = getCategorizedNotes();
     const folder = getFolder(active);
@@ -3890,6 +4053,7 @@ const renderMarkdownToElements = (contentStr: string) => {
       audioRef.current.removeAttribute("src");
       audioRef.current.load();
     }
+    stopAudioKeepAlive();
   };
 
   // 画面上でテキストを選択した際に「ここから流す」フローティングバーを表示
@@ -5118,7 +5282,7 @@ const renderMarkdownToElements = (contentStr: string) => {
                       className={`p-1 px-2 portrait:px-1.5 text-xs font-medium rounded-l cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all ${
                         isTtsPlaying ? "text-red-400 bg-red-900/30" : "text-[var(--subtle)] hover:text-white hover:bg-[var(--border)]"
                       }`}
-                      title={isTtsPlaying ? "読み上げを停止" : "このフォルダの末尾まで記事を連続で読み上げます"}
+                      title={isTtsPlaying ? "読み上げを停止" : "画面消灯・バックグラウンド再生対応：記事を連続で読み上げます"}
                     >
                       {isTtsLoading ? (
                         <RefreshCw className="w-3.5 h-3.5 animate-spin text-[var(--blue)] shrink-0" />
@@ -5135,7 +5299,7 @@ const renderMarkdownToElements = (contentStr: string) => {
                       type="button"
                       onClick={() => setIsTtsMenuOpen(prev => !prev)}
                       className="px-1 py-1 text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] rounded cursor-pointer transition-all"
-                      title="読み上げメニュー（指定した場所から流す）"
+                      title="読み上げメニュー（この1記事のみ/指定した場所から流す）"
                     >
                       <ChevronDown className="w-3 h-3" />
                     </button>
@@ -5157,8 +5321,22 @@ const renderMarkdownToElements = (contentStr: string) => {
                           >
                             <Play className="w-3.5 h-3.5 text-green-400 shrink-0" />
                             <div>
-                              <div className="font-semibold">最初から読み上げ</div>
-                              <div className="text-[10px] text-[var(--subtle)]">記事先頭からフォルダ末尾まで</div>
+                              <div className="font-semibold">最初から連続読み上げ</div>
+                              <div className="text-[10px] text-[var(--subtle)]">記事先頭からフォルダ末尾まで（消灯対応）</div>
+                            </div>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isTtsPlaying) stopTts();
+                              startTtsCurrentNoteOnly();
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-[#1f2d3d] text-[var(--text)] flex items-center gap-2 cursor-pointer transition-colors border-t border-[#30363d]"
+                          >
+                            <FileText className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                            <div>
+                              <div className="font-semibold text-white">この1記事のみ読み上げ</div>
+                              <div className="text-[10px] text-[var(--subtle)]">現在の記事末尾で音声を自動停止</div>
                             </div>
                           </button>
                           <button
