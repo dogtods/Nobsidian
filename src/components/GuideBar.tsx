@@ -6,6 +6,8 @@ import {
   ChevronDown,
   X,
   Moon,
+  Clock,
+  Volume2,
 } from "lucide-react";
 import { Note } from "../types";
 
@@ -23,6 +25,9 @@ export interface GuideBarProps {
   onTogglePositionFixed?: () => void;
   isDimmed?: boolean;
   onToggleDimmed?: () => void;
+  onShowCalculation?: () => void;
+  onStartTtsFromHere?: () => void;
+  isTtsPlaying?: boolean;
 }
 
 // スピード選択肢 (0.5, 0.8, 1.0, 1.2, 1.5, 2.0秒)
@@ -43,6 +48,9 @@ export const GuideBar: React.FC<GuideBarProps> = ({
   onTogglePositionFixed,
   isDimmed = false,
   onToggleDimmed,
+  onShowCalculation,
+  onStartTtsFromHere,
+  isTtsPlaying = false,
 }) => {
   // 自動送り再生ステート (デフォルト: 流す/再生中)
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
@@ -76,6 +84,44 @@ export const GuideBar: React.FC<GuideBarProps> = ({
     if (!activeNote?.content) return 1;
     return activeNote.content.split("\n").length;
   }, [propTotalLines, activeNote?.content]);
+
+  // 現在位置から末尾までの残り所要時間の計算（現在の速度・漢字減速設定に基づく）
+  const remainingSeconds = useMemo(() => {
+    const remainingLines = Math.max(0, totalLines - currentLineIndex);
+    if (remainingLines <= 0) return 0;
+    if (!isKanjiSlowdownEnabled || !activeNote?.content) {
+      return Math.round(remainingLines * speed);
+    }
+    const rawContent = activeNote?.content || "";
+    const lines = rawContent.split("\n").filter(l => l.trim().length > 0);
+    let totalSec = 0;
+    for (let i = currentLineIndex; i < totalLines; i++) {
+      let lineText = "";
+      if (lines.length > 0) {
+        const lineIdx = Math.min(Math.floor((i / totalLines) * lines.length), lines.length - 1);
+        lineText = lines[lineIdx] || "";
+      }
+      const totalChars = lineText.replace(/\s+/g, "").length;
+      let mult = 1.0;
+      if (totalChars > 0) {
+        const kanjiMatches = lineText.match(/[\u4e00-\u9faf\u3400-\u4dbf]/g);
+        const kanjiCount = kanjiMatches ? kanjiMatches.length : 0;
+        const kanjiRatio = kanjiCount / totalChars;
+        if (kanjiRatio >= 0.6) mult = 1.5;
+        else if (kanjiRatio >= 0.3) mult = 1.3;
+        else if (kanjiCount > 0) mult = 1.1;
+      }
+      totalSec += speed * mult;
+    }
+    return Math.max(1, Math.round(totalSec));
+  }, [totalLines, currentLineIndex, isKanjiSlowdownEnabled, speed, activeNote?.content]);
+
+  const formattedRemainingTime = useMemo(() => {
+    const m = Math.floor(remainingSeconds / 60);
+    const s = remainingSeconds % 60;
+    if (m === 0) return `${s}秒`;
+    return `${m}分${s > 0 ? `${s.toString().padStart(2, "0")}秒` : "00秒"}`;
+  }, [remainingSeconds]);
 
   const handleSpeedChange = (newSpeed: GuideSpeed) => {
     setSpeed(newSpeed);
@@ -244,12 +290,19 @@ export const GuideBar: React.FC<GuideBarProps> = ({
         </button>
       </div>
 
-      {/* 画面上の行カウント表示 (現在行 / 総行数) */}
+      {/* 画面上の行カウント表示 (現在行 / 総行数) & 残り所要時間 */}
       <div 
-        className="text-[11px] font-mono text-yellow-300/90 px-1.5 py-0.5 rounded bg-black/40 border border-[#30363d] select-none shrink-0" 
-        title="現在行 / 画面上の総行数"
+        onClick={onShowCalculation}
+        className={`text-[11px] font-mono text-yellow-300/90 px-2 py-0.5 rounded bg-black/40 border border-[#30363d] select-none shrink-0 flex items-center gap-1.5 ${
+          onShowCalculation ? "cursor-pointer hover:border-yellow-400/60 hover:bg-black/60 transition-colors" : ""
+        }`} 
+        title={`現在行 / 画面上の総行数 (残り 約${formattedRemainingTime})${onShowCalculation ? " - クリックで所要時間の詳細を計算" : ""}`}
       >
-        {totalLines > 0 ? `${currentLineIndex + 1}/${totalLines}` : "-"}
+        <span>{totalLines > 0 ? `${currentLineIndex + 1}/${totalLines}` : "-"}</span>
+        <span className="text-[10px] text-gray-400 font-sans border-l border-[#30363d] pl-1.5 flex items-center gap-1 text-yellow-200/90">
+          <Clock className="w-3 h-3 text-yellow-400/80 shrink-0" />
+          <span>残り 約{formattedRemainingTime}</span>
+        </span>
       </div>
 
       <div className="h-4 w-[1px] bg-[#30363d] mx-0.5" />
@@ -348,6 +401,27 @@ export const GuideBar: React.FC<GuideBarProps> = ({
       </button>
 
       <div className="h-4 w-[1px] bg-[#30363d] mx-0.5" />
+
+      {/* 読書ガイドバーの現在行から音声読み上げを開始するボタン */}
+      {onStartTtsFromHere && (
+        <>
+          <button
+            type="button"
+            onClick={onStartTtsFromHere}
+            className={`h-7 px-2.5 rounded-full flex items-center gap-1.5 text-xs font-bold transition-all cursor-pointer shrink-0 shadow-sm active:scale-95 ${
+              isTtsPlaying
+                ? "bg-purple-950/80 text-purple-200 border border-purple-400 hover:bg-purple-900"
+                : "bg-[#0d1117] text-purple-300 hover:text-white hover:bg-purple-600/30 border border-purple-500/40"
+            }`}
+            title={isTtsPlaying ? "現在ガイドしている行から読み上げ位置を変更・再開します" : "現在ガイドしている行から音声読み上げを開始します"}
+          >
+            <Volume2 className={`w-3.5 h-3.5 shrink-0 ${isTtsPlaying ? "text-green-400 animate-pulse" : "text-purple-400"}`} />
+            <span className="hidden sm:inline">ここから音声開始</span>
+            <span className="inline sm:hidden">音声開始</span>
+          </button>
+          <div className="h-4 w-[1px] bg-[#30363d] mx-0.5" />
+        </>
+      )}
 
       {/* 閉じるボタン */}
       <button

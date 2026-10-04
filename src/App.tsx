@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   FileText,
+  Clock,
   BookOpen,
   Settings,
   Sparkles,
@@ -314,6 +315,7 @@ export default function App() {
   const keepAliveAudioRef = useRef<HTMLAudioElement | null>(null);
   const wakeLockRef = useRef<any>(null);
   const isDeviceSpeakingRef = useRef(false);
+  const isTtsPlayingRef = useRef(false);
   const keepAliveTimerRef = useRef<any>(null);
   const [ttsSelectionPopup, setTtsSelectionPopup] = useState<{ top: number; left: number; text: string } | null>(null);
   const [isTtsMenuOpen, setIsTtsMenuOpen] = useState(false);
@@ -943,9 +945,10 @@ export default function App() {
   };
 
   // Toast Helper
-  const toast = (msg: string) => {
+  const toast = (msg: string, durationMs?: number) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(""), 2500);
+    const time = durationMs || (msg.includes("\n") || msg.length > 50 ? 5000 : 2500);
+    setTimeout(() => setToastMessage(""), time);
   };
 
   // 記事閲覧エリアの文字幅トグル（4段階循環: 1広 1/4 → 2中 2/4 → 3狭 3/4 → 4最狭 4/4）
@@ -3639,8 +3642,12 @@ const renderMarkdownToElements = (contentStr: string) => {
   }, []);
 
   useEffect(() => {
+    isTtsPlayingRef.current = isTtsPlaying;
+  }, [isTtsPlaying]);
+
+  useEffect(() => {
     if (isTtsPlaying && !isTtsLoading && ttsQueue.length > 0) {
-      const isDevice = localStorage.getItem("cn_use_device_speech") === "true";
+      const isDevice = localStorage.getItem("cn_use_device_speech") === "true" || !localStorage.getItem("cn_gcp_tts_key");
       if (isDevice) {
         if (!isDeviceSpeakingRef.current) {
           playNextTts();
@@ -3652,6 +3659,7 @@ const renderMarkdownToElements = (contentStr: string) => {
       }
     } else if (ttsQueue.length === 0 && isTtsPlaying) {
       setIsTtsPlaying(false);
+      isTtsPlayingRef.current = false;
       isDeviceSpeakingRef.current = false;
       stopAudioKeepAlive();
       toast("すべての記事の読み上げが完了しました ✦");
@@ -3674,6 +3682,7 @@ const renderMarkdownToElements = (contentStr: string) => {
     try {
       window.speechSynthesis.cancel();
       isDeviceSpeakingRef.current = true;
+      isTtsPlayingRef.current = true;
 
       // バックグラウンド・消灯時の音声停止を防ぐキープアライブオーディオを開始
       startAudioKeepAlive(currentNote);
@@ -3688,7 +3697,7 @@ const renderMarkdownToElements = (contentStr: string) => {
       let lastActivityTime = Date.now();
 
       const speakNextChunk = () => {
-        if (!isTtsPlaying || !isDeviceSpeakingRef.current) {
+        if (!isTtsPlayingRef.current || !isDeviceSpeakingRef.current) {
           return;
         }
 
@@ -3722,7 +3731,7 @@ const renderMarkdownToElements = (contentStr: string) => {
         utterance.onend = () => {
           lastActivityTime = Date.now();
           // 次のチャンクへ
-          if (isTtsPlaying && isDeviceSpeakingRef.current) {
+          if (isTtsPlayingRef.current && isDeviceSpeakingRef.current) {
             speakNextChunk();
           }
         };
@@ -3732,7 +3741,7 @@ const renderMarkdownToElements = (contentStr: string) => {
             console.warn("Device Speech chunk error:", e);
           }
           lastActivityTime = Date.now();
-          if (currentIndex < chunks.length && isTtsPlaying) {
+          if (currentIndex < chunks.length && isTtsPlayingRef.current && isDeviceSpeakingRef.current) {
             speakNextChunk();
           } else {
             isDeviceSpeakingRef.current = false;
@@ -3740,7 +3749,9 @@ const renderMarkdownToElements = (contentStr: string) => {
               clearInterval(keepAliveTimerRef.current);
               keepAliveTimerRef.current = null;
             }
-            onEnd();
+            if (isTtsPlayingRef.current) {
+              onEnd();
+            }
           }
         };
 
@@ -3750,7 +3761,7 @@ const renderMarkdownToElements = (contentStr: string) => {
       // Chrome等で発話が約15秒で止まる既知バグ & 画面消灯やバックグラウンド移行時の復帰タイマー
       if (keepAliveTimerRef.current) clearInterval(keepAliveTimerRef.current);
       keepAliveTimerRef.current = setInterval(() => {
-        if (!isTtsPlaying || !isDeviceSpeakingRef.current) {
+        if (!isTtsPlayingRef.current || !isDeviceSpeakingRef.current) {
           if (keepAliveTimerRef.current) {
             clearInterval(keepAliveTimerRef.current);
             keepAliveTimerRef.current = null;
@@ -3779,8 +3790,12 @@ const renderMarkdownToElements = (contentStr: string) => {
         }
       }, 3000);
 
-      // 初回チャンク発話スタート
-      speakNextChunk();
+      // 初回チャンク発話スタート（ブラウザ音声エンジンの直前cancel完了を40ms待機して確実に発話）
+      setTimeout(() => {
+        if (isTtsPlayingRef.current && isDeviceSpeakingRef.current) {
+          speakNextChunk();
+        }
+      }, 40);
 
     } catch (err) {
       isDeviceSpeakingRef.current = false;
@@ -3818,7 +3833,7 @@ const renderMarkdownToElements = (contentStr: string) => {
         return;
       }
 
-      const isDeviceSpeech = localStorage.getItem("cn_use_device_speech") === "true";
+      const isDeviceSpeech = localStorage.getItem("cn_use_device_speech") === "true" || !localStorage.getItem("cn_gcp_tts_key");
 
       let textToRead = cleanText;
       if (cleanText.length > 1500) {
@@ -3948,8 +3963,11 @@ const renderMarkdownToElements = (contentStr: string) => {
     if (startIndex === -1) return;
     
     const queue = groupList.slice(startIndex);
-    setTtsQueue(queue);
-    setIsTtsPlaying(true);
+    setTimeout(() => {
+      isTtsPlayingRef.current = true;
+      setTtsQueue(queue);
+      setIsTtsPlaying(true);
+    }, 40);
     toast(`${queue.length}件の記事の連続読み上げを開始します ✦`);
   };
 
@@ -3960,13 +3978,241 @@ const renderMarkdownToElements = (contentStr: string) => {
 
     stopTts();
     startAudioKeepAlive(active);
-    setTtsQueue([active]);
-    setIsTtsPlaying(true);
+    setTimeout(() => {
+      isTtsPlayingRef.current = true;
+      setTtsQueue([active]);
+      setIsTtsPlaying(true);
+    }, 40);
     toast(`「${active.title || '現在の記事'}」の読み上げを開始します ✦（記事末尾で自動停止）`);
   };
 
-  // 指定した場所（選択テキストまたはカーソル位置）から音声を流す
-  const startTtsFromSpecified = (option: 'from_selection' | 'selection_only' = 'from_selection') => {
+  // 本文(content)の中から選択テキスト(searchText)の開始位置を高精度に特定する関数（Markdown記法や空白の揺れを吸収）
+  const findTextIndexInContent = (content: string, searchText: string): number => {
+    if (!content || !searchText) return -1;
+    const rawTarget = searchText.trim();
+    if (!rawTarget) return -1;
+
+    // 1. 完全一致
+    let idx = content.indexOf(rawTarget);
+    if (idx !== -1) return idx;
+
+    // 2. 空白・改行の正規化（連続空白を1つに）
+    const cleanSnippet = rawTarget.replace(/[\r\n\s]+/g, " ").trim();
+    if (cleanSnippet.length >= 3) {
+      idx = content.indexOf(cleanSnippet);
+      if (idx !== -1) return idx;
+    }
+
+    // 3. 先頭15文字（Markdown装飾除去前）
+    const prefix15 = cleanSnippet.slice(0, 15);
+    if (prefix15.length >= 3) {
+      idx = content.indexOf(prefix15);
+      if (idx !== -1) return idx;
+    }
+
+    // 4. Markdown記号（# * ` _ [ ] ( ) - • > | 等）を除去した先頭12文字
+    const strippedSnippet = cleanSnippet.replace(/[#*`_\[\]()\-•>|]/g, "").trim();
+    const strippedPrefix = strippedSnippet.slice(0, 12);
+    if (strippedPrefix.length >= 3) {
+      idx = content.indexOf(strippedPrefix);
+      if (idx !== -1) return idx;
+    }
+
+    // 5. 行単位の比較（Markdownの各行テキストと照合）
+    const lines = content.split("\n");
+    let accumulatedOffset = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const strippedLine = line.replace(/[#*`_\[\]()\-•>|]/g, "").trim();
+      if (
+        (strippedLine.length >= 4 && (strippedSnippet.includes(strippedLine) || strippedLine.includes(strippedSnippet.slice(0, 8)))) ||
+        (cleanSnippet.length >= 4 && (line.includes(cleanSnippet) || cleanSnippet.includes(line.trim())))
+      ) {
+        return accumulatedOffset;
+      }
+      accumulatedOffset += line.length + 1; // +1 for '\n'
+    }
+
+    // 6. 空白・記号を完全に無視した正規化インデックス検索
+    const normalize = (s: string) => s.replace(/[\s\r\n#*`_\[\]()\-•>|]/g, "");
+    const normContent = normalize(content);
+    const normTarget = normalize(rawTarget);
+    const targetSub = normTarget.slice(0, 10);
+    if (targetSub.length >= 3) {
+      const normIdx = normContent.indexOf(targetSub);
+      if (normIdx !== -1) {
+        let normCount = 0;
+        for (let c = 0; c < content.length; c++) {
+          if (!/[\s\r\n#*`_\[\]()\-•>|]/.test(content[c])) {
+            if (normCount === normIdx) {
+              return c;
+            }
+            normCount++;
+          }
+        }
+      }
+    }
+
+    return -1;
+  };
+
+  // 読書ガイドバーの現在行位置から正確に読み上げ対象テキストを抽出する関数
+  const getTextFromGuideLine = (guideIdx: number, active: Note): { contentToRead: string; lineNum: number; snippet: string } => {
+    const content = active.content || "";
+    if (!content.trim()) return { contentToRead: "", lineNum: 1, snippet: "" };
+
+    let foundIdx = -1;
+    let snippet = "";
+    const container = previewRef.current;
+    const totalVisual = visualLines.length;
+
+    // 1. プレビュー表示中のDOMキャレット・ヒットテスト（画面上の現在ガイド行Rectから直接テキストを抽出）
+    if (mode === "preview" && container && totalVisual > 0 && visualLines[guideIdx]) {
+      const line = visualLines[guideIdx];
+      const containerRect = container.getBoundingClientRect();
+      const testY = containerRect.top + (line.top - container.scrollTop) + (line.height / 2);
+
+      // 行の複数のX座標（左端15px, 45px, 90px, 150px）でキャレット位置をテスト
+      const xOffsets = [15, 45, 90, 150];
+      for (const xOff of xOffsets) {
+        const testX = containerRect.left + Math.min(line.left + xOff, line.left + Math.max(10, line.width - 5));
+        let range: Range | null = null;
+        if (typeof document.caretRangeFromPoint === "function") {
+          range = document.caretRangeFromPoint(testX, testY);
+        } else if (typeof (document as any).caretPositionFromPoint === "function") {
+          const pos = (document as any).caretPositionFromPoint(testX, testY);
+          if (pos && pos.offsetNode) {
+            range = document.createRange();
+            range.setStart(pos.offsetNode, pos.offset);
+            range.collapse(true);
+          }
+        }
+
+        if (range && range.startContainer) {
+          const textNode = range.startContainer;
+          if (textNode.nodeType === Node.TEXT_NODE) {
+            const rawNodeText = textNode.textContent || "";
+            const textAfterOffset = rawNodeText.substring(range.startOffset).trim();
+            if (textAfterOffset.length >= 2) {
+              snippet = textAfterOffset.slice(0, 35);
+              foundIdx = findTextIndexInContent(content, snippet);
+              if (foundIdx !== -1) break;
+            }
+            if (rawNodeText.trim().length >= 3) {
+              snippet = rawNodeText.trim().slice(0, 35);
+              foundIdx = findTextIndexInContent(content, snippet);
+              if (foundIdx !== -1) break;
+            }
+          } else if (textNode.nodeType === Node.ELEMENT_NODE) {
+            const el = textNode as HTMLElement;
+            const elText = el.textContent || "";
+            if (elText.trim().length >= 3) {
+              snippet = elText.trim().slice(0, 35);
+              foundIdx = findTextIndexInContent(content, snippet);
+              if (foundIdx !== -1) break;
+            }
+          }
+        }
+      }
+
+      // 2. DOMブロック要素（p, h1-h6, li, blockquote等）とガイド行Y座標の照合
+      if (foundIdx === -1) {
+        const blocks = container.querySelectorAll("p, h1, h2, h3, h4, h5, h6, li, blockquote, pre");
+        for (let i = 0; i < blocks.length; i++) {
+          const el = blocks[i] as HTMLElement;
+          const bRect = el.getBoundingClientRect();
+          const elTop = bRect.top - containerRect.top + container.scrollTop;
+          const elBottom = elTop + bRect.height;
+          if (line.top >= elTop - 4 && line.top <= elBottom + 4) {
+            const bText = (el.textContent || "").trim();
+            if (bText.length >= 3) {
+              const elHeight = Math.max(1, bRect.height);
+              const relY = Math.max(0, (line.top - elTop) / elHeight);
+              const approxCharStart = Math.floor(bText.length * relY);
+              const sub = bText.substring(approxCharStart, approxCharStart + 35).trim() || bText.slice(0, 35);
+              foundIdx = findTextIndexInContent(content, sub);
+              if (foundIdx === -1) {
+                foundIdx = findTextIndexInContent(content, bText.slice(0, 35));
+              }
+              if (foundIdx !== -1) {
+                snippet = sub;
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // 3. 視覚行比率による文境界（。や改行）スナップ・フォールバック
+    if (foundIdx === -1) {
+      if (totalVisual > 0 && guideIdx > 0) {
+        const ratio = guideIdx / totalVisual;
+        const approxOffset = Math.floor(content.length * ratio);
+        const lastPeriod = content.lastIndexOf("。", approxOffset);
+        const lastNl = content.lastIndexOf("\n", approxOffset);
+        const breakIdx = Math.max(lastPeriod, lastNl);
+        foundIdx = breakIdx !== -1 && (approxOffset - breakIdx < 120) ? breakIdx + 1 : approxOffset;
+      } else {
+        const lines = content.split("\n");
+        const targetLine = Math.min(guideIdx, lines.length - 1);
+        let offset = 0;
+        for (let i = 0; i < targetLine; i++) {
+          offset += lines[i].length + 1;
+        }
+        foundIdx = offset;
+      }
+    }
+
+    foundIdx = Math.max(0, Math.min(foundIdx, content.length));
+    const contentToRead = content.substring(foundIdx);
+    return {
+      contentToRead,
+      lineNum: guideIdx + 1,
+      snippet
+    };
+  };
+
+  // ガイドバーの現在位置から音声を再生開始
+  const startTtsFromGuideLine = () => {
+    const active = getActiveNote();
+    if (!active || !active.content) return;
+
+    const { contentToRead, lineNum, snippet } = getTextFromGuideLine(guideLineIndex, active);
+    if (!contentToRead.trim()) {
+      toast("現在行以降に読み上げるテキストがありません");
+      return;
+    }
+
+    stopTts();
+    startAudioKeepAlive(active);
+
+    const { groups } = getCategorizedNotes();
+    const folder = getFolder(active);
+    const groupList = groups[folder] || [];
+    const startIndex = groupList.findIndex(n => n.id === active.id);
+    const subsequent = startIndex !== -1 ? groupList.slice(startIndex + 1) : [];
+
+    const customFirstNote: Note = {
+      ...active,
+      content: contentToRead
+    };
+
+    setTimeout(() => {
+      isTtsPlayingRef.current = true;
+      setTtsQueue([customFirstNote, ...subsequent]);
+      setIsTtsPlaying(true);
+    }, 40);
+
+    const previewSnippet = snippet ? `（「${snippet.slice(0, 12)}...」）` : "";
+    toast(`読書ガイドバーの位置（${lineNum}行目${previewSnippet}）から読み上げを開始します ✦`);
+  };
+
+  // 指定した場所（選択テキスト、カーソル位置、または現在の画面/ガイド位置）から音声を流す
+  const startTtsFromSpecified = (
+    option: 'from_selection' | 'selection_only' = 'from_selection',
+    explicitText?: string
+  ) => {
     const active = getActiveNote();
     if (!active) return;
 
@@ -3986,28 +4232,53 @@ const renderMarkdownToElements = (contentStr: string) => {
       }
     } else {
       // 2. プレビューモード等の場合
-      const sel = window.getSelection();
-      const selectedText = sel ? sel.toString().trim() : "";
+      const sel = typeof window !== "undefined" ? window.getSelection() : null;
+      const selectedText = (explicitText || (sel ? sel.toString().trim() : "")).trim();
 
       if (selectedText) {
         if (option === 'selection_only') {
           contentToRead = selectedText;
           displayMsg = "選択箇所の読み上げを開始します ✦";
         } else {
-          // 選択テキストの位置を本文から検索
-          const foundIdx = active.content.indexOf(selectedText);
+          // 選択テキストの位置を本文から高精度検索
+          const foundIdx = findTextIndexInContent(active.content, selectedText);
           if (foundIdx !== -1) {
             contentToRead = active.content.substring(foundIdx);
-            displayMsg = "指定した場所から末尾まで読み上げを開始します ✦";
+            const previewSnippet = selectedText.slice(0, 15);
+            displayMsg = `「${previewSnippet}${selectedText.length > 15 ? '...' : ''}」から末尾まで読み上げを開始します ✦`;
           } else {
-            contentToRead = selectedText;
-            displayMsg = "指定箇所の読み上げを開始します ✦";
+            // テキスト直接一致しない場合: 画面のスクロール位置をフォールバックとして利用
+            let fallbackOffset = 0;
+            if (previewRef.current && previewRef.current.scrollHeight > 0) {
+              const scrollRatio = previewRef.current.scrollTop / (previewRef.current.scrollHeight - previewRef.current.clientHeight || 1);
+              fallbackOffset = Math.floor(active.content.length * scrollRatio);
+            }
+            const nextBreak = active.content.indexOf('。', fallbackOffset);
+            const startIdx = nextBreak !== -1 && nextBreak - fallbackOffset < 80 ? nextBreak + 1 : fallbackOffset;
+            contentToRead = active.content.substring(startIdx);
+            displayMsg = "指定位置付近から末尾まで読み上げを開始します ✦";
           }
         }
       } else {
-        // 選択がない場合は通常通り最初から
-        startTtsFromCurrent();
-        return;
+        // 選択テキストがない場合のスマート位置判定:
+        // A. ガイドバーが表示されている場合 -> ガイドバーの現在行から開始
+        if (isGuideBarOpen && guideLineIndex >= 0) {
+          startTtsFromGuideLine();
+          return;
+        } else if (previewRef.current && previewRef.current.scrollTop > 40) {
+          // B. プレビューでスクロールしている場合 -> 画面中央付近のテキストから開始
+          const container = previewRef.current;
+          const scrollRatio = container.scrollTop / (container.scrollHeight - container.clientHeight || 1);
+          const approxOffset = Math.floor(active.content.length * scrollRatio);
+          const breakIdx = active.content.lastIndexOf('。', approxOffset);
+          const startIdx = breakIdx !== -1 ? breakIdx + 1 : approxOffset;
+          contentToRead = active.content.substring(startIdx);
+          displayMsg = "画面の表示位置から末尾まで読み上げを開始します ✦";
+        } else {
+          // C. 先頭付近の場合は通常通り最初から
+          startTtsFromCurrent();
+          return;
+        }
       }
     }
 
@@ -4031,13 +4302,17 @@ const renderMarkdownToElements = (contentStr: string) => {
       content: contentToRead
     };
 
-    setTtsQueue([customFirstNote, ...subsequent]);
-    setIsTtsPlaying(true);
+    setTimeout(() => {
+      isTtsPlayingRef.current = true;
+      setTtsQueue([customFirstNote, ...subsequent]);
+      setIsTtsPlaying(true);
+    }, 40);
     toast(displayMsg);
   };
 
   const stopTts = () => {
     setIsTtsPlaying(false);
+    isTtsPlayingRef.current = false;
     setIsTtsLoading(false);
     isDeviceSpeakingRef.current = false;
     setTtsQueue([]);
@@ -4054,6 +4329,180 @@ const renderMarkdownToElements = (contentStr: string) => {
       audioRef.current.load();
     }
     stopAudioKeepAlive();
+  };
+
+  // 時間フォーマット補助関数（何分何秒形式）
+  const formatDurationString = (sec: number): string => {
+    if (sec <= 0) return "0秒";
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    if (m === 0) return `${s}秒`;
+    return `${m}分${s > 0 ? `${s.toString().padStart(2, "0")}秒` : "00秒"}`;
+  };
+
+  // 現在選択中ノートのクリーンテキスト（タイトルやMarkdown記法、保存日時行を除去）
+  const cleanArticleText = useMemo(() => {
+    const active = getActiveNote();
+    if (!active) return "";
+    let rawText = active.content || "";
+    rawText = rawText.split(/保存日時|保存:|保存：/)[0];
+    const escapedTitle = (active.title || "").replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (escapedTitle) {
+      const titleRegex = new RegExp(`^\\s*#*\\s*${escapedTitle}\\s*`, 'i');
+      rawText = rawText.replace(titleRegex, '');
+    }
+    return rawText.replace(/#+\s/g, '').replace(/\[\[(.*?)\]\]/g, '$1').replace(/\*/g, '').trim();
+  }, [activeId, notes]);
+
+  // 音声読み上げ（現在の記事）の予想所要時間（秒）
+  const currentArticleTtsSeconds = useMemo(() => {
+    if (!cleanArticleText) return 0;
+    const punctuationCount = (cleanArticleText.match(/[、。！？\n,!?]/g) || []).length;
+    const cleanChars = cleanArticleText.replace(/[\s\r\n]/g, "").length;
+    // 日本語標準朗読速度: 1.0x時 約330文字/分（約5.5文字/秒） + 句読点ポーズ各0.25秒
+    const charSeconds = cleanChars / (5.5 * ttsSpeed);
+    const pauseSeconds = (punctuationCount * 0.25) / ttsSpeed;
+    return Math.max(1, Math.round(charSeconds + pauseSeconds));
+  }, [cleanArticleText, ttsSpeed]);
+
+  // 音声読み上げ（フォルダ全体連続）の予想所要時間
+  const folderTtsInfo = useMemo(() => {
+    const active = getActiveNote();
+    if (!active) return { count: 0, seconds: 0, chars: 0 };
+    const { groups } = getCategorizedNotes();
+    const folder = getFolder(active);
+    const groupList = groups[folder] || [];
+    const startIndex = groupList.findIndex(n => n.id === active.id);
+    if (startIndex === -1) {
+      return { count: 1, seconds: currentArticleTtsSeconds, chars: cleanArticleText.replace(/\s/g, '').length };
+    }
+
+    const queue = groupList.slice(startIndex);
+    let totalChars = 0;
+    let totalSeconds = 0;
+    for (const n of queue) {
+      let raw = n.content || "";
+      raw = raw.split(/保存日時|保存:|保存：/)[0];
+      const escapedTitle = (n.title || "").replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (escapedTitle) {
+        const titleRegex = new RegExp(`^\\s*#*\\s*${escapedTitle}\\s*`, 'i');
+        raw = raw.replace(titleRegex, '');
+      }
+      const clean = raw.replace(/#+\s/g, '').replace(/\[\[(.*?)\]\]/g, '$1').replace(/\*/g, '').trim();
+      const pCount = (clean.match(/[、。！？\n,!?]/g) || []).length;
+      const chars = clean.replace(/[\s\r\n]/g, "").length;
+      totalChars += chars;
+      totalSeconds += (chars / (5.5 * ttsSpeed)) + ((pCount * 0.25) / ttsSpeed);
+    }
+    return {
+      count: queue.length,
+      seconds: Math.max(1, Math.round(totalSeconds)),
+      chars: totalChars
+    };
+  }, [activeId, notes, ttsSpeed, cleanArticleText, currentArticleTtsSeconds]);
+
+  // ガイドバーの現在設定速度（localStorage）
+  const guideBarSpeed = useMemo(() => {
+    try {
+      const saved = localStorage.getItem("cn_guidebar_speed");
+      if (saved) return parseFloat(saved) || 1.0;
+    } catch (_) {}
+    return 1.0;
+  }, [isGuideBarOpen]);
+
+  const isGuideKanjiSlowdown = useMemo(() => {
+    try {
+      const saved = localStorage.getItem("cn_kanji_slowdown_enabled");
+      if (saved !== null) return saved === "true";
+    } catch (_) {}
+    return true;
+  }, [isGuideBarOpen]);
+
+  // ガイドバー（現在行から末尾まで）の残り予想所要時間（秒）
+  const currentGuideRemainingSeconds = useMemo(() => {
+    const active = getActiveNote();
+    if (!active || !active.content) return 0;
+    const total = visualLines.length > 0 ? visualLines.length : active.content.split('\n').length;
+    const remaining = Math.max(0, total - guideLineIndex);
+    if (remaining <= 0) return 0;
+
+    const lines = active.content.split("\n").filter(l => l.trim().length > 0);
+    let totalSec = 0;
+    for (let i = guideLineIndex; i < total; i++) {
+      let lineText = "";
+      if (lines.length > 0) {
+        const lineIdx = Math.min(Math.floor((i / total) * lines.length), lines.length - 1);
+        lineText = lines[lineIdx] || "";
+      }
+      const totalChars = lineText.replace(/\s+/g, "").length;
+      let mult = 1.0;
+      if (isGuideKanjiSlowdown && totalChars > 0) {
+        const kanjiMatches = lineText.match(/[\u4e00-\u9faf\u3400-\u4dbf]/g);
+        const kanjiCount = kanjiMatches ? kanjiMatches.length : 0;
+        const kanjiRatio = kanjiCount / totalChars;
+        if (kanjiRatio >= 0.6) mult = 1.5;
+        else if (kanjiRatio >= 0.3) mult = 1.3;
+        else if (kanjiCount > 0) mult = 1.1;
+      }
+      totalSec += guideBarSpeed * mult;
+    }
+    return Math.max(1, Math.round(totalSec));
+  }, [activeId, notes, visualLines.length, guideLineIndex, guideBarSpeed, isGuideKanjiSlowdown]);
+
+  // ガイドバー（記事全体）の予想所要時間（秒）
+  const currentGuideTotalSeconds = useMemo(() => {
+    const active = getActiveNote();
+    if (!active || !active.content) return 0;
+    const total = visualLines.length > 0 ? visualLines.length : active.content.split('\n').length;
+    const lines = active.content.split("\n").filter(l => l.trim().length > 0);
+    let totalSec = 0;
+    for (let i = 0; i < total; i++) {
+      let lineText = "";
+      if (lines.length > 0) {
+        const lineIdx = Math.min(Math.floor((i / total) * lines.length), lines.length - 1);
+        lineText = lines[lineIdx] || "";
+      }
+      const totalChars = lineText.replace(/\s+/g, "").length;
+      let mult = 1.0;
+      if (isGuideKanjiSlowdown && totalChars > 0) {
+        const kanjiMatches = lineText.match(/[\u4e00-\u9faf\u3400-\u4dbf]/g);
+        const kanjiCount = kanjiMatches ? kanjiMatches.length : 0;
+        const kanjiRatio = kanjiCount / totalChars;
+        if (kanjiRatio >= 0.6) mult = 1.5;
+        else if (kanjiRatio >= 0.3) mult = 1.3;
+        else if (kanjiCount > 0) mult = 1.1;
+      }
+      totalSec += guideBarSpeed * mult;
+    }
+    return Math.max(1, Math.round(totalSec));
+  }, [activeId, notes, visualLines.length, guideBarSpeed, isGuideKanjiSlowdown]);
+
+  // 現在の設定で音声やガイドの終了予想時間を計算してトースト表示
+  const showDurationCalculation = () => {
+    const active = getActiveNote();
+    if (!active) {
+      toast("ノートが選択されていません");
+      return;
+    }
+
+    const ttsArtTime = formatDurationString(currentArticleTtsSeconds);
+    const ttsFolderTime = formatDurationString(folderTtsInfo.seconds);
+    const guideRemTime = formatDurationString(currentGuideRemainingSeconds);
+    const guideTotTime = formatDurationString(currentGuideTotalSeconds);
+
+    const totalLines = visualLines.length > 0 ? visualLines.length : (active.content?.split('\n').length || 1);
+    const remLines = Math.max(0, totalLines - guideLineIndex);
+    const charsCount = cleanArticleText.replace(/\s/g, '').length;
+
+    toast(
+      `⏱【所要時間の計算結果（現在の設定）】\n` +
+      `🔊 音声読み上げ (${ttsSpeed}x速):\n` +
+      `  ・現在の記事 (${charsCount}文字): 約${ttsArtTime}\n` +
+      `  ・フォルダ全体 (${folderTtsInfo.count}記事・計${folderTtsInfo.chars}文字): 約${ttsFolderTime}\n` +
+      `🧭 読書ガイドバー (${guideBarSpeed}s/行${isGuideKanjiSlowdown ? "・漢字減速ON" : ""}):\n` +
+      `  ・現在位置から末尾: 約${guideRemTime} (残り${remLines}行)\n` +
+      `  ・記事全体: 約${guideTotTime} (全${totalLines}行)`
+    );
   };
 
   // 画面上でテキストを選択した際に「ここから流す」フローティングバーを表示
@@ -5322,7 +5771,7 @@ const renderMarkdownToElements = (contentStr: string) => {
                             <Play className="w-3.5 h-3.5 text-green-400 shrink-0" />
                             <div>
                               <div className="font-semibold">最初から連続読み上げ</div>
-                              <div className="text-[10px] text-[var(--subtle)]">記事先頭からフォルダ末尾まで（消灯対応）</div>
+                              <div className="text-[10px] text-[var(--subtle)]">記事先頭からフォルダ末尾まで（約{formatDurationString(folderTtsInfo.seconds)}）</div>
                             </div>
                           </button>
                           <button
@@ -5336,7 +5785,7 @@ const renderMarkdownToElements = (contentStr: string) => {
                             <FileText className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                             <div>
                               <div className="font-semibold text-white">この1記事のみ読み上げ</div>
-                              <div className="text-[10px] text-[var(--subtle)]">現在の記事末尾で音声を自動停止</div>
+                              <div className="text-[10px] text-[var(--subtle)]">現在の記事末尾で音声を自動停止（約{formatDurationString(currentArticleTtsSeconds)}）</div>
                             </div>
                           </button>
                           <button
@@ -5365,6 +5814,19 @@ const renderMarkdownToElements = (contentStr: string) => {
                               <div className="text-[10px] text-[var(--subtle)]">選択中のテキストだけを再生</div>
                             </div>
                           </button>
+                          <button
+                            type="button"
+                            onClick={showDurationCalculation}
+                            className="w-full text-left px-3 py-2 hover:bg-[#1f2d3d] text-[var(--subtle)] hover:text-yellow-300 flex items-center gap-2 cursor-pointer transition-colors border-t border-[#30363d]"
+                          >
+                            <Clock className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
+                            <div>
+                              <div className="font-semibold text-white">所要時間を計算・確認</div>
+                              <div className="text-[10px] text-[var(--subtle)]">
+                                音声: 約{formatDurationString(currentArticleTtsSeconds)} / ガイド: 約{formatDurationString(currentGuideRemainingSeconds)}
+                              </div>
+                            </div>
+                          </button>
                         </div>
                       </>
                     )}
@@ -5377,6 +5839,22 @@ const renderMarkdownToElements = (contentStr: string) => {
                       title="音声読み上げ速度（クリックで 1.0x / 1.2x / 1.5x / 1.8x / 2.0x / 0.8x を順繰り切り替え）"
                     >
                       {ttsSpeed}x
+                    </button>
+
+                    {/* 音声 & ガイド 終了所要時間（小さく表示 & クリックで計算） */}
+                    <button
+                      type="button"
+                      onClick={showDurationCalculation}
+                      className="p-1 px-1.5 portrait:px-1 text-[11px] font-mono text-[var(--subtle)] hover:text-yellow-300 hover:bg-[var(--border)] rounded cursor-pointer flex items-center gap-1 transition-all border-l border-[#30363d] shrink-0"
+                      title={`【現在の設定での終了予想時間】\n・音声読み上げ (${ttsSpeed}x): 約${formatDurationString(currentArticleTtsSeconds)}\n・読書ガイドバー (${guideBarSpeed}s): 約${formatDurationString(currentGuideRemainingSeconds)}\n\nクリックすると全体の詳細計算結果を表示します`}
+                    >
+                      <Clock className="w-3.5 h-3.5 text-yellow-400/90 shrink-0" />
+                      <span className="hidden xl:inline text-[10px] text-gray-300 font-sans">
+                        ~{formatDurationString(currentArticleTtsSeconds)}
+                      </span>
+                      <span className="inline xl:hidden text-[10px] font-bold text-yellow-300/90">
+                        ~{formatDurationString(currentArticleTtsSeconds)}
+                      </span>
                     </button>
 
                     <button
@@ -7188,6 +7666,9 @@ const renderMarkdownToElements = (contentStr: string) => {
           activeNote={activeNote}
           currentLineIndex={guideLineIndex}
           onLineChange={(idx) => setGuideLineIndex(idx)}
+          onShowCalculation={showDurationCalculation}
+          onStartTtsFromHere={startTtsFromGuideLine}
+          isTtsPlaying={isTtsPlaying}
           onNextArticle={() => {
             const moved = navigateNote("next");
             if (moved) {
@@ -7222,6 +7703,7 @@ const renderMarkdownToElements = (contentStr: string) => {
       {ttsSelectionPopup && (
         <div
           id="tts-selection-floating-bar"
+          onMouseDown={(e) => e.preventDefault()}
           className="fixed z-[9990] bg-[#161b22] border border-[var(--purple)] shadow-2xl rounded-lg p-1 px-1.5 flex items-center gap-1.5 animate-[fadeIn_0.15s_ease-out] backdrop-blur-md select-none"
           style={{
             top: `${ttsSelectionPopup.top}px`,
@@ -7232,8 +7714,9 @@ const renderMarkdownToElements = (contentStr: string) => {
           <button
             type="button"
             onClick={() => {
-              startTtsFromSpecified('from_selection');
+              const textToRead = ttsSelectionPopup.text;
               setTtsSelectionPopup(null);
+              startTtsFromSpecified('from_selection', textToRead);
             }}
             className="px-2.5 py-1 text-xs font-bold text-white bg-[var(--purple)] hover:brightness-110 rounded flex items-center gap-1 cursor-pointer transition-all shadow-sm active:scale-95"
             title="選択した位置からノートの末尾まで連続で読み上げます"
@@ -7244,8 +7727,9 @@ const renderMarkdownToElements = (contentStr: string) => {
           <button
             type="button"
             onClick={() => {
-              startTtsFromSpecified('selection_only');
+              const textToRead = ttsSelectionPopup.text;
               setTtsSelectionPopup(null);
+              startTtsFromSpecified('selection_only', textToRead);
             }}
             className="px-2 py-1 text-xs font-medium text-gray-300 hover:text-white hover:bg-[#30363d] rounded flex items-center gap-1 cursor-pointer transition-all active:scale-95"
             title="選択したテキストのみを読み上げます"
@@ -7265,7 +7749,7 @@ const renderMarkdownToElements = (contentStr: string) => {
 
       {/* Central Notification Toast element */}
       {toastMessage && (
-        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 p-2 px-5 rounded-lg bg-[var(--surface)] text-[var(--bright)] text-xs font-semibold border border-[var(--border2)] shadow-2xl z-[9999] pointer-events-none transition-all duration-300">
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 p-2.5 px-5 rounded-lg bg-[var(--surface)] text-[var(--bright)] text-xs font-semibold border border-[var(--border2)] shadow-2xl z-[9999] pointer-events-none transition-all duration-300 whitespace-pre-line text-left max-w-[92vw] leading-relaxed">
           {toastMessage}
         </div>
       )}
