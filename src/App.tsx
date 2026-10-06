@@ -117,6 +117,145 @@ const compressContent = (content: string, maxLength: number): string => {
   return clean;
 };
 
+const formatVisualStructure = (raw: any): string => {
+  if (!raw) return "";
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (trimmed.includes('```mermaid')) return trimmed;
+    return "```mermaid\n" + trimmed + "\n```";
+  }
+  if (Array.isArray(raw)) {
+    return raw.map((item: any) => {
+      if (!item) return "";
+      if (typeof item === "string") {
+        const trimmed = item.trim();
+        return trimmed.includes('```mermaid') ? trimmed : "```mermaid\n" + trimmed + "\n```";
+      }
+      const code = item.visual_structure || item.code || "";
+      const desc = item.description || item.desc || "";
+      let wrappedCode = "";
+      if (code) {
+        const trimmedCode = String(code).trim();
+        wrappedCode = trimmedCode.includes('```mermaid') ? trimmedCode : "```mermaid\n" + trimmedCode + "\n```";
+      }
+      return [wrappedCode, desc].filter(Boolean).join("\n\n");
+    }).filter(Boolean).join("\n\n");
+  }
+  return "";
+};
+
+// プレビュー表示に基づく音声読み上げ用テキストの抽出・整形
+// 1. 他記事へのリンク名称（[[...]]）や関連ノートブロックは一切読み上げない
+// 2. プレビューの見た目に基づき、Mermaid図や生JSONの構文、Markdown記号、URLなどを適切に除去・変換
+const cleanTextForSpeech = (rawText: string, title?: string): string => {
+  if (!rawText) return "";
+
+  let text = rawText;
+
+  // 1. 保存日時・作成日時などのフッターメタ情報の切り捨て
+  text = text.split(/保存日時|保存:|保存：|作成日時/)[0];
+
+  // 2. タイトルの重複除去（ノート先頭にタイトルが重複している場合）
+  if (title) {
+    const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (escapedTitle) {
+      const titleRegex = new RegExp(`^\\s*#*\\s*${escapedTitle}\\s*`, 'i');
+      text = text.replace(titleRegex, '');
+    }
+  }
+
+  // 3. 【重要】他記事へのリンク名称・関連ノートの完全除外（★ユーザー要望: ほか記事へのリンク名称は読み上げない）
+  // 3-1. 「## 関連ノート」「### 関連ノート」「## 関連記事」などのセクションと後続リンク一覧を丸ごと除去
+  text = text.replace(/(?:^|\n)(?:#+\s*)?関連(?:ノート|記事|リンク|ナレッジ)[：:]?[\s\S]*?(?=\n#+|$)/gi, '');
+  // 3-2. 行全体が他記事リンク（例: `- [[ノートA]]`、`[[ノートA]]`）の行を丸ごと削除
+  text = text.replace(/^\s*(?:[-*+•▸]\s+)?\[\[[^\]]+\]\]\s*$/gm, '');
+  // 3-3. 文中に残っている [[記事名]] や [[記事名|別名]] のリンク記法・名称をすべて除去
+  text = text.replace(/\[\[[^\]]+\]\]/g, '');
+
+  // 4. 【重要】プレビューの表示に基づくクリーンアップ（★ユーザー要望: プレビューの表示に基づいてほしい）
+  // 4-1. Mermaidコードブロックの除去（図形構文は読み上げない）
+  text = text.replace(/```mermaid[\s\S]*?```/gi, '');
+
+  // 4-2. visual_structure を含むJSONコードブロック・生JSONブロックの処理（コードは除外し、descriptionのみ読み上げ）
+  text = text.replace(/```json[\s\S]*?```/gi, (match) => {
+    if (match.includes('"visual_structure"')) {
+      try {
+        const parsed = JSON.parse(match.replace(/^```json\s*/i, '').replace(/```$/, '').trim());
+        if (parsed.visual_structure) {
+          const items = Array.isArray(parsed.visual_structure) ? parsed.visual_structure : [parsed.visual_structure];
+          const descs = items.map((it: any) => it.description || it.desc || '').filter(Boolean);
+          return descs.length > 0 ? '\n' + descs.join('。\n') + '\n' : '';
+        }
+      } catch {}
+    }
+    return '';
+  });
+
+  text = text.replace(/\{\s*"visual_structure"[\s\S]*?\}(?:\s*\]\s*\})?/gi, (match) => {
+    try {
+      const parsed = JSON.parse(match);
+      if (parsed.visual_structure) {
+        const items = Array.isArray(parsed.visual_structure) ? parsed.visual_structure : [parsed.visual_structure];
+        const descs = items.map((it: any) => it.description || it.desc || '').filter(Boolean);
+        return descs.length > 0 ? '\n' + descs.join('。\n') + '\n' : '';
+      }
+    } catch {}
+    return '';
+  });
+
+  // 4-3. 一般コードブロック（``` ... ```）の除去
+  text = text.replace(/```[\s\S]*?```/g, '');
+  // インラインコード (`code`) はコードの中身のテキストのみ残す
+  text = text.replace(/`([^`\n]+)`/g, '$1');
+
+  // 4-4. 数式・化学式ブロック ($$...$$, $...$) の除去・平文抽出
+  text = text.replace(/\$\$[\s\S]*?\$\$/g, '');
+  text = text.replace(/\$([^\$\n]+)\$/g, '$1');
+
+  // 4-5. 画像記法（![alt](url)）の完全除去
+  text = text.replace(/!\[[^\]]*\]\([^\)]+\)/g, '');
+
+  // 4-6. マークダウンリンク [表示テキスト](url) -> プレビュー表示と同様に「表示テキスト」のみ採用（URL部分は一切読まない）
+  text = text.replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1');
+
+  // 4-7. むき出しのURL (https://..., http://...) の除去
+  text = text.replace(/https?:\/\/[^\s\)\>]+/g, '');
+
+  // 4-8. マークダウン表（テーブル）の処理
+  // テーブル区切り行（|---|---|）の除去
+  text = text.replace(/^\s*\|[ \-:|]+\|\s*$/gm, '');
+  // 各行のセル区切りパイプ | を読点やスペースに変換
+  text = text.replace(/^\s*\|(.+)\|\s*$/gm, (_, row) => {
+    return row.split('|').map((col: string) => col.trim()).filter(Boolean).join('、 ');
+  });
+
+  // 4-9. マークダウン見出し記号（#）の除去
+  text = text.replace(/^#+\s+/gm, '');
+
+  // 4-10. 文字装飾（太字・斜体・打ち消し線）の記号除去
+  text = text.replace(/(\*\*|__)(.*?)\1/g, '$2');
+  text = text.replace(/(\*|_)(.*?)\1/g, '$2');
+  text = text.replace(/~~(.*?)~~/g, '$2');
+
+  // 4-11. 引用記号（>）、リスト記号（- [ ]、-、*、+、1.）のプレーン化
+  text = text.replace(/^>\s?/gm, '');
+  text = text.replace(/^(\s*)-\s+\[[ xX]\]\s*/gm, '');
+  text = text.replace(/^(\s*)[-*+•▸]\s+/gm, '');
+  text = text.replace(/^(\s*)\d+\.\s+/gm, '');
+
+  // 4-12. 水平線（---、***、___）の除去
+  text = text.replace(/^(?:-{3,}|\*{3,}|_{3,})$/gm, '');
+
+  // 4-13. HTMLタグの処理（<br>は改行に、その他タグは除去）
+  text = text.replace(/<br\s*\/?>/gi, '\n');
+  text = text.replace(/<[^>]+>/g, '');
+
+  // 4-14. 連続する改行や空白の整理
+  text = text.replace(/\n{3,}/g, '\n\n').trim();
+
+  return text;
+};
+
 const parseAIJSON = (rawText: string) => {
   let cleanText = rawText.trim();
   const match = cleanText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
@@ -2509,6 +2648,45 @@ const renderMarkdownToElements = (contentStr: string) => {
             <MermaidViewer code={codeString} />
           </div>
         );
+      } else if (codeBlockLanguage.toLowerCase() === "json" && codeString.includes('"visual_structure"')) {
+        let renderedAsMermaid = false;
+        try {
+          const parsed = JSON.parse(codeString.trim());
+          if (parsed && parsed.visual_structure) {
+            const vs = parsed.visual_structure;
+            const items = Array.isArray(vs) ? vs : [{ visual_structure: String(vs), description: "" }];
+            items.forEach((item: any) => {
+              const code = typeof item === "string" ? item : (item.visual_structure || item.code || "");
+              const desc = typeof item === "object" ? (item.description || item.desc || "") : "";
+              if (code) {
+                const cleanCode = code.replace(/^```mermaid\s*/i, "").replace(/^```\s*/, "").replace(/```$/, "").trim();
+                elements.push(
+                  <div key={`code-json-mermaid-${keySeq++}`} className="my-3">
+                    <MermaidViewer code={cleanCode} />
+                  </div>
+                );
+              }
+              if (desc) {
+                elements.push(
+                  <p key={`code-json-desc-${keySeq++}`} className="text-sm text-[var(--subtle)] my-2 leading-relaxed">
+                    {desc}
+                  </p>
+                );
+              }
+            });
+            renderedAsMermaid = true;
+          }
+        } catch {}
+        if (!renderedAsMermaid) {
+          elements.push(
+            <pre
+              key={`code-${keySeq++}`}
+              className="bg-[var(--surface)] text-[var(--fg)] p-4 rounded-md my-4 overflow-x-auto text-sm font-mono border border-[var(--border)]"
+            >
+              <code>{codeString}</code>
+            </pre>
+          );
+        }
       } else {
         elements.push(
           <pre
@@ -2521,6 +2699,58 @@ const renderMarkdownToElements = (contentStr: string) => {
       }
       i++; // 閉じ ``` を消費
       continue;
+    }
+
+    // 1.2. 生JSON形式の visual_structure ブロックの自動検知と Mermaid レンダリング
+    const trimmedLine = line.trim();
+    if (trimmedLine.startsWith("{") && (trimmedLine.includes('"visual_structure"') || lines.slice(i, i + 8).some(l => l.includes('"visual_structure"')))) {
+      let jsonStr = "";
+      let j = i;
+      let depth = 0;
+      let foundJson = false;
+      while (j < lines.length) {
+        jsonStr += lines[j] + "\n";
+        for (const char of lines[j]) {
+          if (char === '{') depth++;
+          if (char === '}') depth--;
+        }
+        if (depth === 0) {
+          foundJson = true;
+          j++;
+          break;
+        }
+        j++;
+      }
+      if (foundJson) {
+        try {
+          const parsed = JSON.parse(jsonStr.trim());
+          if (parsed && parsed.visual_structure) {
+            const vs = parsed.visual_structure;
+            const items = Array.isArray(vs) ? vs : [{ visual_structure: String(vs), description: "" }];
+            items.forEach((item: any) => {
+              const code = typeof item === "string" ? item : (item.visual_structure || item.code || "");
+              const desc = typeof item === "object" ? (item.description || item.desc || "") : "";
+              if (code) {
+                const cleanCode = code.replace(/^```mermaid\s*/i, "").replace(/^```\s*/, "").replace(/```$/, "").trim();
+                elements.push(
+                  <div key={`auto-json-mermaid-${keySeq++}`} className="my-3">
+                    <MermaidViewer code={cleanCode} />
+                  </div>
+                );
+              }
+              if (desc) {
+                elements.push(
+                  <p key={`auto-json-desc-${keySeq++}`} className="text-sm text-[var(--subtle)] my-2 leading-relaxed">
+                    {desc}
+                  </p>
+                );
+              }
+            });
+            i = j;
+            continue;
+          }
+        } catch {}
+      }
     }
 
     // 1.5. 数式・化学式ブロック ($$ ... $$)
@@ -3041,11 +3271,10 @@ const renderMarkdownToElements = (contentStr: string) => {
               }
             }
             if (resultItem.visual_structure) {
-              const trimmed = resultItem.visual_structure.trim();
-              const wrapped = (trimmed.includes('```mermaid')) 
-                ? resultItem.visual_structure 
-                : "```mermaid\n" + trimmed + "\n```";
-              newContent = newContent + "\n\n" + wrapped;
+              const formatted = formatVisualStructure(resultItem.visual_structure);
+              if (formatted) {
+                newContent = newContent + "\n\n" + formatted;
+              }
             }
             
             // D列には [folder:〇〇] や長いキーワード群を書き込まず、シンプルなフォルダ名だけを維持
@@ -3083,8 +3312,8 @@ const renderMarkdownToElements = (contentStr: string) => {
         setExternalPasteText("");
         
       } else {
-        if (!parsed.keywords && !parsed.summary && !parsed.related_notes) {
-          throw new Error("必要なプロパティ(keywords, summary, related_notes 等)が見つかりません");
+        if (!parsed.keywords && !parsed.summary && !parsed.related_notes && !parsed.visual_structure) {
+          throw new Error("必要なプロパティ(keywords, summary, related_notes, visual_structure 等)が見つかりません");
         }
         
         setAiResults(parsed);
@@ -3814,18 +4043,7 @@ const renderMarkdownToElements = (contentStr: string) => {
     setIsTtsLoading(true);
     
     try {
-      let rawText = currentNote.content;
-      // Remove everything after "保存日時" (or variations) if it exists
-      rawText = rawText.split(/保存日時|保存:|保存：/)[0];
-      
-      // Remove the title from the start of the note if it exists
-      const escapedTitle = (currentNote.title || "").replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      if (escapedTitle) {
-        const titleRegex = new RegExp(`^\\s*#*\\s*${escapedTitle}\\s*`, 'i');
-        rawText = rawText.replace(titleRegex, '');
-      }
-
-      const cleanText = rawText.replace(/#+\s/g, '').replace(/\[\[(.*?)\]\]/g, '$1').replace(/\*/g, '').trim();
+      const cleanText = cleanTextForSpeech(currentNote.content, currentNote.title);
       
       if (!cleanText) {
         setTtsQueue(prev => prev.slice(1));
@@ -6498,14 +6716,15 @@ const renderMarkdownToElements = (contentStr: string) => {
                       <div className="mt-4 pt-4 border-t border-[var(--border2)]">
                         <div className="text-[10px] font-bold text-[var(--purple)] tracking-wider uppercase mb-2">✦ 抽出された図解 (Mermaid)</div>
                         <pre className="text-[10px] text-[var(--subtle)] whitespace-pre-wrap font-mono p-2 bg-[#0d1117] rounded border border-[var(--border2)] max-h-32 overflow-y-auto mb-2">
-                          {aiResults.visual_structure}
+                          {formatVisualStructure(aiResults.visual_structure)}
                         </pre>
                         <button
                           className="text-[11px] text-[var(--blue)] border border-[#58a6ff33] rounded p-1.5 px-3 hover:bg-[#58a6ff1a] cursor-pointer font-semibold transition-all flex items-center gap-1"
                           onClick={() => {
                             const active = getActiveNote();
                             if (active) {
-                              const nextContent = active.content + "\n\n" + (aiResults.visual_structure.includes('```mermaid') ? aiResults.visual_structure : "```mermaid\n" + aiResults.visual_structure.trim() + "\n```");
+                              const formatted = formatVisualStructure(aiResults.visual_structure);
+                              const nextContent = active.content + "\n\n" + formatted;
                               const updated: Note = {
                                 ...active,
                                 content: nextContent,

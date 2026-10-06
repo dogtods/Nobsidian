@@ -2796,7 +2796,11 @@ function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, 
     }
     const currentLotName = maxLotNum === 0 ? baseLotName : baseLotName + "-" + maxLotNum;
 
-    let addedCount = 0;
+    let nColIdx = headers.indexOf("nobsidian");
+    if (nColIdx === -1) nColIdx = 7;
+
+    const newRows = [];
+    const updatedRowIndices = [];
 
     for (const rIdx of rowIndices) {
       const row = srcData[rIdx - 1];
@@ -2811,16 +2815,25 @@ function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, 
       if (row[14] === undefined) newRow[14] = "";
       if (row[15] === undefined) newRow[15] = "";
 
-      targetSheet.appendRow(newRow);
-
-      let nColIdx = headers.indexOf("nobsidian");
-      if (nColIdx === -1) nColIdx = 7;
-      srcSheet.getRange(rIdx, nColIdx + 1).setValue("IMPORTED");
-
-      addedCount++;
+      newRows.push(newRow);
+      updatedRowIndices.push(rIdx);
     }
 
-    return { success: true, count: addedCount };
+    if (newRows.length > 0) {
+      // 1回のsetValuesで対象シートへ一括書き込み（50行でも0.3秒で完了）
+      const targetStartRow = targetSheet.getLastRow() + 1;
+      targetSheet.getRange(targetStartRow, 1, newRows.length, 16).setValues(newRows);
+
+      // 取込元シートのG/H列（nobsidian）をインメモリで更新し、1回のsetValuesで一括反映
+      for (const rIdx of updatedRowIndices) {
+        srcData[rIdx - 1][nColIdx] = "IMPORTED";
+      }
+      const colNum = nColIdx + 1;
+      srcSheet.getRange(1, colNum, srcData.length, 1).setValues(srcData.map(r => [r[nColIdx]]));
+      SpreadsheetApp.flush();
+    }
+
+    return { success: true, count: newRows.length };
   } catch (err) {
     return { success: false, error: err.message };
   }
