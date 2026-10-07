@@ -161,7 +161,7 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
                   </span>
                 </span>
                 <p className="text-[10px] text-[var(--subtle)] mt-0.5 leading-relaxed">
-                  端末内蔵の音声で読み上げます。画面消灯中や他アプリ操作中もバックグラウンドで連続再生し、記事の最後まで来たら音声を自動停止します。
+                  端末内蔵の音声で読み上げます。再生中は自動スリープを防止します（※スマホの物理電源ボタンで完全に画面ロックするとOSの省電力仕様により音声が停止するため、暗くして聴く場合は電源ボタンを押さず画面を伏せるか輝度を下げてご利用ください）。
                 </p>
               </div>
             </label>

@@ -3895,6 +3895,115 @@ const renderMarkdownToElements = (contentStr: string) => {
     }
   }, [isTtsPlaying, ttsQueue, isTtsLoading]);
 
+  // 読み上げ中のテキスト位置に合わせて画面を自然に下方向へ追従スクロールする関数
+  // （画面の下側中盤〜約62%に到達した時点で、その部分が見えるようにしつつスムーズに下へスクロール）
+  const scrollSpeechIntoView = useCallback((chunkText: string) => {
+    const container = previewRef.current;
+    if (!container || !chunkText) return;
+    if (isAutoScrollingRef.current) return;
+
+    const rawSnippet = chunkText.trim();
+    if (!rawSnippet) return;
+
+    // 検索用スニペット（Markdown記号や空白・句読点を除去した先頭文字）
+    const cleanSnippet = rawSnippet.replace(/[\s\r\n#*`_\[\]()\-•>|。、！？]/g, "").slice(0, 14);
+    if (cleanSnippet.length < 2) return;
+
+    // 1. 直近の該当HTML要素を探す
+    const elements = container.querySelectorAll("p, h1, h2, h3, h4, h5, h6, li, blockquote, td, th, div.list-item, div.check-row");
+    let targetEl: HTMLElement | null = null;
+
+    for (let i = 0; i < elements.length; i++) {
+      const el = elements[i] as HTMLElement;
+      if (el.clientHeight > container.clientHeight * 1.5) continue;
+      const elText = (el.textContent || "").replace(/[\s\r\n#*`_\[\]()\-•>|。、！？]/g, "");
+      if (elText.includes(cleanSnippet)) {
+        targetEl = el;
+        break;
+      }
+    }
+
+    // 2. 見つからない場合はテキストノードを走査
+    if (!targetEl) {
+      const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
+      let node: Node | null;
+      while ((node = walker.nextNode())) {
+        const nodeText = (node.textContent || "").replace(/[\s\r\n#*`_\[\]()\-•>|。、！？]/g, "");
+        if (nodeText.includes(cleanSnippet)) {
+          targetEl = node.parentElement;
+          break;
+        }
+      }
+    }
+
+    if (!targetEl) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const elRect = targetEl.getBoundingClientRect();
+
+    let itemTop = elRect.top;
+    let itemBottom = elRect.bottom;
+
+    // 段落が長い場合、該当文のテキストノードからピンポイントでRangeRectを取得
+    try {
+      const walker = document.createTreeWalker(targetEl, NodeFilter.SHOW_TEXT, null);
+      let textNode: Node | null;
+      while ((textNode = walker.nextNode())) {
+        const val = (textNode.textContent || "").replace(/[\s\r\n#*`_\[\]()\-•>|。、！？]/g, "");
+        if (val.includes(cleanSnippet.slice(0, 6))) {
+          const range = document.createRange();
+          range.selectNodeContents(textNode);
+          const rRect = range.getBoundingClientRect();
+          if (rRect.height > 0) {
+            itemTop = rRect.top;
+            itemBottom = rRect.bottom;
+            break;
+          }
+        }
+      }
+    } catch (_) {}
+
+    // コンテナ可視領域の上端からの相対位置（px）
+    const relativeTop = itemTop - containerRect.top;
+    const relativeBottom = itemBottom - containerRect.top;
+    const containerHeight = container.clientHeight;
+
+    // ★ユーザー要望:
+    // 「おおよそ画面の下側中盤になったら、その部分は見えるようにしつつしたにスクロールしてほしい」
+    // 下側中盤: 画面の高さの約62%〜70%に到達した場合にトリガー
+    const scrollTriggerThreshold = containerHeight * 0.62;
+
+    if (relativeTop > scrollTriggerThreshold || relativeBottom > containerHeight * 0.80) {
+      // 読み上げ行が見える状態を保ちつつ、画面の上から約32%の快適な位置へスムーズスクロール
+      const scrollDelta = relativeTop - (containerHeight * 0.32);
+      const targetScrollTop = Math.max(0, container.scrollTop + scrollDelta);
+
+      isAutoScrollingRef.current = true;
+      clearTimeout(autoScrollTimerRef.current);
+      container.scrollTo({
+        top: targetScrollTop,
+        behavior: "smooth"
+      });
+      autoScrollTimerRef.current = setTimeout(() => {
+        isAutoScrollingRef.current = false;
+      }, 400);
+    } else if (relativeTop < 20) {
+      // ユーザーの手動操作等で現在読み上げ行が画面上端より上に隠れてしまった場合の引き戻し
+      const scrollDelta = relativeTop - (containerHeight * 0.25);
+      const targetScrollTop = Math.max(0, container.scrollTop + scrollDelta);
+
+      isAutoScrollingRef.current = true;
+      clearTimeout(autoScrollTimerRef.current);
+      container.scrollTo({
+        top: targetScrollTop,
+        behavior: "smooth"
+      });
+      autoScrollTimerRef.current = setTimeout(() => {
+        isAutoScrollingRef.current = false;
+      }, 400);
+    }
+  }, []);
+
   // 端末内蔵音声エンジン（Web Speech API）での発話処理（長文対応・連続自動つなぎ方式・消灯/バックグラウンド対応）
   const playDeviceSpeech = (
     text: string,
@@ -3943,9 +4052,17 @@ const renderMarkdownToElements = (contentStr: string) => {
         lastSpokenChunk = currentIndex;
         lastActivityTime = Date.now();
         const chunkText = chunks[currentIndex++];
+
+        // 読み上げ中のテキスト位置に合わせて画面を自然に下方向へ追従スクロール
+        scrollSpeechIntoView(chunkText);
+
         const utterance = new SpeechSynthesisUtterance(chunkText);
         utterance.lang = "ja-JP";
         utterance.rate = ttsSpeed;
+
+        utterance.onstart = () => {
+          scrollSpeechIntoView(chunkText);
+        };
 
         const savedVoiceUri = localStorage.getItem("cn_selected_voice_uri");
         const voices = window.speechSynthesis.getVoices();
@@ -4037,6 +4154,9 @@ const renderMarkdownToElements = (contentStr: string) => {
     
     const currentNote = ttsQueue[0];
     if (currentNote.id) {
+      if (activeId !== currentNote.id && previewRef.current) {
+        previewRef.current.scrollTo({ top: 0, behavior: "smooth" });
+      }
       setActiveId(currentNote.id);
       setMode("preview");
     }
