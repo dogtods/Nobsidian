@@ -5003,7 +5003,6 @@ const renderMarkdownToElements = (contentStr: string) => {
     const folderName = getFolder(note);
     const folder = folderName ? folderName.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") : "";
     const keywords = note.keywords ? note.keywords.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") : "";
-    const summary = note.summary ? note.summary.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") : "";
     const sourceUrl = note.sourceUrl ? note.sourceUrl.replace(/"/g, "&quot;") : "";
 
     return `<!DOCTYPE html>
@@ -5097,26 +5096,6 @@ const renderMarkdownToElements = (contentStr: string) => {
     }
     .cn-source-link:hover {
       opacity: 0.8;
-    }
-    .cn-summary-box {
-      margin-top: 18px;
-      padding: 14px 18px;
-      border-radius: 8px;
-      background-color: var(--quote-bg);
-      border: 1px solid var(--border);
-      border-left: 4px solid var(--quote-border);
-    }
-    .cn-summary-label {
-      font-weight: 700;
-      font-size: 0.85rem;
-      color: var(--accent);
-      margin-bottom: 6px;
-    }
-    .cn-summary-content {
-      font-size: 0.95rem;
-      margin: 0;
-      color: var(--text);
-      line-height: 1.7;
     }
     .cn-content {
       font-size: 1.02rem;
@@ -5225,7 +5204,7 @@ const renderMarkdownToElements = (contentStr: string) => {
     }
     @media print {
       body { padding: 0; background: #fff !important; color: #000 !important; }
-      .cn-badge, .cn-summary-box, .cn-content blockquote, .cn-content pre, .cn-content table th {
+      .cn-badge, .cn-content blockquote, .cn-content pre, .cn-content table th {
         background: #f8f9fa !important;
         border-color: #ccc !important;
         color: #000 !important;
@@ -5244,12 +5223,6 @@ const renderMarkdownToElements = (contentStr: string) => {
         ${keywords ? `<span class="cn-badge">🏷️ ${keywords}</span>` : ""}
         ${sourceUrl ? `<a class="cn-badge cn-source-link" href="${sourceUrl}" target="_blank" rel="noopener noreferrer">🔗 元ソースを開く</a>` : ""}
       </div>
-      ${summary ? `
-        <div class="cn-summary-box">
-          <div class="cn-summary-label">💡 要約</div>
-          <p class="cn-summary-content">${summary}</p>
-        </div>
-      ` : ""}
     </header>
     <main class="cn-content">
       ${bodyHtml}
