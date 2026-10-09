@@ -313,6 +313,20 @@ export default function PromptSettingsModal({ isOpen, onClose, onSettingsClick, 
     onSaveToast("プロンプトをリセットしました");
   };
 
+  const handleDownloadPrompt = (title: string, text: string) => {
+    const filename = `${title}_${new Date().toISOString().slice(0, 10).replace(/-/g, "")}.txt`;
+    const blob = new Blob(["\uFEFF" + text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    onSaveToast(`${title} をテキストファイルとしてダウンロードしました 📥`);
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -468,7 +482,30 @@ export default function PromptSettingsModal({ isOpen, onClose, onSettingsClick, 
           </div>
 
           <div>
-            <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1">グラフ レポート生成プロンプト (テキスト分析)</label>
+            <div className="flex justify-between items-center mb-1">
+              <label className="text-[11px] text-[var(--subtle)] font-bold">グラフ レポート生成プロンプト (テキスト分析)</label>
+              <div className="flex gap-2 items-center">
+                <button
+                  type="button"
+                  className="text-[10px] text-[#7ee787] hover:underline flex items-center gap-0.5 cursor-pointer bg-transparent border-0"
+                  onClick={() => handleDownloadPrompt("レポート生成プロンプト_テンプレート", reportPrompt)}
+                  title="レポート生成プロンプトをテキストファイル(.txt)としてダウンロード"
+                >
+                  <span>📥</span> DL
+                </button>
+                <button
+                  type="button"
+                  className="text-[10px] text-[var(--subtle)] hover:text-white flex items-center gap-0.5 cursor-pointer bg-transparent border-0"
+                  onClick={() => {
+                    navigator.clipboard.writeText(reportPrompt);
+                    onSaveToast("レポートプロンプトをクリップボードにコピーしました 📋");
+                  }}
+                  title="クリップボードにコピー"
+                >
+                  <span>📋</span> コピー
+                </button>
+              </div>
+            </div>
             <textarea
               className="w-full font-mono text-xs p-2 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all resize-y"
               rows={4}
@@ -478,7 +515,30 @@ export default function PromptSettingsModal({ isOpen, onClose, onSettingsClick, 
           </div>
 
           <div>
-            <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1">グラフ 構造化グラフ生成プロンプト (Mermaid図解・因果・時系列)</label>
+            <div className="flex justify-between items-center mb-1">
+              <label className="text-[11px] text-[#58a6ff] font-bold">グラフ 構造化グラフ生成プロンプト (Mermaid図解・因果・時系列)</label>
+              <div className="flex gap-2 items-center">
+                <button
+                  type="button"
+                  className="text-[10px] text-[#58a6ff] hover:underline flex items-center gap-0.5 cursor-pointer bg-transparent border-0 font-semibold"
+                  onClick={() => handleDownloadPrompt("構造化グラフプロンプト_テンプレート", graphStructurePrompt)}
+                  title="長文の構造化グラフプロンプトをテキストファイル(.txt)としてダウンロード"
+                >
+                  <span>📥</span> テキストDL (.txt)
+                </button>
+                <button
+                  type="button"
+                  className="text-[10px] text-[var(--subtle)] hover:text-white flex items-center gap-0.5 cursor-pointer bg-transparent border-0"
+                  onClick={() => {
+                    navigator.clipboard.writeText(graphStructurePrompt);
+                    onSaveToast("構造化プロンプトをクリップボードにコピーしました 📋");
+                  }}
+                  title="クリップボードにコピー"
+                >
+                  <span>📋</span> コピー
+                </button>
+              </div>
+            </div>
             <textarea
               className="w-full font-mono text-xs p-2 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all resize-y"
               rows={5}

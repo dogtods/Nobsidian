@@ -29,6 +29,7 @@ import {
   Copy,
   Link2,
   FileJson,
+  FileCode,
   Maximize2,
   Minimize2,
   X,
@@ -2155,6 +2156,18 @@ $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$
   };
 
   const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    // ツールバー、上部アクションボタン列、入力欄、各種ボタンでの操作時はスワイプによるページ送りを防止
+    const target = e.target as HTMLElement | null;
+    if (
+      !target ||
+      target.closest(
+        '[data-no-swipe], [data-toolbar], header, nav, button, input, textarea, select, .overflow-x-auto, .overflow-x-scroll, .custom-scrollbar'
+      )
+    ) {
+      touchStartRef.current = null;
+      return;
+    }
+
     if (e.touches.length === 1) {
       touchStartRef.current = {
         x: e.touches[0].clientX,
@@ -2168,14 +2181,24 @@ $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$
     const start = touchStartRef.current;
     touchStartRef.current = null;
 
+    const target = e.target as HTMLElement | null;
+    if (
+      !target ||
+      target.closest(
+        '[data-no-swipe], [data-toolbar], header, nav, button, input, textarea, select, .overflow-x-auto, .overflow-x-scroll, .custom-scrollbar'
+      )
+    ) {
+      return;
+    }
+
     if (e.changedTouches.length === 1) {
       const endX = e.changedTouches[0].clientX;
       const endY = e.changedTouches[0].clientY;
       const deltaX = endX - start.x;
       const deltaY = endY - start.y;
 
-      const minSwipeDistance = 60; // min 60px horizontal move
-      const maxVerticalVariance = 50; // max 50px vertical move to keep it clean and scrolling unaffected
+      const minSwipeDistance = 75; // 75px以上の明瞭な横スワイプ
+      const maxVerticalVariance = 45; // 垂直移動は小さく保ち誤作動を防ぐ
 
       if (Math.abs(deltaX) > minSwipeDistance && Math.abs(deltaY) < maxVerticalVariance) {
         if (deltaX > 0) {
@@ -4928,6 +4951,372 @@ const renderMarkdownToElements = (contentStr: string) => {
     window.print();
   };
 
+  const convertMarkdownToHtmlBasic = (md: string): string => {
+    if (!md) return "";
+    let html = md
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+
+    // Code blocks
+    html = html.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_match, lang, code) => {
+      return `<pre><code class="language-${lang}">${code.trim()}</code></pre>`;
+    });
+
+    // Inline code
+    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+
+    // Headings
+    html = html.replace(/^### (.*$)/gim, "<h3>$1</h3>");
+    html = html.replace(/^## (.*$)/gim, "<h2>$1</h2>");
+    html = html.replace(/^# (.*$)/gim, "<h1>$1</h1>");
+
+    // Blockquote
+    html = html.replace(/^\> (.*$)/gim, "<blockquote>$1</blockquote>");
+
+    // Bold & italic
+    html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+
+    // WikiLinks
+    html = html.replace(/\[\[([^\]]+)\]\]/g, '<span class="wikilink">[[$1]]</span>');
+
+    // Horizontal rule
+    html = html.replace(/^---$/gim, "<hr/>");
+
+    // Paragraphs
+    html = html.split("\n\n").map(p => {
+      const trimmed = p.trim();
+      if (!trimmed) return "";
+      if (trimmed.startsWith("<h") || trimmed.startsWith("<pre") || trimmed.startsWith("<blockquote") || trimmed.startsWith("<hr")) {
+        return trimmed;
+      }
+      return `<p>${trimmed.replace(/\n/g, "<br/>")}</p>`;
+    }).join("\n");
+
+    return html;
+  };
+
+  const generateStandaloneHtmlDocument = (note: Note, bodyHtml: string): string => {
+    const safeTitle = (note.title || "無題のノート").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const updatedDate = formatDateStr(note.updatedAt || Date.now());
+    const folderName = getFolder(note);
+    const folder = folderName ? folderName.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") : "";
+    const keywords = note.keywords ? note.keywords.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") : "";
+    const summary = note.summary ? note.summary.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") : "";
+    const sourceUrl = note.sourceUrl ? note.sourceUrl.replace(/"/g, "&quot;") : "";
+
+    return `<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${safeTitle}</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --text: #1f2328;
+      --subtle: #57606a;
+      --border: #d0d7de;
+      --border-light: #eaeef2;
+      --surface: #f6f8fa;
+      --code-bg: #f6f8fa;
+      --accent: #0969da;
+      --accent-bg: #ddf4ff;
+      --quote-border: #0969da;
+      --quote-bg: #f0f6fc;
+      --table-row-alt: #fbfcfd;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1117;
+        --text: #e6edf3;
+        --subtle: #8b949e;
+        --border: #30363d;
+        --border-light: #21262d;
+        --surface: #161b22;
+        --code-bg: #161b22;
+        --accent: #58a6ff;
+        --accent-bg: #0c2d6b;
+        --quote-border: #1f6feb;
+        --quote-bg: #111a2c;
+        --table-row-alt: #13171f;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.8;
+      margin: 0;
+      padding: 36px 16px;
+      -webkit-font-smoothing: antialiased;
+    }
+    .cn-container {
+      max-width: 880px;
+      margin: 0 auto;
+      padding: 0 12px;
+    }
+    .cn-header {
+      margin-bottom: 28px;
+      padding-bottom: 20px;
+      border-bottom: 2px solid var(--border);
+    }
+    .cn-title {
+      font-size: 2.1rem;
+      font-weight: 800;
+      line-height: 1.3;
+      margin: 0 0 14px 0;
+      letter-spacing: -0.015em;
+      color: var(--text);
+    }
+    .cn-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px 12px;
+      font-size: 0.85rem;
+      color: var(--subtle);
+    }
+    .cn-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 10px;
+      border-radius: 6px;
+      background-color: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 0.82rem;
+      text-decoration: none;
+    }
+    .cn-source-link {
+      color: var(--accent);
+      border-color: var(--accent);
+      transition: opacity 0.2s;
+    }
+    .cn-source-link:hover {
+      opacity: 0.8;
+    }
+    .cn-summary-box {
+      margin-top: 18px;
+      padding: 14px 18px;
+      border-radius: 8px;
+      background-color: var(--quote-bg);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--quote-border);
+    }
+    .cn-summary-label {
+      font-weight: 700;
+      font-size: 0.85rem;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+    .cn-summary-content {
+      font-size: 0.95rem;
+      margin: 0;
+      color: var(--text);
+      line-height: 1.7;
+    }
+    .cn-content {
+      font-size: 1.02rem;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+    .cn-content h1, .cn-content h2, .cn-content h3, .cn-content h4, .cn-content h5, .cn-content h6 {
+      font-weight: 700;
+      line-height: 1.35;
+      margin-top: 2rem;
+      margin-bottom: 0.75rem;
+      color: var(--text);
+    }
+    .cn-content h1 { font-size: 1.75rem; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+    .cn-content h2 { font-size: 1.45rem; border-bottom: 1px solid var(--border-light); padding-bottom: 5px; }
+    .cn-content h3 { font-size: 1.25rem; }
+    .cn-content h4 { font-size: 1.1rem; }
+    .cn-content p { margin: 1em 0; line-height: 1.8; }
+    .cn-content blockquote {
+      margin: 1.2em 0;
+      padding: 10px 18px;
+      background-color: var(--quote-bg);
+      border-left: 4px solid var(--quote-border);
+      border-radius: 0 6px 6px 0;
+      color: var(--subtle);
+    }
+    .cn-content pre {
+      padding: 16px;
+      overflow-x: auto;
+      background-color: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.88rem;
+      line-height: 1.55;
+    }
+    .cn-content code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.88em;
+      background-color: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+    .cn-content pre code {
+      border: none;
+      padding: 0;
+      background: transparent;
+    }
+    .cn-content table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.5em 0;
+      font-size: 0.95rem;
+    }
+    .cn-content th, .cn-content td {
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      text-align: left;
+    }
+    .cn-content th {
+      background-color: var(--surface);
+      font-weight: 700;
+    }
+    .cn-content tr:nth-child(even) {
+      background-color: var(--table-row-alt);
+    }
+    .cn-content ul, .cn-content ol {
+      padding-left: 28px;
+      margin: 1em 0;
+    }
+    .cn-content li { margin: 0.4em 0; }
+    .cn-content hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 2.2em 0;
+    }
+    .cn-content a {
+      color: var(--accent);
+      text-decoration: underline;
+    }
+    .cn-content svg {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      margin: 20px auto;
+    }
+    .cn-content .wikilink {
+      color: var(--accent);
+      font-weight: 600;
+      background: var(--surface);
+      padding: 1px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+    .cn-footer {
+      margin-top: 50px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      font-size: 0.82rem;
+      color: var(--subtle);
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    @media print {
+      body { padding: 0; background: #fff !important; color: #000 !important; }
+      .cn-badge, .cn-summary-box, .cn-content blockquote, .cn-content pre, .cn-content table th {
+        background: #f8f9fa !important;
+        border-color: #ccc !important;
+        color: #000 !important;
+      }
+      .cn-title { color: #000 !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="cn-container">
+    <header class="cn-header">
+      <h1 class="cn-title">${safeTitle}</h1>
+      <div class="cn-meta">
+        ${folder ? `<span class="cn-badge">📁 ${folder}</span>` : ""}
+        <span class="cn-badge">🕒 ${updatedDate}</span>
+        ${keywords ? `<span class="cn-badge">🏷️ ${keywords}</span>` : ""}
+        ${sourceUrl ? `<a class="cn-badge cn-source-link" href="${sourceUrl}" target="_blank" rel="noopener noreferrer">🔗 元ソースを開く</a>` : ""}
+      </div>
+      ${summary ? `
+        <div class="cn-summary-box">
+          <div class="cn-summary-label">💡 要約</div>
+          <p class="cn-summary-content">${summary}</p>
+        </div>
+      ` : ""}
+    </header>
+    <main class="cn-content">
+      ${bodyHtml}
+    </main>
+    <footer class="cn-footer">
+      <span>Connected Notes</span>
+      <span>出力日時: ${new Date().toLocaleString("ja-JP")}</span>
+    </footer>
+  </div>
+</body>
+</html>`;
+  };
+
+  const executeHtmlExport = (targetNote: Note) => {
+    const previewEl = document.getElementById("preview");
+    let contentHtml = "";
+
+    if (previewEl) {
+      // プレビューコンテナの複製
+      const clone = previewEl.cloneNode(true) as HTMLElement;
+      // 読書ガイドバー等の動的要素を除去
+      clone.querySelectorAll('#visual-reading-guide-line, #visual-reading-guide-dim-top, #visual-reading-guide-dim-bottom').forEach(el => el.remove());
+      // 印刷用一時非表示見出し(h1.hidden.print:block)を削除（HTMLヘッダーで美しく出すため）
+      const hiddenH1 = clone.querySelector('h1.hidden');
+      if (hiddenH1) hiddenH1.remove();
+
+      contentHtml = clone.innerHTML;
+    }
+
+    if (!contentHtml.trim()) {
+      contentHtml = convertMarkdownToHtmlBasic(targetNote.content);
+    }
+
+    const fullHtml = generateStandaloneHtmlDocument(targetNote, contentHtml);
+    const safeTitle = (targetNote.title || "note").replace(/[/\\:*?"<>|]/g, "_").trim() || "note";
+    const filename = `${safeTitle}.html`;
+
+    // UTF-8 BOM付きでダウンロード（ブラウザ・Excel文字化け完全防止）
+    const blob = new Blob(["\uFEFF" + fullHtml], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    toast(`📄 HTMLファイルをダウンロードしました: ${filename}`);
+  };
+
+  const exportToHTML = () => {
+    const activeNote = getActiveNote();
+    if (!activeNote) return;
+
+    if (mode !== "preview") {
+      setMode("preview");
+      toast("プレビューに切り替えてHTMLファイルを生成中...");
+      setTimeout(() => {
+        executeHtmlExport(activeNote);
+      }, 200);
+      return;
+    }
+
+    executeHtmlExport(activeNote);
+  };
+
   const exportNoteToJSON = () => {
     const activeNote = getActiveNote();
     if (!activeNote) return;
@@ -5879,6 +6268,12 @@ const renderMarkdownToElements = (contentStr: string) => {
                 <Download className="w-3 h-3 text-[var(--green)]" /> このノート (.md)
               </button>
               <button
+                onClick={exportToHTML}
+                className="w-full text-left p-1.5 bg-transparent hover:bg-[var(--border)] border border-[var(--border)] rounded text-[var(--subtle)] hover:text-white hover:border-[var(--border2)] text-[11px] cursor-pointer transition-all flex items-center gap-1.5"
+              >
+                <FileCode className="w-3 h-3 text-cyan-400" /> このノート (.html)
+              </button>
+              <button
                 onClick={downloadAllMarkdowns}
                 className="w-full text-left p-1.5 bg-transparent hover:bg-[var(--border)] border border-[var(--border)] rounded text-[var(--subtle)] hover:text-white hover:border-[var(--border2)] text-[11px] cursor-pointer transition-all flex items-center gap-1.5"
               >
@@ -5913,11 +6308,34 @@ const renderMarkdownToElements = (contentStr: string) => {
             onTouchEnd={handleTouchEnd}
           >
             {/* TOOLBAR */}
-            <div className={`border-b border-[var(--border)] bg-[var(--bg)] z-10 select-none print:hidden transition-opacity duration-300 ${
-              isFullScreen ? "landscape:hidden" : ""
-            } ${isGuideBarOpen && isGuideLineDimmed ? "opacity-25" : ""}`}>
+            <div 
+              data-toolbar="true"
+              data-no-swipe="true"
+              onTouchStart={(e) => {
+                e.stopPropagation();
+                touchStartRef.current = null;
+              }}
+              onTouchEnd={(e) => {
+                e.stopPropagation();
+                touchStartRef.current = null;
+              }}
+              className={`border-b border-[var(--border)] bg-[var(--bg)] z-10 select-none print:hidden transition-opacity duration-300 ${
+                isFullScreen ? "landscape:hidden" : ""
+              } ${isGuideBarOpen && isGuideLineDimmed ? "opacity-25" : ""}`}
+            >
               {/* 上段: タイトル・フォルダ & 基本操作（プレビュー/編集・保存・全画面） */}
-              <div className="p-2.5 px-4 flex items-center justify-between gap-3 min-h-[48px]">
+              <div 
+                data-no-swipe="true"
+                onTouchStart={(e) => {
+                  e.stopPropagation();
+                  touchStartRef.current = null;
+                }}
+                onTouchEnd={(e) => {
+                  e.stopPropagation();
+                  touchStartRef.current = null;
+                }}
+                className="p-2.5 px-4 flex items-center justify-between gap-3 min-h-[48px]"
+              >
                 {!isFullScreen && (
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     <button
@@ -6031,7 +6449,23 @@ const renderMarkdownToElements = (contentStr: string) => {
               </div>
 
               {/* 下段: アクションツールバー（機能別に整理された整然とした配列、縦型時はアイコンのみで2行に集約） */}
-              <div className="px-3 py-1.5 border-t border-[var(--border)]/60 bg-[#161b22]/40 flex items-center justify-between portrait:justify-start gap-2 overflow-x-auto custom-scrollbar text-xs">
+              <div 
+                data-no-swipe="true"
+                onTouchStart={(e) => {
+                  e.stopPropagation();
+                  touchStartRef.current = null;
+                }}
+                onTouchEnd={(e) => {
+                  e.stopPropagation();
+                  touchStartRef.current = null;
+                }}
+                onWheel={(e) => {
+                  if (e.deltaY !== 0 && e.deltaX === 0) {
+                    e.currentTarget.scrollLeft += e.deltaY;
+                  }
+                }}
+                className="px-3 py-1.5 border-t border-[var(--border)]/60 bg-[#161b22]/40 flex items-center justify-between portrait:justify-start gap-2 overflow-x-auto overscroll-x-contain touch-pan-x custom-scrollbar text-xs"
+              >
                 {/* 機能ボタングループ群 */}
                 <div className="flex items-center gap-2 shrink-0">
                   {/* 1. AI連携グループ */}
@@ -6360,6 +6794,15 @@ const renderMarkdownToElements = (contentStr: string) => {
                     >
                       <Download className="w-3.5 h-3.5 text-[var(--green)] shrink-0" />
                       <span className="portrait:hidden">PDF</span>
+                    </button>
+
+                    <button
+                      onClick={exportToHTML}
+                      className="p-1 px-2 portrait:px-1.5 text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all"
+                      title="装飾・図解付きの単一HTMLファイルとしてダウンロード"
+                    >
+                      <FileCode className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                      <span className="portrait:hidden">HTML</span>
                     </button>
 
                     <button

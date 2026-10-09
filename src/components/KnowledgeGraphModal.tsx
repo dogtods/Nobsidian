@@ -1078,7 +1078,10 @@ applyHighlightRef.current = applyHighlight;
   };
 
   const copyExternalPrompt = () => {
-    if (reportSelectedNodes.size === 0) return;
+    if (reportSelectedNodes.size === 0) {
+      onSaveToast("レポート対象のノートを1件以上選択してください");
+      return;
+    }
     const notesContent = (Array.from(reportSelectedNodes.values()) as Array<{ title: string; content: string }>)
         .map(n => `### ${n.title}\n${n.content}`)
         .join("\n\n---\n\n");
@@ -1087,26 +1090,35 @@ applyHighlightRef.current = applyHighlight;
     const prompt = promptTemplate.replace("{notes_content}", notesContent);
     
     navigator.clipboard.writeText(prompt)
-      .then(() => onSaveToast("外部AI用のプロンプトをクリップボードにコピーしました"))
+      .then(() => onSaveToast(`外部AI用 レポートプロンプトをクリップボードにコピーしました 📋 (${reportSelectedNodes.size}件)`))
       .catch(() => onSaveToast("コピーに失敗しました"));
   };
 
   const downloadExternalPrompt = () => {
-    if (reportSelectedNodes.size === 0) return;
+    if (reportSelectedNodes.size === 0) {
+      onSaveToast("レポート対象のノートを1件以上選択してください");
+      return;
+    }
     const notesContent = (Array.from(reportSelectedNodes.values()) as Array<{ title: string; content: string }>)
         .map(n => `### ${n.title}\n${n.content}`)
         .join("\n\n---\n\n");
     const promptTemplate = getStoredPrompt("REPORT");
     const prompt = promptTemplate.replace("{notes_content}", notesContent);
     
-    const blob = new Blob([prompt], { type: 'text/plain' });
+    const firstTitle = (Array.from(reportSelectedNodes.values())[0]?.title || "レポート").replace(/[\/\\:*?"<>|]/g, "_").slice(0, 30);
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const filename = `レポートプロンプト_${firstTitle}_${dateStr}.txt`;
+
+    const blob = new Blob(["\uFEFF" + prompt], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `prompt-${Date.now()}.txt`;
+    a.download = filename;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    onSaveToast("プロンプトをテキストファイルとしてダウンロードしました");
+    onSaveToast(`レポートプロンプトをダウンロードしました 📥 (${filename})`);
   };
 
   const saveReportAndPdfToDrive = async () => {
@@ -1315,33 +1327,95 @@ applyHighlightRef.current = applyHighlight;
     }
   };
 
-  const copyStructurePrompt = () => {
-    if (reportSelectedNodes.size === 0) return;
-    const notesContent = (Array.from(reportSelectedNodes.values()) as Array<{ title: string; content: string }>)
-      .map(n => `### ${n.title}\n${n.content}`)
-      .join("\n\n---\n\n");
+  const buildStructurePromptData = (customTargetMap?: Map<string, { title: string; content: string }>) => {
+    let mapToUse = customTargetMap || reportSelectedNodes;
+
+    // Fallback if nothing explicitly collected: use activeSelectedNode and its 1-step neighbors
+    if (mapToUse.size === 0 && activeSelectedNode) {
+      const fallback = new Map<string, { title: string; content: string }>();
+      const mainNote = notes.find(n => n.id === activeSelectedNode.id || n.title.toLowerCase() === activeSelectedNode.title.toLowerCase());
+      if (mainNote) {
+        fallback.set(mainNote.id, { title: mainNote.title, content: mainNote.content || "" });
+      }
+      // Add adjacent 1-hop neighbors
+      const { links } = buildGraphData();
+      const neighborIds = new Set<string>();
+      links.forEach(l => {
+        const sId = typeof l.source === 'object' ? (l.source as any).id : l.source;
+        const tId = typeof l.target === 'object' ? (l.target as any).id : l.target;
+        if (sId === activeSelectedNode.id) neighborIds.add(tId);
+        if (tId === activeSelectedNode.id) neighborIds.add(sId);
+      });
+      neighborIds.forEach(id => {
+        const neighborNote = notes.find(n => n.id === id);
+        if (neighborNote) {
+          fallback.set(neighborNote.id, { title: neighborNote.title, content: neighborNote.content || "" });
+        }
+      });
+      if (fallback.size > 0) {
+        mapToUse = fallback;
+      }
+    }
+
+    let notesContent = "";
+    let mainTitle = "";
+    if (mapToUse.size > 0) {
+      notesContent = (Array.from(mapToUse.values()) as Array<{ title: string; content: string }>)
+        .map(n => `### ${n.title}\n${n.content}`)
+        .join("\n\n---\n\n");
+      mainTitle = (Array.from(mapToUse.values())[0]?.title) || "";
+    } else {
+      notesContent = "（※解析対象の記事群をここに貼り付けてください）";
+      mainTitle = "テンプレート";
+    }
+
     const promptTemplate = getStoredPrompt("GRAPH_STRUCTURE") || DEFAULT_PROMPTS.GRAPH_STRUCTURE;
     const prompt = promptTemplate.replace("{notes_content}", notesContent);
+    return { prompt, mapToUse, mainTitle, count: mapToUse.size };
+  };
+
+  const copyStructurePrompt = (customTargetMap?: Map<string, { title: string; content: string }>) => {
+    const { prompt, count } = buildStructurePromptData(customTargetMap);
     navigator.clipboard.writeText(prompt)
-      .then(() => onSaveToast("外部AI用 構造化グラフプロンプトをクリップボードにコピーしました 📋"))
+      .then(() => onSaveToast(`外部AI用 構造化グラフプロンプトをクリップボードにコピーしました 📋${count > 0 ? ` (${count}件)` : ""}`))
       .catch(() => onSaveToast("コピーに失敗しました"));
   };
 
-  const downloadStructurePrompt = () => {
-    if (reportSelectedNodes.size === 0) return;
-    const notesContent = (Array.from(reportSelectedNodes.values()) as Array<{ title: string; content: string }>)
-      .map(n => `### ${n.title}\n${n.content}`)
-      .join("\n\n---\n\n");
-    const promptTemplate = getStoredPrompt("GRAPH_STRUCTURE") || DEFAULT_PROMPTS.GRAPH_STRUCTURE;
-    const prompt = promptTemplate.replace("{notes_content}", notesContent);
-    const blob = new Blob([prompt], { type: 'text/plain' });
+  const downloadStructurePrompt = (customTargetMap?: Map<string, { title: string; content: string }>) => {
+    const { prompt, mainTitle, count } = buildStructurePromptData(customTargetMap);
+    const safeTitle = (activeSelectedNode?.title || mainTitle || "構造化グラフ").replace(/[\/\\:*?"<>|]/g, "_").slice(0, 30);
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const filename = `構造化プロンプト_${safeTitle}_${dateStr}.txt`;
+
+    const blob = new Blob(["\uFEFF" + prompt], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `structure-prompt-${Date.now()}.txt`;
+    a.download = filename;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    onSaveToast("構造化グラフプロンプトを保存しました 💾");
+    onSaveToast(`構造化プロンプトをテキストファイルとしてダウンロードしました 📥 (${filename}${count > 0 ? ` / ${count}件` : ""})`);
+  };
+
+  const downloadStructureResult = () => {
+    if (!structureResultText) return;
+    const baseTitle = activeSelectedNode?.title || (Array.from(reportSelectedNodes.values())[0]?.title) || "構造化グラフ";
+    const safeTitle = baseTitle.replace(/[\/\\:*?"<>|]/g, "_").slice(0, 30);
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const filename = `構造化図解_${safeTitle}_${dateStr}.txt`;
+
+    const blob = new Blob(["\uFEFF" + structureResultText], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    onSaveToast(`構造化図解テキストをダウンロードしました 📥 (${filename})`);
   };
 
   const saveStructureAsNewFile = () => {
@@ -1395,6 +1469,39 @@ applyHighlightRef.current = applyHighlight;
       content: item.content
     }));
     generateStructuredGraph(customNodesList);
+  };
+
+  const collectAndDownloadStructurePromptForNode = (targetNode: GraphNode) => {
+    const collected = new Map<string, { title: string; content: string }>();
+
+    // Target note
+    const mainNote = notes.find(n => n.id === targetNode.id || n.title.toLowerCase() === targetNode.title.toLowerCase());
+    if (mainNote) {
+      collected.set(mainNote.id, { title: mainNote.title, content: mainNote.content || "" });
+    } else {
+      collected.set(targetNode.id, { title: targetNode.title, content: targetNode.content || "" });
+    }
+
+    // Connect 1-hop neighbors
+    const { links } = buildGraphData();
+    const neighborIds = new Set<string>();
+    links.forEach(l => {
+      const srcId = typeof l.source === "object" ? (l.source as any).id : l.source;
+      const tgtId = typeof l.target === "object" ? (l.target as any).id : l.target;
+      if (srcId === targetNode.id) neighborIds.add(tgtId);
+      if (tgtId === targetNode.id) neighborIds.add(srcId);
+    });
+
+    neighborIds.forEach(id => {
+      const nbNote = notes.find(n => n.id === id);
+      if (nbNote) {
+        collected.set(nbNote.id, { title: nbNote.title, content: nbNote.content || "" });
+      }
+    });
+
+    setReportSelectedNodes(collected);
+    setPopup(prev => ({ ...prev, show: false }));
+    downloadStructurePrompt(collected);
   };
 
   const renderStructuredContent = (content: string) => {
@@ -1737,6 +1844,15 @@ applyHighlightRef.current = applyHighlight;
               </button>
 
               <button
+                className="w-full py-1 bg-[#161b22] hover:bg-[#1f6feb20] border border-[#1f6feb44] text-[#58a6ff] hover:text-white text-[10px] rounded cursor-pointer font-semibold flex items-center justify-center gap-1 transition-all"
+                onClick={() => collectAndDownloadStructurePromptForNode(popup.node!)}
+                title="この記事と1階層先の関連記事群を含む長文の構造化プロンプトをテキストファイル(.txt)としてダウンロード"
+              >
+                <span>📥</span>
+                <span>構造化プロンプトをテキストDL (.txt)</span>
+              </button>
+
+              <button
                 className="w-full py-1 bg-[var(--surface)] hover:bg-[var(--border)] border border-[var(--border2)] text-[var(--text)] text-[10.5px] rounded cursor-pointer font-medium"
                 onClick={() => {
                   if (graphViewMode === "folder") {
@@ -1796,11 +1912,12 @@ applyHighlightRef.current = applyHighlight;
               📋 コピー
             </button>
             <button
-              className="py-1.5 px-2 bg-[#1cb5b520] border border-[#1cb5b544] hover:bg-[#1cb5b530] text-[#7ee787] text-[11px] font-bold rounded cursor-pointer transition-all"
+              className="py-1.5 px-2 bg-[#1cb5b520] border border-[#1cb5b544] hover:bg-[#1cb5b530] text-[#7ee787] text-[11px] font-bold rounded cursor-pointer transition-all flex items-center gap-1"
               onClick={downloadExternalPrompt}
-              title="レポート生成プロンプトをダウンロード"
+              title="レポート生成プロンプトをテキストファイル(.txt)としてダウンロード"
             >
-              💾
+              <span>📥</span>
+              <span>DL (.txt)</span>
             </button>
           </div>
 
@@ -1817,19 +1934,20 @@ applyHighlightRef.current = applyHighlight;
               <span>構造化グラフ生成 (AI)</span>
             </button>
             <button
-              className="py-1.5 px-2.5 bg-[#1c2128] border border-[var(--border2)] hover:bg-[var(--border)] text-[var(--text)] hover:text-white text-[10.5px] font-semibold rounded cursor-pointer transition-all flex items-center gap-1"
-              onClick={copyStructurePrompt}
+              className="py-1.5 px-2 bg-[#1c2128] border border-[var(--border2)] hover:bg-[var(--border)] text-[var(--text)] hover:text-white text-[10.5px] font-semibold rounded cursor-pointer transition-all flex items-center gap-1"
+              onClick={() => copyStructurePrompt()}
               title="ChatGPT/Claude/Geminiなどの外部AI用 構造化グラフプロンプトをコピー"
             >
               <span>📋</span>
-              <span>プロンプト</span>
+              <span>コピー</span>
             </button>
             <button
-              className="py-1.5 px-2 bg-[#1c2128] border border-[var(--border2)] hover:bg-[var(--border)] text-[var(--subtle)] hover:text-white text-[10.5px] rounded cursor-pointer transition-all"
-              onClick={downloadStructurePrompt}
-              title="構造化グラフプロンプトをダウンロード"
+              className="py-1.5 px-2.5 bg-[#1f6feb20] border border-[#1f6feb66] hover:bg-[#1f6feb35] text-[#58a6ff] hover:text-white text-[10.5px] font-bold rounded cursor-pointer transition-all flex items-center gap-1 shadow-sm"
+              onClick={() => downloadStructurePrompt()}
+              title="長文の構造化グラフプロンプトをテキストファイル(.txt)としてダウンロード"
             >
-              💾
+              <span>📥</span>
+              <span>プロンプトDL (.txt)</span>
             </button>
           </div>
         </div>
@@ -1980,6 +2098,22 @@ applyHighlightRef.current = applyHighlight;
                       title="同じ記事群から別の構造や表現で再生成"
                     >
                       🔄 再生成
+                    </button>
+                    <button
+                      className="bg-[#1f6feb20] hover:bg-[#1f6feb35] border border-[#1f6feb55] text-[#58a6ff] text-xs font-bold p-2 px-3 rounded-md cursor-pointer transition-colors flex items-center gap-1 shadow-sm"
+                      onClick={() => downloadStructurePrompt()}
+                      title="この構造化グラフを生成したプロンプト全文をテキストファイル(.txt)としてダウンロード"
+                    >
+                      <span>📥</span>
+                      <span>プロンプトDL (.txt)</span>
+                    </button>
+                    <button
+                      className="bg-[#1c2128] hover:bg-[var(--border)] border border-[var(--border2)] text-[var(--subtle)] hover:text-white text-xs font-semibold p-2 px-3 rounded-md cursor-pointer transition-colors flex items-center gap-1"
+                      onClick={() => downloadStructureResult()}
+                      title="生成された構造化図解（Mermaidコード及び解説文）をテキストファイル(.txt)としてダウンロード"
+                    >
+                      <span>📥</span>
+                      <span>図解テキストDL (.txt)</span>
                     </button>
                     <button
                       className="bg-[#1f6feb22] hover:bg-[#1f6feb35] border border-[#1f6feb66] text-[#58a6ff] text-xs font-bold p-2 px-4 rounded-md cursor-pointer transition-colors"
