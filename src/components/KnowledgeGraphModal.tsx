@@ -8,6 +8,7 @@ import * as d3 from "d3";
 import { Note, GraphNode, GraphLink, FolderRelation } from "../types";
 import { getFolderFromKeywords, formatDateStr, extractWikiLinks, getFilteredNotes } from "../utils/graphDataParser";
 import { DEFAULT_PROMPTS, getStoredPrompt } from "./PromptSettingsModal";
+import { MermaidViewer } from "./MermaidViewer";
 
 interface KnowledgeGraphModalProps {
   isOpen: boolean;
@@ -66,6 +67,12 @@ export default function KnowledgeGraphModal({
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [isSavingToDrive, setIsSavingToDrive] = useState(false);
 
+  // Structured Graph modal states
+  const [showStructureResult, setShowStructureResult] = useState(false);
+  const [structureResultText, setStructureResultText] = useState("");
+  const [isGeneratingStructure, setIsGeneratingStructure] = useState(false);
+  const [structureViewTab, setStructureViewTab] = useState<"preview" | "code">("preview");
+
   // Popup state
   const [popup, setPopup] = useState<{
     show: boolean;
@@ -96,7 +103,14 @@ export default function KnowledgeGraphModal({
   const getFolder = (note: Note) => getFolderFromKeywords(note.keywords);
 
   const getFilteredNotesList = () => {
-    return getFilteredNotes(notes, filterStart, filterEnd);
+    const list = getFilteredNotes(notes, filterStart, filterEnd);
+    if (initialCenterNodeId && !list.some(n => n.id === initialCenterNodeId || String(n.id) === String(initialCenterNodeId) || n.title.toLowerCase() === initialCenterNodeId.toLowerCase())) {
+      const explicitNote = notes.find(n => n.id === initialCenterNodeId || String(n.id) === String(initialCenterNodeId) || n.title.toLowerCase() === initialCenterNodeId.toLowerCase());
+      if (explicitNote) {
+        list.unshift(explicitNote);
+      }
+    }
+    return list;
   };
 
   // Graph data builds
@@ -268,8 +282,11 @@ export default function KnowledgeGraphModal({
           if (tgtNode) tgtNode.linkCount!++;
         });
 
-        // Filter out isolated nodes that do not contain any connection under the selected strength threshold
-        filteredNodes = nodes.filter(n => activeNodeIds.has(n.id));
+        // Filter out isolated nodes that do not contain any connection under the selected strength threshold, but preserve initialCenterNodeId
+        filteredNodes = nodes.filter(n => 
+          activeNodeIds.has(n.id) || 
+          (initialCenterNodeId && (n.id === initialCenterNodeId || String(n.id) === String(initialCenterNodeId) || n.title.toLowerCase() === initialCenterNodeId.toLowerCase()))
+        );
       }
 
       return { nodes: filteredNodes, links: filteredLinks };
@@ -289,8 +306,10 @@ export default function KnowledgeGraphModal({
     const { nodes, links } = buildGraphData();
 
     const container = containerRef.current;
-    const width = container.clientWidth;
-    const height = container.clientHeight;
+    const width = container.clientWidth || window.innerWidth || 1000;
+    const height = container.clientHeight || (window.innerHeight - 100) || 700;
+    const centerX = width / 2;
+    const centerY = height / 2;
 
     const svg = d3.select(svgRef.current);
     svg.selectAll("*").remove();
@@ -318,6 +337,18 @@ export default function KnowledgeGraphModal({
       const hue = (i * goldenAngle) % 360;
       folderColorMap[f] = `hsl(${hue}, 65%, 55%)`;
     });
+
+    // Locate initial target center node if specified
+    const targetNode = initialCenterNodeId && graphViewMode === "note"
+      ? nodes.find(n => n.id === initialCenterNodeId || String(n.id) === String(initialCenterNodeId) || n.title.toLowerCase() === initialCenterNodeId.toLowerCase())
+      : null;
+
+    if (targetNode) {
+      targetNode.x = centerX;
+      targetNode.y = centerY;
+      targetNode.fx = centerX;
+      targetNode.fy = centerY;
+    }
 
     // Node dynamics sizes helper
     const getRadius = (d: GraphNode) => {
@@ -350,10 +381,23 @@ export default function KnowledgeGraphModal({
       .force("charge", d3.forceManyBody().strength(
         graphViewMode === "folder" ? -600 : -280
       ))
-      .force("center", d3.forceCenter(width / 2, height / 2))
+      .force("center", d3.forceCenter(centerX, centerY))
       .force("collide", d3.forceCollide<GraphNode>().radius(d => getRadius(d) + 12).iterations(1))
-      .force("x", d3.forceX<GraphNode>().x(width / 2).strength(0.04))
-      .force("y", d3.forceY<GraphNode>().y(height / 2).strength(0.04));
+      .force("x", d3.forceX<GraphNode>().x(centerX).strength(0.04))
+      .force("y", d3.forceY<GraphNode>().y(centerY).strength(0.04));
+
+    // Pre-warm the simulation ticks so nodes layout stabilizes around target center immediately
+    for (let i = 0; i < 40; ++i) {
+      simulation.tick();
+    }
+
+    if (targetNode) {
+      const initialTransform = d3.zoomIdentity
+        .translate(centerX, centerY)
+        .scale(1.35)
+        .translate(-centerX, -centerY);
+      svg.call(zoom.transform, initialTransform);
+    }
 
     simulationRef.current = simulation;
 
@@ -724,35 +768,43 @@ applyHighlightRef.current = applyHighlight;
 
     g.attr("opacity", 0).transition().duration(600).attr("opacity", 1);
 
-    // If an initial node is provided, center on it after the simulation has somewhat settled
-    if (initialCenterNodeId && graphViewMode === "note") {
-      const targetNode = nodes.find(n => n.id === initialCenterNodeId);
-      if (targetNode) {
-        // Highlight the node
-        setActiveSelectedNode(targetNode);
-        setActiveSelectedFolder(targetNode.folder || targetNode.title);
-        setHighlightMode("connection");
-        
-        setTimeout(() => {
-          if (svgRef.current && zoomRef.current && containerRef.current) {
-            const w = containerRef.current.clientWidth;
-            const h = containerRef.current.clientHeight;
-            d3.select(svgRef.current)
-              .transition()
-              .duration(1200)
-              .call(
-                zoomRef.current.transform,
-                d3.zoomIdentity
-                  .translate(w / 2, h / 2)
-                  .scale(1.5)
-                  .translate(-targetNode.x!, -targetNode.y!)
-              );
-          }
-        }, 600); // 600ms is usually enough for the physics layout to settle primarily
-      }
+    let unpinTimer: any = null;
+    if (targetNode) {
+      setActiveSelectedNode(targetNode);
+      setActiveSelectedFolder(targetNode.folder || targetNode.title);
+      setHighlightMode("connection");
+
+      // Smoothly re-center camera on target node coordinates once layout settles
+      setTimeout(() => {
+        if (svgRef.current && zoomRef.current && containerRef.current) {
+          const w = containerRef.current.clientWidth || width;
+          const h = containerRef.current.clientHeight || height;
+          const tx = targetNode.x ?? (w / 2);
+          const ty = targetNode.y ?? (h / 2);
+          d3.select(svgRef.current)
+            .transition()
+            .duration(500)
+            .call(
+              zoomRef.current.transform,
+              d3.zoomIdentity
+                .translate(w / 2, h / 2)
+                .scale(1.35)
+                .translate(-tx, -ty)
+            );
+        }
+      }, 150);
+
+      // Release anchor after initial positioning settles
+      unpinTimer = setTimeout(() => {
+        if (targetNode) {
+          targetNode.fx = null;
+          targetNode.fy = null;
+        }
+      }, 3500);
     }
 
     return () => {
+      if (unpinTimer) clearTimeout(unpinTimer);
       simulation.stop();
     };
   }, [isOpen, graphViewMode, notes, folderRelationsAI, isFullLabel, filterStart, filterEnd, minStrength, initialCenterNodeId]);
@@ -814,6 +866,28 @@ applyHighlightRef.current = applyHighlight;
         .call(zoomRef.current.transform, d3.zoomIdentity);
       onSaveToast("✦ 2Dビューの位置を初期化しました");
     }
+  };
+
+  const centerOnNode = (node: GraphNode, scale = 1.35) => {
+    if (!svgRef.current || !zoomRef.current || !containerRef.current) return;
+    const w = containerRef.current.clientWidth || window.innerWidth || 1000;
+    const h = containerRef.current.clientHeight || (window.innerHeight - 100) || 700;
+    const nx = node.x ?? (w / 2);
+    const ny = node.y ?? (h / 2);
+    d3.select(svgRef.current)
+      .transition()
+      .duration(650)
+      .call(
+        zoomRef.current.transform,
+        d3.zoomIdentity
+          .translate(w / 2, h / 2)
+          .scale(scale)
+          .translate(-nx, -ny)
+      );
+    setActiveSelectedNode(node);
+    setActiveSelectedFolder(node.folder || node.title);
+    setHighlightMode("connection");
+    onSaveToast(`🎯 「${node.title}」を中央に表示しました`);
   };
 
   const handleSearchChange = (query: string) => {
@@ -1166,6 +1240,223 @@ applyHighlightRef.current = applyHighlight;
     setPopup(prev => ({ ...prev, show: false }));
   };
 
+  // Generate Structured Graphs (Mermaid diagram, causality, timeline, hierarchy) across collected notes
+  const generateStructuredGraph = async (customNodes?: GraphNode[]) => {
+    let targetMap = reportSelectedNodes;
+    if (customNodes && customNodes.length > 0) {
+      const map = new Map<string, { title: string; content: string }>();
+      customNodes.forEach(cn => {
+        const fullN = notes.find(n => n.id === cn.id || n.title.toLowerCase() === cn.title.toLowerCase());
+        map.set(cn.id, {
+          title: cn.title,
+          content: fullN?.content || cn.content || ""
+        });
+      });
+      targetMap = map;
+      setReportSelectedNodes(map);
+    }
+
+    if (targetMap.size === 0) {
+      return onSaveToast("構造化グラフを作成する対象ノートを1件以上選択してください");
+    }
+
+    const apiKey = localStorage.getItem("cn_gemini_key");
+    if (!apiKey) return onSaveToast("APIキーを設定してください ⚙");
+
+    setIsGeneratingStructure(true);
+    setShowStructureResult(true);
+    setStructureViewTab("preview");
+    setStructureResultText("🤖 選択された記事群から構造化グラフ（Mermaid図解・因果・時系列・階層）をAI解析・生成中...");
+
+    try {
+      const notesContent = (Array.from(targetMap.values()) as Array<{ title: string; content: string }>)
+        .map(n => `### ${n.title}\n${(n.content || "").substring(0, 4000)}`)
+        .join("\n\n---\n\n");
+
+      const promptTemplate = getStoredPrompt("GRAPH_STRUCTURE") || DEFAULT_PROMPTS.GRAPH_STRUCTURE;
+      const prompt = promptTemplate.replace("{notes_content}", notesContent.substring(0, 18000));
+
+      const model = localStorage.getItem("cn_gemini_model") || "gemini-flash-latest";
+      const temp = parseFloat(localStorage.getItem("cn_gemini_temp") || "0.2");
+      const maxTok = parseInt(localStorage.getItem("cn_gemini_tokens") || "3000", 10);
+
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: temp, maxOutputTokens: maxTok }
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP Error ${res.status}: ${res.status === 404 ? "指定モデルが見つかりません。設定⚙を確認してください。" : ""}`);
+      }
+
+      const rData = await res.json();
+      let parsedText = rData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+      // Ensure init directive exists for dark theme in all mermaid code blocks
+      const initDirective = `%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#1f6feb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#ffffff', 'lineColor': '#58a6ff', 'textColor': '#ffffff', 'background': '#0d1117', 'mainBkg': '#0d1117', 'nodeBorder': '#ffffff', 'clusterBkg': '#0d1117', 'edgeLabelBackground':'#0d1117', 'fontSize': '16px' }}}%%`;
+
+      parsedText = parsedText.replace(/```mermaid\s*([\s\S]*?)```/g, (_m, code) => {
+        let trimmed = code.trim();
+        if (!trimmed.startsWith("%%{init")) {
+          trimmed = `${initDirective}\n${trimmed}`;
+        }
+        return `\`\`\`mermaid\n${trimmed}\n\`\`\``;
+      });
+
+      setStructureResultText(parsedText);
+    } catch (e: any) {
+      setStructureResultText("エラー: " + (e.message || "生成に失敗しました"));
+    } finally {
+      setIsGeneratingStructure(false);
+    }
+  };
+
+  const copyStructurePrompt = () => {
+    if (reportSelectedNodes.size === 0) return;
+    const notesContent = (Array.from(reportSelectedNodes.values()) as Array<{ title: string; content: string }>)
+      .map(n => `### ${n.title}\n${n.content}`)
+      .join("\n\n---\n\n");
+    const promptTemplate = getStoredPrompt("GRAPH_STRUCTURE") || DEFAULT_PROMPTS.GRAPH_STRUCTURE;
+    const prompt = promptTemplate.replace("{notes_content}", notesContent);
+    navigator.clipboard.writeText(prompt)
+      .then(() => onSaveToast("外部AI用 構造化グラフプロンプトをクリップボードにコピーしました 📋"))
+      .catch(() => onSaveToast("コピーに失敗しました"));
+  };
+
+  const downloadStructurePrompt = () => {
+    if (reportSelectedNodes.size === 0) return;
+    const notesContent = (Array.from(reportSelectedNodes.values()) as Array<{ title: string; content: string }>)
+      .map(n => `### ${n.title}\n${n.content}`)
+      .join("\n\n---\n\n");
+    const promptTemplate = getStoredPrompt("GRAPH_STRUCTURE") || DEFAULT_PROMPTS.GRAPH_STRUCTURE;
+    const prompt = promptTemplate.replace("{notes_content}", notesContent);
+    const blob = new Blob([prompt], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `structure-prompt-${Date.now()}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    onSaveToast("構造化グラフプロンプトを保存しました 💾");
+  };
+
+  const saveStructureAsNewFile = () => {
+    if (!structureResultText) return;
+    const titles = (Array.from(reportSelectedNodes.values()) as Array<{ title: string; content: string }>).map(n => n.title).join("・");
+    const baseTitle = activeSelectedNode?.title || (Array.from(reportSelectedNodes.values())[0]?.title) || "構造化グラフ";
+    const name = `構造化グラフ: ${baseTitle}`;
+    const formatted = `# 構造化グラフ: ${baseTitle}\n\n対象記事: ${titles}\n\n${structureResultText}`;
+    onCreateNoteExt(name, formatted, "構造化グラフ", "");
+    onSaveToast("構造化グラフを新規ノートに保存しました ✦");
+    setShowStructureResult(false);
+    clearReportSelections();
+    onClose();
+  };
+
+  const collectAndGenerateStructureForNode = (targetNode: GraphNode) => {
+    const collected = new Map<string, { title: string; content: string }>();
+
+    // Target note
+    const mainNote = notes.find(n => n.id === targetNode.id || n.title.toLowerCase() === targetNode.title.toLowerCase());
+    if (mainNote) {
+      collected.set(mainNote.id, { title: mainNote.title, content: mainNote.content || "" });
+    } else {
+      collected.set(targetNode.id, { title: targetNode.title, content: targetNode.content || "" });
+    }
+
+    // Connect 1-hop neighbors
+    const { links } = buildGraphData();
+    const neighborIds = new Set<string>();
+    links.forEach(l => {
+      const srcId = typeof l.source === "object" ? (l.source as any).id : l.source;
+      const tgtId = typeof l.target === "object" ? (l.target as any).id : l.target;
+      if (srcId === targetNode.id) neighborIds.add(tgtId);
+      if (tgtId === targetNode.id) neighborIds.add(srcId);
+    });
+
+    neighborIds.forEach(id => {
+      const nbNote = notes.find(n => n.id === id);
+      if (nbNote) {
+        collected.set(nbNote.id, { title: nbNote.title, content: nbNote.content || "" });
+      }
+    });
+
+    setReportSelectedNodes(collected);
+    setPopup(prev => ({ ...prev, show: false }));
+    onSaveToast(`「${targetNode.title}」と周辺${neighborIds.size}件の関連記事から構造化グラフを生成します 📊`);
+
+    const customNodesList: GraphNode[] = Array.from(collected.entries()).map(([id, item]) => ({
+      id,
+      title: item.title,
+      content: item.content
+    }));
+    generateStructuredGraph(customNodesList);
+  };
+
+  const renderStructuredContent = (content: string) => {
+    if (!content) return null;
+    const regex = /```mermaid\s*([\s\S]*?)```/gi;
+    const parts: React.ReactNode[] = [];
+    let lastIdx = 0;
+    let match: RegExpExecArray | null;
+    let idx = 0;
+
+    while ((match = regex.exec(content)) !== null) {
+      if (match.index > lastIdx) {
+        const textBefore = content.substring(lastIdx, match.index).trim();
+        if (textBefore) {
+          parts.push(
+            <div key={`txt-${idx++}`} className="my-2 text-xs leading-relaxed text-[var(--text)] whitespace-pre-wrap select-text">
+              {textBefore}
+            </div>
+          );
+        }
+      }
+
+      const mermaidCode = match[1].trim();
+      parts.push(
+        <div key={`m-${idx++}`} className="my-3 border border-[var(--border2)] rounded-lg bg-[#0d1117] p-3 shadow-lg">
+          <div className="flex justify-between items-center mb-2 pb-1 border-b border-[var(--border)]">
+            <span className="text-[10px] font-bold text-[var(--blue)] uppercase tracking-wider">✦ Mermaid 図解プレビュー</span>
+            <button
+              className="text-[10px] text-[var(--subtle)] hover:text-white bg-[#1c2128] hover:bg-[var(--border)] px-2 py-0.5 rounded cursor-pointer transition-colors"
+              onClick={() => {
+                navigator.clipboard.writeText(mermaidCode);
+                onSaveToast("Mermaidコードをコピーしました 📋");
+              }}
+            >
+              コードをコピー
+            </button>
+          </div>
+          <MermaidViewer code={mermaidCode} />
+        </div>
+      );
+
+      lastIdx = regex.lastIndex;
+    }
+
+    if (lastIdx < content.length) {
+      const remaining = content.substring(lastIdx).trim();
+      if (remaining) {
+        parts.push(
+          <div key={`txt-${idx++}`} className="my-2 text-xs leading-relaxed text-[var(--text)] whitespace-pre-wrap select-text">
+            {remaining}
+          </div>
+        );
+      }
+    }
+
+    if (parts.length === 0) {
+      return <div className="text-xs text-[var(--text)] whitespace-pre-wrap select-text">{content}</div>;
+    }
+
+    return <div className="flex flex-col gap-2">{parts}</div>;
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -1190,6 +1481,16 @@ applyHighlightRef.current = applyHighlight;
                 <span>◈ {activeSelectedNode.title} {activeSelectedFolder ? `(${activeSelectedFolder})` : ""}</span>
               ) : (
                 <span>📁 {activeSelectedFolder}</span>
+              )}
+              {activeSelectedNode && (
+                <button
+                  type="button"
+                  className="hover:text-white text-[var(--subtle)] bg-[#1c2128] hover:bg-[var(--border)] border border-[var(--border2)] px-2 py-0.5 rounded cursor-pointer text-[10px] font-semibold transition-all ml-1"
+                  onClick={() => centerOnNode(activeSelectedNode)}
+                  title="このノードを画面中央にズーム表示"
+                >
+                  🎯 中央に配置
+                </button>
               )}
               <button
                 type="button"
@@ -1418,6 +1719,24 @@ applyHighlightRef.current = applyHighlight;
               </div>
 
               <button
+                className="w-full py-1 bg-[#1c2128] hover:bg-[var(--border)] border border-[var(--border2)] text-[var(--subtle)] hover:text-white text-[10.5px] rounded cursor-pointer font-medium flex items-center justify-center gap-1 transition-all"
+                onClick={() => centerOnNode(popup.node!)}
+                title="このノードを画面中央にズーム表示"
+              >
+                <span>🎯</span>
+                <span>画面中央に配置</span>
+              </button>
+
+              <button
+                className="w-full py-1.5 bg-[#1f6feb20] hover:bg-[#1f6feb35] border border-[#1f6feb55] text-[#58a6ff] text-[10.5px] rounded cursor-pointer font-bold flex items-center justify-center gap-1 transition-all"
+                onClick={() => collectAndGenerateStructureForNode(popup.node!)}
+                title="この記事と1階層先の関連記事群からMermaid構造化グラフ（因果・時系列・階層）を即座に生成"
+              >
+                <span>📊</span>
+                <span>関連記事と構造化グラフ作成</span>
+              </button>
+
+              <button
                 className="w-full py-1 bg-[var(--surface)] hover:bg-[var(--border)] border border-[var(--border2)] text-[var(--text)] text-[10.5px] rounded cursor-pointer font-medium"
                 onClick={() => {
                   if (graphViewMode === "folder") {
@@ -1450,16 +1769,19 @@ applyHighlightRef.current = applyHighlight;
           <div className="text-[10px] text-[var(--subtle)] line-clamp-2 leading-relaxed bg-[var(--bg)] p-1.5 rounded border border-[var(--border2)] overflow-y-auto max-h-[60px]">
             {(Array.from(reportSelectedNodes.values()) as Array<{ title: string; content: string }>).map(n => n.title).join(", ")}
           </div>
-                    <div className="flex gap-2 w-full mt-1 flex-wrap">
+          {/* テキストレポート操作行 (既存機能そのまま) */}
+          <div className="flex gap-2 w-full mt-1 flex-wrap items-center">
+            <span className="text-[9px] text-[var(--muted)] font-bold shrink-0">レポート:</span>
             <button
-              className="flex-1 min-w-[70px] py-2 bg-[#a371f720] border border-[#a371f744] hover:bg-[#a371f730] text-[var(--purple)] text-[11px] font-bold rounded-md cursor-pointer transition-all disabled:opacity-50"
+              className="flex-1 min-w-[70px] py-1.5 bg-[#a371f720] border border-[#a371f744] hover:bg-[#a371f730] text-[var(--purple)] text-[11px] font-bold rounded cursor-pointer transition-all disabled:opacity-50"
               onClick={generateBatchReport}
-              disabled={isGeneratingReport || isSavingToDrive}
+              disabled={isGeneratingReport || isSavingToDrive || isGeneratingStructure}
+              title="選択した記事群の包括的な要約・分析レポートをAI生成"
             >
               ✦ 内蔵AI
             </button>
             <button
-              className="flex-1 min-w-[85px] py-2 bg-[#216e3930] border border-[#23863666] hover:bg-[#23863644] text-[#7ee787] text-[11px] font-bold rounded-md cursor-pointer transition-all disabled:opacity-50"
+              className="flex-1 min-w-[85px] py-1.5 bg-[#216e3930] border border-[#23863666] hover:bg-[#23863644] text-[#7ee787] text-[11px] font-bold rounded cursor-pointer transition-all disabled:opacity-50"
               onClick={saveReportAndPdfToDrive}
               disabled={isSavingToDrive}
               title="選択した記事全文およびリンク先のPDFをGoogle Driveの新規フォルダにまとめて保存"
@@ -1467,16 +1789,47 @@ applyHighlightRef.current = applyHighlight;
               {isSavingToDrive ? "☁️ 保存中..." : "☁️ Drive保存"}
             </button>
             <button
-              className="flex-1 min-w-[70px] py-2 bg-[#3fb95020] border border-[#3fb95044] hover:bg-[#3fb95030] text-[#7ee787] text-[11px] font-bold rounded-md cursor-pointer transition-all"
+              className="py-1.5 px-2 bg-[#3fb95020] border border-[#3fb95044] hover:bg-[#3fb95030] text-[#7ee787] text-[11px] font-bold rounded cursor-pointer transition-all"
               onClick={copyExternalPrompt}
+              title="レポート生成プロンプトをコピー"
             >
               📋 コピー
             </button>
             <button
-              className="flex-1 min-w-[70px] py-2 bg-[#1cb5b520] border border-[#1cb5b544] hover:bg-[#1cb5b530] text-[#7ee787] text-[11px] font-bold rounded-md cursor-pointer transition-all"
+              className="py-1.5 px-2 bg-[#1cb5b520] border border-[#1cb5b544] hover:bg-[#1cb5b530] text-[#7ee787] text-[11px] font-bold rounded cursor-pointer transition-all"
               onClick={downloadExternalPrompt}
+              title="レポート生成プロンプトをダウンロード"
             >
-              💾 ダウンロード
+              💾
+            </button>
+          </div>
+
+          {/* 構造化グラフ (Mermaid図解) 操作行 (新機能) */}
+          <div className="flex gap-2 w-full mt-0.5 border-t border-[var(--border)] pt-2 flex-wrap items-center">
+            <span className="text-[9px] text-[#58a6ff] font-bold shrink-0">構造化図解:</span>
+            <button
+              className="flex-1 min-w-[130px] py-1.5 bg-[#1f6feb25] border border-[#1f6feb55] hover:bg-[#1f6feb40] text-[#58a6ff] text-[11px] font-bold rounded cursor-pointer transition-all disabled:opacity-50 flex items-center justify-center gap-1 shadow-sm"
+              onClick={() => generateStructuredGraph()}
+              disabled={isGeneratingStructure || isGeneratingReport}
+              title="選択した記事群からMermaid記法の構造化グラフ（因果関係・時系列推移・概念階層図）をAI生成"
+            >
+              <span>📊</span>
+              <span>構造化グラフ生成 (AI)</span>
+            </button>
+            <button
+              className="py-1.5 px-2.5 bg-[#1c2128] border border-[var(--border2)] hover:bg-[var(--border)] text-[var(--text)] hover:text-white text-[10.5px] font-semibold rounded cursor-pointer transition-all flex items-center gap-1"
+              onClick={copyStructurePrompt}
+              title="ChatGPT/Claude/Geminiなどの外部AI用 構造化グラフプロンプトをコピー"
+            >
+              <span>📋</span>
+              <span>プロンプト</span>
+            </button>
+            <button
+              className="py-1.5 px-2 bg-[#1c2128] border border-[var(--border2)] hover:bg-[var(--border)] text-[var(--subtle)] hover:text-white text-[10.5px] rounded cursor-pointer transition-all"
+              onClick={downloadStructurePrompt}
+              title="構造化グラフプロンプトをダウンロード"
+            >
+              💾
             </button>
           </div>
         </div>
@@ -1531,6 +1884,128 @@ applyHighlightRef.current = applyHighlight;
               >
                 閉じる
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Structured Graph Results Modal Overlay */}
+      {showStructureResult && (
+        <div
+          className="fixed inset-0 bg-[#00000095] z-[1100] flex items-center justify-center p-3 md:p-6 animate-[fadeIn_0.15s_ease-out]"
+          onClick={(e) => !isGeneratingStructure && e.target === e.currentTarget && setShowStructureResult(false)}
+        >
+          <div className="bg-[var(--surface)] border border-[var(--border2)] rounded-xl p-5 md:p-6 w-[880px] max-w-full max-h-[90vh] flex flex-col gap-4 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-[var(--border)] pb-3 flex-wrap gap-2">
+              <div className="text-base font-bold text-[#58a6ff] flex items-center gap-2">
+                <span>📊</span>
+                <span>AI 生成 構造化グラフ (Mermaid図解・因果・時系列・階層)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {/* Tab Switcher: Preview vs Code */}
+                {!isGeneratingStructure && (
+                  <div className="flex bg-[#1c2128] border border-[var(--border2)] rounded-md p-0.5 text-xs">
+                    <button
+                      className={`px-3 py-1 font-semibold rounded cursor-pointer transition-all ${structureViewTab === "preview" ? "bg-[var(--blue)] text-white" : "text-[var(--subtle)] hover:text-white"}`}
+                      onClick={() => setStructureViewTab("preview")}
+                    >
+                      🖼 図解プレビュー
+                    </button>
+                    <button
+                      className={`px-3 py-1 font-semibold rounded cursor-pointer transition-all ${structureViewTab === "code" ? "bg-[var(--blue)] text-white" : "text-[var(--subtle)] hover:text-white"}`}
+                      onClick={() => setStructureViewTab("code")}
+                    >
+                      📝 Mermaidコード
+                    </button>
+                  </div>
+                )}
+                <button
+                  className="text-[var(--muted)] hover:text-white text-2xl font-normal leading-none"
+                  onClick={() => !isGeneratingStructure && setShowStructureResult(false)}
+                  disabled={isGeneratingStructure}
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto font-sans leading-relaxed text-xs text-[var(--text)] bg-[var(--bg)] p-4 rounded-md border border-[var(--border)] select-text">
+              {isGeneratingStructure ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-3 text-[var(--subtle)]">
+                  <div className="w-8 h-8 border-2 border-[var(--blue)] border-t-transparent rounded-full animate-spin"></div>
+                  <div className="text-xs font-semibold">{structureResultText}</div>
+                  <div className="text-[11px] text-[var(--muted)]">関連記事の因果・時系列・階層関係を分析し、Mermaidコードを構築しています...</div>
+                </div>
+              ) : structureViewTab === "preview" ? (
+                <div>
+                  {renderStructuredContent(structureResultText)}
+                </div>
+              ) : (
+                <div className="relative">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-[11px] text-[var(--muted)] font-mono">マークダウン形式でMermaidコードを直接確認・編集できます</span>
+                    <button
+                      className="text-[11px] bg-[#1c2128] hover:bg-[var(--border)] text-[var(--text)] border border-[var(--border2)] px-2.5 py-1 rounded cursor-pointer transition-colors"
+                      onClick={() => {
+                        navigator.clipboard.writeText(structureResultText);
+                        onSaveToast("Mermaidコード全文をクリップボードにコピーしました 📋");
+                      }}
+                    >
+                      📋 コードをコピー
+                    </button>
+                  </div>
+                  <textarea
+                    className="w-full h-[50vh] font-mono text-xs p-3 bg-[#0d1117] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none resize-none focus:border-[var(--blue)] select-text"
+                    value={structureResultText}
+                    onChange={(e) => setStructureResultText(e.target.value)}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer Controls */}
+            <div className="flex justify-between items-center gap-2 border-t border-[var(--border2)] pt-3 flex-wrap">
+              <div className="text-[11px] text-[var(--muted)]">
+                {structureResultText && !isGeneratingStructure && (
+                  <span>✦ 生成された構造化図解は新規ノートとして保存できます</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {!isGeneratingStructure && (
+                  <>
+                    <button
+                      className="bg-[#1c2128] hover:bg-[var(--border)] border border-[var(--border2)] text-[var(--text)] text-xs font-semibold p-2 px-3 rounded-md cursor-pointer transition-colors"
+                      onClick={() => generateStructuredGraph()}
+                      title="同じ記事群から別の構造や表現で再生成"
+                    >
+                      🔄 再生成
+                    </button>
+                    <button
+                      className="bg-[#1f6feb22] hover:bg-[#1f6feb35] border border-[#1f6feb66] text-[#58a6ff] text-xs font-bold p-2 px-4 rounded-md cursor-pointer transition-colors"
+                      onClick={() => {
+                        navigator.clipboard.writeText(structureResultText);
+                        onSaveToast("Mermaidコード全文をクリップボードにコピーしました 📋");
+                      }}
+                    >
+                      📋 コードをコピー
+                    </button>
+                    <button
+                      className="bg-[#23863622] hover:bg-[#23863644] border border-[#23863666] text-[#7ee787] text-xs font-bold p-2 px-5 rounded-md cursor-pointer transition-colors"
+                      onClick={saveStructureAsNewFile}
+                    >
+                      📝 ノートとして保存
+                    </button>
+                  </>
+                )}
+                <button
+                  className="text-xs text-[var(--subtle)] border border-[var(--border2)] hover:bg-[var(--border)] p-2 px-4 rounded-md cursor-pointer font-medium"
+                  onClick={() => setShowStructureResult(false)}
+                  disabled={isGeneratingStructure}
+                >
+                  閉じる
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -525,6 +525,7 @@ export default function App() {
   const [isStreamOpen, setIsStreamOpen] = useState(false);
   const [isBubbleOpen, setIsBubbleOpen] = useState(false);
   const [isGraphOpen, setIsGraphOpen] = useState(false);
+  const [graphCenterNodeId, setGraphCenterNodeId] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isPromptOpen, setIsPromptOpen] = useState(false);
   const [isExternalPasteOpen, setIsExternalPasteOpen] = useState(false);
@@ -6377,9 +6378,12 @@ const renderMarkdownToElements = (contentStr: string) => {
                   <div className="flex items-center bg-[#1c2128] border border-[var(--border2)] rounded-md p-0.5 gap-0.5 shrink-0">
                     <span className="portrait:hidden text-[10px] text-[var(--muted)] px-1.5 font-medium select-none">チャート:</span>
                     <button
-                      onClick={() => setIsGraphOpen(true)}
+                      onClick={() => {
+                        setGraphCenterNodeId(activeNote?.id || activeId || null);
+                        setIsGraphOpen(true);
+                      }}
                       className="p-1 px-1.5 text-xs text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded cursor-pointer flex items-center gap-0.5 portrait:gap-0 transition-all"
-                      title="ナレッジグラフ表示"
+                      title="ナレッジグラフ表示（この記事を中心に表示）"
                     >
                       <span>🕸</span>
                       <span className="portrait:hidden">グラフ</span>
@@ -7210,7 +7214,10 @@ const renderMarkdownToElements = (contentStr: string) => {
 
               {/* CARD 4: Network preview (col-span-8) */}
               <div
-                onClick={() => setIsGraphOpen(true)}
+                onClick={() => {
+                  setGraphCenterNodeId(null);
+                  setIsGraphOpen(true);
+                }}
                 className="md:col-span-8 group hover:border-[#58a6ff55] bg-[#161b22] border border-[#30363d] rounded-xl p-5 relative overflow-hidden transition-all duration-300 cursor-pointer flex flex-col justify-between min-h-[300px]"
               >
                 <div className="flex justify-between items-start mb-2">
@@ -7667,7 +7674,7 @@ const renderMarkdownToElements = (contentStr: string) => {
           onForceRefreshNotes={syncFromServer}
           filterStart={filterStartDate}
           filterEnd={filterEndDate}
-          initialCenterNodeId={activeId || undefined}
+          initialCenterNodeId={graphCenterNodeId || activeNote?.id || activeId || undefined}
         />
       )}
 
