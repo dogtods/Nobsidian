@@ -4498,16 +4498,6 @@ const renderMarkdownToElements = (contentStr: string) => {
           },
           (err) => {
             console.error("Device speech error", err);
-            const gcpKey = localStorage.getItem("cn_gcp_tts_key");
-            if (gcpKey) {
-              logTts("端末音声の合成に失敗したため、Google Cloud TTSへ自動フォールバックします", 7000);
-              toast("端末音声エラーのためGoogle Cloud TTSで読み上げを再開します");
-              localStorage.setItem("cn_use_device_speech", "false");
-              setTimeout(() => {
-                playNextTts();
-              }, 200);
-              return;
-            }
             toast("端末音声の再生でエラーが発生しました");
             stopTts();
           }
