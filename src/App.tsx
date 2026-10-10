@@ -462,6 +462,7 @@ export default function App() {
   const isDeviceSpeakingRef = useRef(false);
   const isTtsPlayingRef = useRef(false);
   const keepAliveTimerRef = useRef<any>(null);
+  const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const [ttsSelectionPopup, setTtsSelectionPopup] = useState<{ top: number; left: number; text: string } | null>(null);
   const [isTtsMenuOpen, setIsTtsMenuOpen] = useState(false);
 
@@ -3828,6 +3829,9 @@ const renderMarkdownToElements = (contentStr: string) => {
         // 端末音声時はブラウザの無音自動検出によるpause誤爆を防ぐため、MediaSession再生状態の強制は避ける
         if (!isDeviceSpeech) {
           navigator.mediaSession.playbackState = 'playing';
+          navigator.mediaSession.setActionHandler('pause', () => {
+            stopTts();
+          });
         }
 
         navigator.mediaSession.setActionHandler('play', () => {
@@ -3839,17 +3843,6 @@ const renderMarkdownToElements = (contentStr: string) => {
             if (audioRef.current && audioRef.current.paused) {
               audioRef.current.play().catch(() => {});
             }
-          }
-        });
-
-        navigator.mediaSession.setActionHandler('pause', () => {
-          if (isDeviceSpeech) {
-            // 端末音声では pause ハンドラで stopTts() を呼ぶとブラウザのOS判定により発話が即停止する事故が起きるため、pause() を呼ぶ
-            if (typeof window !== "undefined" && "speechSynthesis" in window) {
-              window.speechSynthesis.pause();
-            }
-          } else {
-            stopTts();
           }
         });
 
@@ -3882,6 +3875,12 @@ const renderMarkdownToElements = (contentStr: string) => {
       }
       if (typeof navigator !== "undefined" && 'mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'none';
+        try {
+          navigator.mediaSession.setActionHandler('play', null);
+          navigator.mediaSession.setActionHandler('pause', null);
+          navigator.mediaSession.setActionHandler('stop', null);
+          navigator.mediaSession.setActionHandler('nexttrack', null);
+        } catch (_) {}
       }
     } catch (err) {
       console.warn("stopAudioKeepAlive error:", err);
@@ -4081,29 +4080,29 @@ const renderMarkdownToElements = (contentStr: string) => {
       // バックグラウンド・消灯時の画面維持（WakeLock）
       startAudioKeepAlive(currentNote);
 
-      // 1. テキストを句点や改行（。！？\n）で文ごとに分割し、長すぎる文（>120文字）は読点やスペースでも分割
-      const rawChunks = text.split(/(?<=[。！？\n])/g).map(s => s.trim()).filter(Boolean);
+      // 1. テキストを行や文（。！？\n）単位で分割し、自然な長さ（80〜150文字程度）のチャンクに整理
+      const rawSentences = text.split(/(?<=[。！？\n])/g).map(s => s.trim()).filter(Boolean);
       const chunks: string[] = [];
-      for (const rc of rawChunks) {
-        if (rc.length > 120) {
-          const sub = rc.split(/(?<=[、，,])/g).map(s => s.trim()).filter(Boolean);
-          if (sub.length > 1) {
-            chunks.push(...sub);
-          } else {
-            for (let i = 0; i < rc.length; i += 80) {
-              chunks.push(rc.slice(i, i + 80));
-            }
-          }
+      let tempChunk = "";
+      for (const s of rawSentences) {
+        if (!tempChunk) {
+          tempChunk = s;
+        } else if (tempChunk.length + s.length < 130) {
+          tempChunk += (tempChunk.endsWith("\n") || s.startsWith("\n") ? "" : " ") + s;
         } else {
-          chunks.push(rc);
+          chunks.push(tempChunk);
+          tempChunk = s;
         }
+      }
+      if (tempChunk) {
+        chunks.push(tempChunk);
       }
       const finalChunks = chunks.length > 0 ? chunks : [text];
 
       let currentIndex = 0;
       let lastSpokenChunk = -1;
       let lastActivityTime = Date.now();
-      let retryCount = 0;
+      let isAdvancing = false;
 
       const speakNextChunk = () => {
         if (!isTtsPlayingRef.current || !isDeviceSpeakingRef.current) {
@@ -4112,6 +4111,8 @@ const renderMarkdownToElements = (contentStr: string) => {
 
         if (currentIndex >= finalChunks.length) {
           isDeviceSpeakingRef.current = false;
+          activeUtteranceRef.current = null;
+          (window as any).__activeUtterance = null;
           if (keepAliveTimerRef.current) {
             clearInterval(keepAliveTimerRef.current);
             keepAliveTimerRef.current = null;
@@ -4124,32 +4125,39 @@ const renderMarkdownToElements = (contentStr: string) => {
         const chunkText = finalChunks[chunkIndex];
         lastSpokenChunk = chunkIndex;
         lastActivityTime = Date.now();
+        isAdvancing = false;
 
         const utterance = new SpeechSynthesisUtterance(chunkText);
         utterance.lang = "ja-JP";
         utterance.rate = ttsSpeed;
 
-        // ★重要: 読み上げ中のスクロール追従は「実際に音声発話が開始された(onstart)」瞬間にのみ実行
-        // （発話前の事前スクロールや、エラー発生時の誤スクロールを根絶）
+        // ★ GC対策: 参照を外部refおよびwindowに保持（Chromiumのガベージコレクションによる突然停止を防止）
+        activeUtteranceRef.current = utterance;
+        (window as any).__activeUtterance = utterance;
+
+        // 音声の割り当て
+        const voices = window.speechSynthesis.getVoices();
+        const savedVoiceUri = localStorage.getItem("cn_selected_voice_uri");
+        if (savedVoiceUri && voices.length > 0) {
+          const matched = voices.find(v => v.voiceURI === savedVoiceUri);
+          if (matched) utterance.voice = matched;
+        } else if (voices.length > 0) {
+          const jaVoice = voices.find(v => v.lang === "ja-JP" || v.lang === "ja_JP" || v.lang.startsWith("ja") || v.lang.includes("JP"));
+          if (jaVoice) utterance.voice = jaVoice;
+        }
+
+        // 読み上げ中のスクロール追従（発話開始時に実行）
         utterance.onstart = () => {
-          retryCount = 0;
           lastActivityTime = Date.now();
           scrollSpeechIntoView(chunkText);
         };
 
-        const savedVoiceUri = localStorage.getItem("cn_selected_voice_uri");
-        const voices = window.speechSynthesis.getVoices();
-        if (savedVoiceUri) {
-          const matched = voices.find(v => v.voiceURI === savedVoiceUri);
-          if (matched) utterance.voice = matched;
-        } else {
-          const jaVoice = voices.find(v => v.lang.startsWith("ja") || v.lang.includes("JP"));
-          if (jaVoice) utterance.voice = jaVoice;
-        }
-
         utterance.onend = () => {
+          if (isAdvancing) return;
+          isAdvancing = true;
+          activeUtteranceRef.current = null;
+          (window as any).__activeUtterance = null;
           lastActivityTime = Date.now();
-          retryCount = 0;
           currentIndex++;
           // 次のチャンクへ
           if (isTtsPlayingRef.current && isDeviceSpeakingRef.current) {
@@ -4158,36 +4166,28 @@ const renderMarkdownToElements = (contentStr: string) => {
         };
 
         utterance.onerror = (e) => {
-          // 停止やキャンセルによる中断の場合はチャンク連続呼び出しを行わず静かに停止
+          console.warn(`Device Speech chunk event (${e.error}, chunk ${chunkIndex}):`, e);
+
+          // ユーザー手動停止やキャンセルの場合は静かに終了
           if (e.error === "canceled" || !isTtsPlayingRef.current || !isDeviceSpeakingRef.current) {
             isDeviceSpeakingRef.current = false;
+            activeUtteranceRef.current = null;
+            (window as any).__activeUtterance = null;
             return;
           }
 
-          console.warn(`Device Speech chunk error (error: ${e.error}, chunk: ${chunkIndex}):`, e);
+          // interrupted や一時的なエラーの場合: 誤って全体を停止させず、安全に次へ進行
+          if (isAdvancing) return;
+          isAdvancing = true;
+          activeUtteranceRef.current = null;
+          (window as any).__activeUtterance = null;
 
-          // 一時的な interrupted や audio-busy の場合: 同じチャンクを最大2回まで再試行
-          // （★重要: 次のチャンクへスキップせず、同一チャンクの安定再生を試行）
-          if ((e.error === "interrupted" || e.error === "audio-busy") && retryCount < 2) {
-            retryCount++;
-            setTimeout(() => {
-              if (isTtsPlayingRef.current && isDeviceSpeakingRef.current) {
-                if (window.speechSynthesis.paused) {
-                  window.speechSynthesis.resume();
-                }
-                speakNextChunk();
-              }
-            }, 200);
-            return;
-          }
-
-          // 回復不能なエラーまたはリトライ上限超過時は、記事全体をスキップせず安全に停止
-          isDeviceSpeakingRef.current = false;
-          if (keepAliveTimerRef.current) {
-            clearInterval(keepAliveTimerRef.current);
-            keepAliveTimerRef.current = null;
-          }
-          onError(new Error(`端末音声の再生が中断されました (${e.error || '不明なエラー'})`));
+          setTimeout(() => {
+            if (isTtsPlayingRef.current && isDeviceSpeakingRef.current) {
+              currentIndex++;
+              speakNextChunk();
+            }
+          }, 80);
         };
 
         if (window.speechSynthesis.paused) {
@@ -4196,7 +4196,7 @@ const renderMarkdownToElements = (contentStr: string) => {
         window.speechSynthesis.speak(utterance);
       };
 
-      // Chrome等で発話が約15秒で止まる既知バグ & 画面消灯やバックグラウンド移行時の復帰タイマー
+      // Chrome等で発話が約15秒で止まる既知バグの対策（12秒以上同一チャンクで膠着時のみ微小トグル）
       if (keepAliveTimerRef.current) clearInterval(keepAliveTimerRef.current);
       keepAliveTimerRef.current = setInterval(() => {
         if (!isTtsPlayingRef.current || !isDeviceSpeakingRef.current) {
@@ -4207,31 +4207,29 @@ const renderMarkdownToElements = (contentStr: string) => {
           return;
         }
 
-        // 1. paused状態になっている場合は再開
         if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        } else if (window.speechSynthesis.speaking && Date.now() - lastActivityTime > 12000) {
+          window.speechSynthesis.pause();
           window.speechSynthesis.resume();
           lastActivityTime = Date.now();
         }
+      }, 4000);
 
-        // 2. 発話中フラグがあるのに12秒以上同じチャンクで膠着している場合（Chromeの15秒バグ対策）
-        if (window.speechSynthesis.speaking) {
-          if (currentIndex === lastSpokenChunk && Date.now() - lastActivityTime > 12000) {
-            window.speechSynthesis.pause();
-            window.speechSynthesis.resume();
-            lastActivityTime = Date.now();
-          }
-        }
-      }, 3000);
-
-      // 初回チャンク発話スタート（ブラウザ音声エンジンの直前状態安定化を待機）
+      // 初回発話スタート（既存の発話が残っている場合はクリーンアップして即時開始）
+      if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
+        window.speechSynthesis.cancel();
+      }
       setTimeout(() => {
         if (isTtsPlayingRef.current && isDeviceSpeakingRef.current) {
           speakNextChunk();
         }
-      }, 100);
+      }, 40);
 
     } catch (err) {
       isDeviceSpeakingRef.current = false;
+      activeUtteranceRef.current = null;
+      (window as any).__activeUtterance = null;
       onError(err);
     }
   };
@@ -4266,6 +4264,7 @@ const renderMarkdownToElements = (contentStr: string) => {
 
       // 端末標準音声が有効な場合（Web Speech API: 1500文字制限不要・文ごと連続発話）
       if (isDeviceSpeech) {
+        setIsTtsLoading(false);
         playDeviceSpeech(
           cleanText,
           currentNote,
