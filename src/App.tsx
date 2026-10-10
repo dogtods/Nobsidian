@@ -4165,13 +4165,12 @@ const renderMarkdownToElements = (contentStr: string) => {
     try {
       const voicesCount = window.speechSynthesis.getVoices().length;
       const speaking = window.speechSynthesis.speaking;
-      const pending = window.speechSynthesis.pending;
-      const paused = window.speechSynthesis.paused;
       const isTransientActive = (navigator as any).userActivation ? (navigator as any).userActivation.isActive : "N/A";
       const hasBeenActive = (navigator as any).userActivation ? (navigator as any).userActivation.hasBeenActive : "N/A";
       const isInIframe = typeof window !== "undefined" && window.self !== window.top;
+      const noKeepAlive = localStorage.getItem("cn_debug_no_keepalive") === "1";
 
-      logTts(`Init: voices=${voicesCount}, iframe=${isInIframe}, transient=${isTransientActive}, hasActive=${hasBeenActive}, speaking=${speaking}`, 5000);
+      logTts(`Init: voices=${voicesCount}, iframe=${isInIframe}, keepalive=${!noKeepAlive}, active=${hasBeenActive}, speaking=${speaking}`, 5000);
 
       window.speechSynthesis.cancel();
 
@@ -4179,7 +4178,6 @@ const renderMarkdownToElements = (contentStr: string) => {
       isTtsPlayingRef.current = true;
 
       // バックグラウンド・消灯時の画面維持（WakeLock / KeepAlive）
-      const noKeepAlive = localStorage.getItem("cn_debug_no_keepalive") === "1";
       if (!noKeepAlive) {
         startAudioKeepAlive(currentNote);
       }
@@ -4500,6 +4498,16 @@ const renderMarkdownToElements = (contentStr: string) => {
           },
           (err) => {
             console.error("Device speech error", err);
+            const gcpKey = localStorage.getItem("cn_gcp_tts_key");
+            if (gcpKey) {
+              logTts("端末音声の合成に失敗したため、Google Cloud TTSへ自動フォールバックします", 7000);
+              toast("端末音声エラーのためGoogle Cloud TTSで読み上げを再開します");
+              localStorage.setItem("cn_use_device_speech", "false");
+              setTimeout(() => {
+                playNextTts();
+              }, 200);
+              return;
+            }
             toast("端末音声の再生でエラーが発生しました");
             stopTts();
           }
