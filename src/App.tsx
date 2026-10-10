@@ -29,6 +29,7 @@ import {
   Copy,
   Link2,
   FileJson,
+  FileCode,
   Maximize2,
   Minimize2,
   X,
@@ -145,38 +146,31 @@ const formatVisualStructure = (raw: any): string => {
 };
 
 // プレビュー表示に基づく音声読み上げ用テキストの抽出・整形
-// 1. 他記事へのリンク名称（[[...]]）や関連ノートブロックは一切読み上げない
-// 2. プレビューの見た目に基づき、Mermaid図や生JSONの構文、Markdown記号、URLなどを適切に除去・変換
+// 1. 保存日時・作成日時などの単一メタ情報行のみを安全に除去（本文の途中切断や空化を完全根絶）
+// 2. 他記事へのリンク名称（[[...]]）や関連ノートブロックは一切読み上げない
+// 3. プレビューの見た目に基づき、Mermaid図や生JSONの構文、Markdown記号、URLなどを適切に除去・変換
 const cleanTextForSpeech = (rawText: string, title?: string): string => {
-  if (!rawText) return "";
+  let text = (rawText || "").trim();
+  const cleanTitle = (title || "").trim();
 
-  let text = rawText;
+  if (!text && !cleanTitle) return "";
 
-  // 1. 保存日時・作成日時などのフッターメタ情報の切り捨て
-  text = text.split(/保存日時|保存:|保存：|作成日時/)[0];
+  // 1. 保存日時・作成日時などの単一メタ情報行の除去（splitによる本文消失を防止し、行単位で安全に除去）
+  text = text.replace(/^(?:>|\s*[-*+•▸]\s*)?(?:保存日時|保存日|作成日時|作成日|更新日時|更新日|取得日時|取得日|登録日時|登録日|公開日時|公開日|配信日時|配信日)[：:]\s*.*$/gim, '');
 
-  // 2. タイトルの重複除去（ノート先頭にタイトルが重複している場合）
-  if (title) {
-    const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    if (escapedTitle) {
-      const titleRegex = new RegExp(`^\\s*#*\\s*${escapedTitle}\\s*`, 'i');
-      text = text.replace(titleRegex, '');
-    }
-  }
-
-  // 3. 【重要】他記事へのリンク名称・関連ノートの完全除外（★ユーザー要望: ほか記事へのリンク名称は読み上げない）
-  // 3-1. 「## 関連ノート」「### 関連ノート」「## 関連記事」などのセクションと後続リンク一覧を丸ごと除去
-  text = text.replace(/(?:^|\n)(?:#+\s*)?関連(?:ノート|記事|リンク|ナレッジ)[：:]?[\s\S]*?(?=\n#+|$)/gi, '');
-  // 3-2. 行全体が他記事リンク（例: `- [[ノートA]]`、`[[ノートA]]`）の行を丸ごと削除
+  // 2. 【重要】他記事へのリンク名称・関連ノートの完全除外（★ユーザー要望: ほか記事へのリンク名称は読み上げない）
+  // 2-1. 見出しセクション「## 関連ノート」「### 関連ノート」「## 関連記事」等と後続リンク一覧を除去
+  text = text.replace(/(?:^|\n)(?:#{1,6}\s+|【\s*)関連(?:ノート|記事|リンク|ナレッジ)[：:]?\s*】?[\s\S]*?(?=(?:\n#{1,6}\s+|\n【|$))/gi, '');
+  // 2-2. 行全体が他記事リンク（例: `- [[ノートA]]`、`[[ノートA]]`、`- [[ノートA|別名]]`）の行を丸ごと削除
   text = text.replace(/^\s*(?:[-*+•▸]\s+)?\[\[[^\]]+\]\]\s*$/gm, '');
-  // 3-3. 文中に残っている [[記事名]] や [[記事名|別名]] のリンク記法・名称をすべて除去
-  text = text.replace(/\[\[[^\]]+\]\]/g, '');
+  // 2-3. 文中に残っている [[記事名]] や [[記事名|別名]] のリンク記法（コロン含む）を除去（例: `- [[産業動向]]: 説明` -> `- 説明`）
+  text = text.replace(/\[\[[^\]]+\]\]\s*[:：]?\s*/g, '');
 
-  // 4. 【重要】プレビューの表示に基づくクリーンアップ（★ユーザー要望: プレビューの表示に基づいてほしい）
-  // 4-1. Mermaidコードブロックの除去（図形構文は読み上げない）
+  // 3. 【重要】プレビューの表示に基づくクリーンアップ
+  // 3-1. Mermaidコードブロックの除去（図形構文は読み上げない）
   text = text.replace(/```mermaid[\s\S]*?```/gi, '');
 
-  // 4-2. visual_structure を含むJSONコードブロック・生JSONブロックの処理（コードは除外し、descriptionのみ読み上げ）
+  // 3-2. visual_structure を含むJSONコードブロック・生JSONブロックの処理（コードは除外し、descriptionのみ読み上げ）
   text = text.replace(/```json[\s\S]*?```/gi, (match) => {
     if (match.includes('"visual_structure"')) {
       try {
@@ -203,25 +197,25 @@ const cleanTextForSpeech = (rawText: string, title?: string): string => {
     return '';
   });
 
-  // 4-3. 一般コードブロック（``` ... ```）の除去
+  // 3-3. 一般コードブロック（``` ... ```）の除去
   text = text.replace(/```[\s\S]*?```/g, '');
   // インラインコード (`code`) はコードの中身のテキストのみ残す
   text = text.replace(/`([^`\n]+)`/g, '$1');
 
-  // 4-4. 数式・化学式ブロック ($$...$$, $...$) の除去・平文抽出
+  // 3-4. 数式・化学式ブロック ($$...$$, $...$) の除去・平文抽出
   text = text.replace(/\$\$[\s\S]*?\$\$/g, '');
   text = text.replace(/\$([^\$\n]+)\$/g, '$1');
 
-  // 4-5. 画像記法（![alt](url)）の完全除去
+  // 3-5. 画像記法（![alt](url)）の完全除去
   text = text.replace(/!\[[^\]]*\]\([^\)]+\)/g, '');
 
-  // 4-6. マークダウンリンク [表示テキスト](url) -> プレビュー表示と同様に「表示テキスト」のみ採用（URL部分は一切読まない）
+  // 3-6. マークダウンリンク [表示テキスト](url) -> プレビュー表示と同様に「表示テキスト」のみ採用（URL部分は一切読まない）
   text = text.replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1');
 
-  // 4-7. むき出しのURL (https://..., http://...) の除去
+  // 3-7. むき出しのURL (https://..., http://...) の除去
   text = text.replace(/https?:\/\/[^\s\)\>]+/g, '');
 
-  // 4-8. マークダウン表（テーブル）の処理
+  // 3-8. マークダウン表（テーブル）の処理
   // テーブル区切り行（|---|---|）の除去
   text = text.replace(/^\s*\|[ \-:|]+\|\s*$/gm, '');
   // 各行のセル区切りパイプ | を読点やスペースに変換
@@ -229,29 +223,41 @@ const cleanTextForSpeech = (rawText: string, title?: string): string => {
     return row.split('|').map((col: string) => col.trim()).filter(Boolean).join('、 ');
   });
 
-  // 4-9. マークダウン見出し記号（#）の除去
+  // 3-9. マークダウン見出し記号（#）の除去
   text = text.replace(/^#+\s+/gm, '');
 
-  // 4-10. 文字装飾（太字・斜体・打ち消し線）の記号除去
+  // 3-10. 文字装飾（太字・斜体・打ち消し線）の記号除去
   text = text.replace(/(\*\*|__)(.*?)\1/g, '$2');
   text = text.replace(/(\*|_)(.*?)\1/g, '$2');
   text = text.replace(/~~(.*?)~~/g, '$2');
 
-  // 4-11. 引用記号（>）、リスト記号（- [ ]、-、*、+、1.）のプレーン化
+  // 3-11. 引用記号（>）、リスト記号（- [ ]、-、*、+、1.）のプレーン化
   text = text.replace(/^>\s?/gm, '');
   text = text.replace(/^(\s*)-\s+\[[ xX]\]\s*/gm, '');
   text = text.replace(/^(\s*)[-*+•▸]\s+/gm, '');
   text = text.replace(/^(\s*)\d+\.\s+/gm, '');
 
-  // 4-12. 水平線（---、***、___）の除去
+  // 3-12. 水平線（---、***、___）の除去
   text = text.replace(/^(?:-{3,}|\*{3,}|_{3,})$/gm, '');
 
-  // 4-13. HTMLタグの処理（<br>は改行に、その他タグは除去）
+  // 3-13. HTMLタグの処理（<br>は改行に、その他タグは除去）
   text = text.replace(/<br\s*\/?>/gi, '\n');
   text = text.replace(/<[^>]+>/g, '');
 
-  // 4-14. 連続する改行や空白の整理
+  // 3-14. 連続する改行や空白の整理
   text = text.replace(/\n{3,}/g, '\n\n').trim();
+
+  // 4. タイトルの処理: 音声読み上げでは記事冒頭でタイトルが明確に読み上げられることが重要
+  if (cleanTitle) {
+    if (!text) {
+      return cleanTitle;
+    }
+    const firstLine = text.split('\n')[0].trim();
+    // 本文の先頭行がまだタイトルを含んでいない場合、先頭にタイトルを明示的に付与
+    if (!firstLine.includes(cleanTitle) && !cleanTitle.includes(firstLine)) {
+      text = `${cleanTitle}。\n\n${text}`;
+    }
+  }
 
   return text;
 };
@@ -456,6 +462,8 @@ export default function App() {
   const isDeviceSpeakingRef = useRef(false);
   const isTtsPlayingRef = useRef(false);
   const keepAliveTimerRef = useRef<any>(null);
+  const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const sessionRef = useRef<number>(0);
   const [ttsSelectionPopup, setTtsSelectionPopup] = useState<{ top: number; left: number; text: string } | null>(null);
   const [isTtsMenuOpen, setIsTtsMenuOpen] = useState(false);
 
@@ -525,6 +533,7 @@ export default function App() {
   const [isStreamOpen, setIsStreamOpen] = useState(false);
   const [isBubbleOpen, setIsBubbleOpen] = useState(false);
   const [isGraphOpen, setIsGraphOpen] = useState(false);
+  const [graphCenterNodeId, setGraphCenterNodeId] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isPromptOpen, setIsPromptOpen] = useState(false);
   const [isExternalPasteOpen, setIsExternalPasteOpen] = useState(false);
@@ -1088,6 +1097,16 @@ export default function App() {
     setToastMessage(msg);
     const time = durationMs || (msg.includes("\n") || msg.length > 50 ? 5000 : 2500);
     setTimeout(() => setToastMessage(""), time);
+  };
+
+  const [ttsLogs, setTtsLogs] = useState<string[]>([]);
+  const [isTtsDebugOpen, setIsTtsDebugOpen] = useState(true);
+
+  const logTts = (msg: string, durationMs?: number) => {
+    const timeStr = new Date().toLocaleTimeString();
+    const entry = `[${timeStr}] ${msg}`;
+    setTtsLogs(prev => [entry, ...prev].slice(0, 100));
+    toast(msg, durationMs);
   };
 
   // 記事閲覧エリアの文字幅トグル（4段階循環: 1広 1/4 → 2中 2/4 → 3狭 3/4 → 4最狭 4/4）
@@ -2154,6 +2173,18 @@ $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$
   };
 
   const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    // ツールバー、上部アクションボタン列、入力欄、各種ボタンでの操作時はスワイプによるページ送りを防止
+    const target = e.target as HTMLElement | null;
+    if (
+      !target ||
+      target.closest(
+        '[data-no-swipe], [data-toolbar], header, nav, button, input, textarea, select, .overflow-x-auto, .overflow-x-scroll, .custom-scrollbar'
+      )
+    ) {
+      touchStartRef.current = null;
+      return;
+    }
+
     if (e.touches.length === 1) {
       touchStartRef.current = {
         x: e.touches[0].clientX,
@@ -2167,14 +2198,24 @@ $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$
     const start = touchStartRef.current;
     touchStartRef.current = null;
 
+    const target = e.target as HTMLElement | null;
+    if (
+      !target ||
+      target.closest(
+        '[data-no-swipe], [data-toolbar], header, nav, button, input, textarea, select, .overflow-x-auto, .overflow-x-scroll, .custom-scrollbar'
+      )
+    ) {
+      return;
+    }
+
     if (e.changedTouches.length === 1) {
       const endX = e.changedTouches[0].clientX;
       const endY = e.changedTouches[0].clientY;
       const deltaX = endX - start.x;
       const deltaY = endY - start.y;
 
-      const minSwipeDistance = 60; // min 60px horizontal move
-      const maxVerticalVariance = 50; // max 50px vertical move to keep it clean and scrolling unaffected
+      const minSwipeDistance = 75; // 75px以上の明瞭な横スワイプ
+      const maxVerticalVariance = 45; // 垂直移動は小さく保ち誤作動を防ぐ
 
       if (Math.abs(deltaX) > minSwipeDistance && Math.abs(deltaY) < maxVerticalVariance) {
         if (deltaX > 0) {
@@ -3759,18 +3800,23 @@ const renderMarkdownToElements = (contentStr: string) => {
 
   const startAudioKeepAlive = (note?: Note) => {
     try {
-      if (!keepAliveAudioRef.current) {
-        const el = new Audio();
-        el.loop = true;
-        el.volume = 0.01;
-        keepAliveAudioRef.current = el;
-      }
-      const audio = keepAliveAudioRef.current;
-      if (audio.paused || !audio.src) {
-        audio.src = getSilentAudioUrl();
-        audio.play().catch(e => {
-          console.warn("Keepalive audio play:", e);
-        });
+      const isDeviceSpeech = typeof window !== "undefined" && (localStorage.getItem("cn_use_device_speech") === "true" || !localStorage.getItem("cn_gcp_tts_key"));
+      // 端末音声（Web Speech API）利用時は、HTML5 audioタグを再生すると音声出力排他制御によりWeb Speechがキャンセルされる場合があるため、
+      // 画面消灯防止（WakeLock）とMediaSessionのみを適用し、audio.play()は実行しない
+      if (!isDeviceSpeech) {
+        if (!keepAliveAudioRef.current) {
+          const el = new Audio();
+          el.loop = true;
+          el.volume = 0.01;
+          keepAliveAudioRef.current = el;
+        }
+        const audio = keepAliveAudioRef.current;
+        if (audio.paused || !audio.src) {
+          audio.src = getSilentAudioUrl();
+          audio.play().catch(e => {
+            console.warn("Keepalive audio play:", e);
+          });
+        }
       }
 
       // 画面の自動消灯を防止（利用中の画面保持）
@@ -3790,20 +3836,35 @@ const renderMarkdownToElements = (contentStr: string) => {
           artist: `${(note ? getFolder(note) : '') || 'ノート'} (読み上げ中)`,
           album: 'Connected Notes'
         });
-        navigator.mediaSession.playbackState = 'playing';
+
+        // 端末音声時はブラウザの無音自動検出によるpause誤爆を防ぐため、MediaSession再生状態の強制は避ける
+        if (!isDeviceSpeech) {
+          navigator.mediaSession.playbackState = 'playing';
+          navigator.mediaSession.setActionHandler('pause', () => {
+            stopTts();
+          });
+        }
+
         navigator.mediaSession.setActionHandler('play', () => {
-          if (typeof window !== "undefined" && "speechSynthesis" in window && window.speechSynthesis.paused) {
-            window.speechSynthesis.resume();
+          if (isDeviceSpeech) {
+            if (typeof window !== "undefined" && "speechSynthesis" in window && window.speechSynthesis.paused) {
+              window.speechSynthesis.resume();
+            }
+          } else {
+            if (audioRef.current && audioRef.current.paused) {
+              audioRef.current.play().catch(() => {});
+            }
           }
         });
-        navigator.mediaSession.setActionHandler('pause', () => {
-          stopTts();
-        });
+
         navigator.mediaSession.setActionHandler('stop', () => {
           stopTts();
         });
+
         navigator.mediaSession.setActionHandler('nexttrack', () => {
-          stopTts();
+          if (!isDeviceSpeech && audioRef.current) {
+            audioRef.current.pause();
+          }
           setTtsQueue(prev => prev.slice(1));
         });
       }
@@ -3825,6 +3886,12 @@ const renderMarkdownToElements = (contentStr: string) => {
       }
       if (typeof navigator !== "undefined" && 'mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'none';
+        try {
+          navigator.mediaSession.setActionHandler('play', null);
+          navigator.mediaSession.setActionHandler('pause', null);
+          navigator.mediaSession.setActionHandler('stop', null);
+          navigator.mediaSession.setActionHandler('nexttrack', null);
+        } catch (_) {}
       }
     } catch (err) {
       console.warn("stopAudioKeepAlive error:", err);
@@ -4004,7 +4071,60 @@ const renderMarkdownToElements = (contentStr: string) => {
     }
   }, []);
 
-  // 端末内蔵音声エンジン（Web Speech API）での発話処理（長文対応・連続自動つなぎ方式・消灯/バックグラウンド対応）
+  // ボイス選択を pickVoice(utterance, retryTier) 関数に切り出す
+  const pickVoice = (utterance: SpeechSynthesisUtterance, retryTier: number, excludedVoiceUris: string[]) => {
+    try {
+      const isAndroid = typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length === 0) {
+        utterance.lang = "ja-JP";
+        return;
+      }
+
+      if (retryTier >= 2) {
+        // Tier 2以上では言語のみ ja (国コード省略フォールバック)
+        utterance.lang = "ja";
+        return;
+      }
+
+      if (retryTier === 1) {
+        // Tier 1では言語指定 ja-JP のみ（ボイスオブジェクトの強制指定を回避）
+        utterance.lang = "ja-JP";
+        return;
+      }
+
+      const savedVoiceUri = localStorage.getItem("cn_selected_voice_uri");
+      if (savedVoiceUri && !excludedVoiceUris.includes(savedVoiceUri)) {
+        const matched = voices.find(v => v.voiceURI === savedVoiceUri);
+        if (matched) {
+          utterance.voice = matched;
+          utterance.lang = matched.lang || "ja-JP";
+          return;
+        }
+      }
+
+      // 2. localService === true の ja 音声
+      const localJaVoice = voices.find(v => (v.lang === "ja-JP" || v.lang === "ja_JP" || v.lang.startsWith("ja") || v.lang.includes("JP")) && (v as any).localService === true && !excludedVoiceUris.includes(v.voiceURI));
+      if (localJaVoice) {
+        utterance.voice = localJaVoice;
+        utterance.lang = localJaVoice.lang || "ja-JP";
+        return;
+      }
+
+      // 3. 任意の ja 音声 (Androidの場合はオンラインGoogle音声オブジェクトの指定でsynthesis-failedが多発するため、lang指定のみに留める)
+      const anyJaVoice = voices.find(v => (v.lang === "ja-JP" || v.lang === "ja_JP" || v.lang.startsWith("ja") || v.lang.includes("JP")) && !excludedVoiceUris.includes(v.voiceURI));
+      if (anyJaVoice && !isAndroid) {
+        utterance.voice = anyJaVoice;
+        utterance.lang = anyJaVoice.lang || "ja-JP";
+      } else {
+        utterance.lang = "ja-JP";
+      }
+    } catch (_) {
+      utterance.lang = "ja-JP";
+    }
+  };
+
+  // 端末内蔵音声エンジン（Web Speech API）での発話処理（堅牢版・世代ID & 状態追跡）
   const playDeviceSpeech = (
     text: string,
     currentNote: Note,
@@ -4017,135 +4137,325 @@ const renderMarkdownToElements = (contentStr: string) => {
       return;
     }
 
+    const session = ++sessionRef.current;
+    const alive = () => session === sessionRef.current && isTtsPlayingRef.current && isDeviceSpeakingRef.current;
+
+    let startedAny = false;
+
+    const finish = (err?: any) => {
+      if (session !== sessionRef.current) return;
+      isDeviceSpeakingRef.current = false;
+      activeUtteranceRef.current = null;
+      (window as any).__activeUtterance = null;
+      if (keepAliveTimerRef.current) {
+        clearInterval(keepAliveTimerRef.current);
+        keepAliveTimerRef.current = null;
+      }
+      if (!err && !startedAny) {
+        logTts("音声が一度も再生されませんでした（無音終了）");
+        err = new Error("TTS silent: no chunk started");
+      }
+      if (err) {
+        onError(err);
+      } else {
+        onEnd();
+      }
+    };
+
     try {
+      const voicesCount = window.speechSynthesis.getVoices().length;
+      const speaking = window.speechSynthesis.speaking;
+      const isTransientActive = (navigator as any).userActivation ? (navigator as any).userActivation.isActive : "N/A";
+      const hasBeenActive = (navigator as any).userActivation ? (navigator as any).userActivation.hasBeenActive : "N/A";
+      const isInIframe = typeof window !== "undefined" && window.self !== window.top;
+      const noKeepAlive = localStorage.getItem("cn_debug_no_keepalive") === "1";
+
+      logTts(`Init: voices=${voicesCount}, iframe=${isInIframe}, keepalive=${!noKeepAlive}, active=${hasBeenActive}, speaking=${speaking}`, 5000);
+
       window.speechSynthesis.cancel();
+
       isDeviceSpeakingRef.current = true;
       isTtsPlayingRef.current = true;
 
-      // バックグラウンド・消灯時の音声停止を防ぐキープアライブオーディオを開始
-      startAudioKeepAlive(currentNote);
+      // バックグラウンド・消灯時の画面維持（WakeLock / KeepAlive）
+      if (!noKeepAlive) {
+        startAudioKeepAlive(currentNote);
+      }
 
-      // 1. 長いテキストを句点や改行（。！？\n）などで安全なチャンク（文ごと）に分割する
-      // これによりブラウザの自動停止バグや文字数制限を完全に回避し、最後までスムーズに発話させます
-      const rawChunks = text.split(/(?<=[。！？\n])/g).map(s => s.trim()).filter(Boolean);
-      const chunks = rawChunks.length > 0 ? rawChunks : [text];
+      // 1. チャンク分割 (正規表現の後読み回避)
+      const rawSentences = text.match(/[^。！？\n]+[。！？]?/g) || [text.trim()];
+      const cleanSentences = rawSentences.map(s => s.trim()).filter(Boolean);
+      const chunks: string[] = [];
+      let tempChunk = "";
+      for (const s of cleanSentences) {
+        if (!tempChunk) {
+          tempChunk = s;
+        } else if (tempChunk.length + s.length < 130) {
+          tempChunk += (tempChunk.endsWith("\n") || s.startsWith("\n") ? "" : " ") + s;
+        } else {
+          if (tempChunk.trim()) chunks.push(tempChunk.trim());
+          tempChunk = s;
+        }
+      }
+      if (tempChunk.trim()) {
+        chunks.push(tempChunk.trim());
+      }
+      const finalChunks = chunks.length > 0 ? chunks.filter(c => c.length > 0) : [text.trim()];
+
+      if (finalChunks.length === 0 || !finalChunks[0]) {
+        finish();
+        return;
+      }
 
       let currentIndex = 0;
-      let lastSpokenChunk = -1;
       let lastActivityTime = Date.now();
+      let attemptSeq = 0;
+      let failStreak = 0;
+      let retryCount = 0;
+      let currentRetryTier = 0;
+      const excludedVoiceUris: string[] = [];
+
+      // Voices load check / wait if needed
+      const checkAndStart = () => {
+        if (!alive()) return;
+        const voices = window.speechSynthesis.getVoices();
+        if (voices.length === 0) {
+          // voiceschanged イベントまたは最大1.5秒待機
+          let loaded = false;
+          const handler = () => {
+            if (loaded) return;
+            loaded = true;
+            window.speechSynthesis.removeEventListener("voiceschanged", handler);
+            if (alive()) speakNextChunk();
+          };
+          window.speechSynthesis.addEventListener("voiceschanged", handler);
+          setTimeout(() => {
+            if (!loaded) {
+              loaded = true;
+              window.speechSynthesis.removeEventListener("voiceschanged", handler);
+              if (alive()) speakNextChunk();
+            }
+          }, 1500);
+          return;
+        }
+        speakNextChunk();
+      };
 
       const speakNextChunk = () => {
-        if (!isTtsPlayingRef.current || !isDeviceSpeakingRef.current) {
+        if (!alive()) return;
+
+        if (currentIndex >= finalChunks.length) {
+          finish();
           return;
         }
 
-        if (currentIndex >= chunks.length) {
-          isDeviceSpeakingRef.current = false;
-          if (keepAliveTimerRef.current) {
-            clearInterval(keepAliveTimerRef.current);
-            keepAliveTimerRef.current = null;
-          }
-          onEnd();
+        const chunkIndex = currentIndex;
+        const chunkText = finalChunks[chunkIndex];
+        if (!chunkText) {
+          currentIndex++;
+          speakNextChunk();
           return;
         }
 
-        lastSpokenChunk = currentIndex;
-        lastActivityTime = Date.now();
-        const chunkText = chunks[currentIndex++];
-
-        // 読み上げ中のテキスト位置に合わせて画面を自然に下方向へ追従スクロール
-        scrollSpeechIntoView(chunkText);
+        const myAttempt = ++attemptSeq;
+        const stale = () => session !== sessionRef.current || myAttempt !== attemptSeq || !alive();
 
         const utterance = new SpeechSynthesisUtterance(chunkText);
         utterance.lang = "ja-JP";
         utterance.rate = ttsSpeed;
 
+        activeUtteranceRef.current = utterance;
+        (window as any).__activeUtterance = utterance;
+
+        pickVoice(utterance, currentRetryTier, excludedVoiceUris);
+
+        const voiceName = utterance.voice ? utterance.voice.name : "default";
+        const voiceUri = utterance.voice ? utterance.voice.voiceURI : "";
+        logTts(`speak idx=${chunkIndex} len=${chunkText.length} tier=${currentRetryTier} voice=${voiceName}`, 4000);
+
+        let hasStarted = false;
+        const chunkStartTime = Date.now();
+        let watchdogTimer: any = null;
+
+        const clearWatchdog = () => {
+          if (watchdogTimer) {
+            clearTimeout(watchdogTimer);
+            watchdogTimer = null;
+          }
+        };
+
+        const abandon = () => {
+          if (utterance) {
+            utterance.onstart = utterance.onend = utterance.onerror = null;
+          }
+          clearWatchdog();
+          try {
+            window.speechSynthesis.cancel();
+          } catch (_) {}
+        };
+
+        // ウォッチドッグ (8秒以内にonstartが来なければ再試行)
+        watchdogTimer = setTimeout(() => {
+          if (stale()) return;
+          if (!hasStarted) {
+            console.warn(`TTS watchdog triggered for chunk ${chunkIndex}: no onstart within 8s`);
+            abandon();
+            retryCount++;
+            if (retryCount > 2) {
+              currentRetryTier++;
+              retryCount = 0;
+              if (voiceUri) excludedVoiceUris.push(voiceUri);
+            }
+            setTimeout(() => {
+              if (stale()) return;
+              speakNextChunk();
+            }, 100);
+          }
+        }, 8000);
+
         utterance.onstart = () => {
+          if (stale()) return;
+          hasStarted = true;
+          startedAny = true;
+          failStreak = 0;
+          retryCount = 0;
+          lastActivityTime = Date.now();
+          clearWatchdog();
+          logTts(`start idx=${chunkIndex}`, 3000);
           scrollSpeechIntoView(chunkText);
         };
 
-        const savedVoiceUri = localStorage.getItem("cn_selected_voice_uri");
-        const voices = window.speechSynthesis.getVoices();
-        if (savedVoiceUri) {
-          const matched = voices.find(v => v.voiceURI === savedVoiceUri);
-          if (matched) utterance.voice = matched;
-        } else {
-          const jaVoice = voices.find(v => v.lang.startsWith("ja") || v.lang.includes("JP"));
-          if (jaVoice) utterance.voice = jaVoice;
-        }
-
         utterance.onend = () => {
-          lastActivityTime = Date.now();
-          // 次のチャンクへ
-          if (isTtsPlayingRef.current && isDeviceSpeakingRef.current) {
-            speakNextChunk();
+          if (stale()) return;
+          clearWatchdog();
+          utterance.onstart = utterance.onend = utterance.onerror = null;
+
+          const duration = Date.now() - chunkStartTime;
+          logTts(`end idx=${chunkIndex} 経過ms=${duration} started=${hasStarted}`, 4000);
+          const minExpectedDuration = chunkText.length * 15; // heuristic
+
+          if ((!hasStarted || duration < minExpectedDuration) && retryCount < 2) {
+            retryCount++;
+            if (retryCount > 1 && voiceUri) {
+              excludedVoiceUris.push(voiceUri);
+              currentRetryTier = Math.min(currentRetryTier + 1, 2);
+            }
+            console.warn(`Silent end detected on chunk ${chunkIndex} (hasStarted: ${hasStarted}, duration: ${duration}ms). Retrying...`);
+            abandon();
+            setTimeout(() => {
+              if (stale()) return;
+              speakNextChunk();
+            }, 150);
+            return;
           }
+
+          retryCount = 0;
+          activeUtteranceRef.current = null;
+          (window as any).__activeUtterance = null;
+          lastActivityTime = Date.now();
+          currentIndex++;
+
+          setTimeout(() => {
+            if (alive()) {
+              speakNextChunk();
+            }
+          }, 50);
         };
 
         utterance.onerror = (e) => {
-          if (e.error !== "canceled" && e.error !== "interrupted") {
-            console.warn("Device Speech chunk error:", e);
+          if (stale()) return;
+          clearWatchdog();
+          utterance.onstart = utterance.onend = utterance.onerror = null;
+
+          logTts(`error idx=${chunkIndex} e.error=${e.error}`, 5000);
+          console.warn(`Device Speech chunk event (${e.error}, chunk ${chunkIndex}):`, e);
+
+          if (e.error === "canceled" || e.error === "interrupted") {
+            return;
           }
-          lastActivityTime = Date.now();
-          if (currentIndex < chunks.length && isTtsPlayingRef.current && isDeviceSpeakingRef.current) {
+
+          if (e.error === "synthesis-failed" && retryCount < 2) {
+            retryCount++;
+            if (voiceUri) excludedVoiceUris.push(voiceUri);
+            if (retryCount >= 2) {
+              currentRetryTier = Math.min(currentRetryTier + 1, 2);
+            }
+            console.warn(`Synthesis failed on chunk ${chunkIndex}. Excluding voice and retrying...`);
+            abandon();
+            setTimeout(() => {
+              if (stale()) return;
+              speakNextChunk();
+            }, 200);
+            return;
+          }
+
+          failStreak++;
+          if (failStreak >= 2 || e.error === "synthesis-failed") {
+            const inIframe = typeof window !== "undefined" && window.self !== window.top;
+            if (inIframe) {
+              logTts(`端末音声エラー: ${e.error}（AI Studioプレビュー等のiframe内ではブラウザの権限ポリシーによりWeb Speech APIがブロックされます）`);
+              toast(`プレビュー画面(iframe)内では端末音声が利用できません。右上の「別タブ」アイコンから直接URLを開いてお試しください。`, 9000);
+            } else {
+              logTts(`端末音声エラー: ${e.error}（端末TTSエンジンの合成失敗）`);
+              toast(`端末音声が利用できません (${e.error})。Androidの「設定 > ユーザー補助 > テキスト読み上げ」でGoogle音声サービスの日本語データがダウンロードされているか確認するか、Google Cloud TTSキーをご利用ください。`, 9000);
+            }
+            finish(new Error("TTS failed: " + e.error));
+            return;
+          }
+
+          abandon();
+          setTimeout(() => {
+            if (stale()) return;
+            currentIndex++;
             speakNextChunk();
-          } else {
-            isDeviceSpeakingRef.current = false;
+          }, 100);
+        };
+
+        try {
+          window.speechSynthesis.speak(utterance);
+        } catch (speakErr) {
+          console.error("speechSynthesis.speak error:", speakErr);
+          clearWatchdog();
+          abandon();
+          setTimeout(() => {
+            if (stale()) return;
+            currentIndex++;
+            speakNextChunk();
+          }, 100);
+        }
+      };
+
+      // キープアライブ（Androidでは無効化、Android以外では12秒以上膠着時のみpause/resume）
+      const isAndroid = /Android/i.test(navigator.userAgent);
+      if (!isAndroid) {
+        if (keepAliveTimerRef.current) clearInterval(keepAliveTimerRef.current);
+        keepAliveTimerRef.current = setInterval(() => {
+          if (!alive()) {
             if (keepAliveTimerRef.current) {
               clearInterval(keepAliveTimerRef.current);
               keepAliveTimerRef.current = null;
             }
-            if (isTtsPlayingRef.current) {
-              onEnd();
-            }
+            return;
           }
-        };
 
-        window.speechSynthesis.speak(utterance);
-      };
-
-      // Chrome等で発話が約15秒で止まる既知バグ & 画面消灯やバックグラウンド移行時の復帰タイマー
-      if (keepAliveTimerRef.current) clearInterval(keepAliveTimerRef.current);
-      keepAliveTimerRef.current = setInterval(() => {
-        if (!isTtsPlayingRef.current || !isDeviceSpeakingRef.current) {
-          if (keepAliveTimerRef.current) {
-            clearInterval(keepAliveTimerRef.current);
-            keepAliveTimerRef.current = null;
-          }
-          return;
-        }
-
-        // 1. paused状態になっている場合は再開
-        if (window.speechSynthesis.paused) {
-          window.speechSynthesis.resume();
-          lastActivityTime = Date.now();
-        }
-
-        // 2. 発話中フラグがあるのに12秒以上同じチャンクで膠着している場合（Chromeの15秒バグ対策）
-        if (window.speechSynthesis.speaking) {
-          if (currentIndex === lastSpokenChunk && Date.now() - lastActivityTime > 12000) {
+          if (window.speechSynthesis.paused) {
+            window.speechSynthesis.resume();
+          } else if (window.speechSynthesis.speaking && Date.now() - lastActivityTime > 12000) {
             window.speechSynthesis.pause();
             window.speechSynthesis.resume();
             lastActivityTime = Date.now();
           }
-        } else {
-          // 発話中でないがまだ未発話チャンクが残っている場合（画面消灯時などにonendがスキップされた場合の復元）
-          if (currentIndex < chunks.length && Date.now() - lastActivityTime > 2500) {
-            speakNextChunk();
-          }
-        }
-      }, 3000);
+        }, 4000);
+      }
 
-      // 初回チャンク発話スタート（ブラウザ音声エンジンの直前cancel完了を40ms待機して確実に発話）
+      // cancel() 後の待機 (100ms) から voices 読み込みチェック付き開始へ
       setTimeout(() => {
-        if (isTtsPlayingRef.current && isDeviceSpeakingRef.current) {
-          speakNextChunk();
-        }
-      }, 40);
+        if (!alive()) return;
+        checkAndStart();
+      }, 100);
 
     } catch (err) {
-      isDeviceSpeakingRef.current = false;
-      onError(err);
+      finish(err);
     }
   };
 
@@ -4163,7 +4473,11 @@ const renderMarkdownToElements = (contentStr: string) => {
     setIsTtsLoading(true);
     
     try {
-      const cleanText = cleanTextForSpeech(currentNote.content, currentNote.title);
+      const rawBody = (currentNote.content && currentNote.content.trim())
+        || (currentNote.summary && currentNote.summary.trim())
+        || (currentNote.rawContent && currentNote.rawContent.trim())
+        || "";
+      const cleanText = cleanTextForSpeech(rawBody, currentNote.title);
       
       if (!cleanText) {
         setTtsQueue(prev => prev.slice(1));
@@ -4173,6 +4487,25 @@ const renderMarkdownToElements = (contentStr: string) => {
 
       const isDeviceSpeech = localStorage.getItem("cn_use_device_speech") === "true" || !localStorage.getItem("cn_gcp_tts_key");
 
+      // 端末標準音声が有効な場合（Web Speech API: 1500文字制限不要・文ごと連続発話）
+      if (isDeviceSpeech) {
+        setIsTtsLoading(false);
+        playDeviceSpeech(
+          cleanText,
+          currentNote,
+          () => {
+            setTtsQueue(prev => prev.slice(1));
+          },
+          (err) => {
+            console.error("Device speech error", err);
+            toast("端末音声の再生でエラーが発生しました");
+            stopTts();
+          }
+        );
+        return;
+      }
+      
+      // Google Cloud TTS API を使用する場合（APIペイロード上限対策としてのみ1500文字分割）
       let textToRead = cleanText;
       if (cleanText.length > 1500) {
         textToRead = cleanText.substring(0, 1500);
@@ -4184,23 +4517,6 @@ const renderMarkdownToElements = (contentStr: string) => {
           newQueue.splice(1, 0, { ...currentNote, content: remainingText, title: "" });
           return newQueue;
         });
-      }
-
-      // 端末標準音声が有効な場合
-      if (isDeviceSpeech) {
-        playDeviceSpeech(
-          textToRead,
-          currentNote,
-          () => {
-            setTtsQueue(prev => prev.slice(1));
-          },
-          (err) => {
-            console.error("Device speech error", err);
-            toast("端末音声の再生でエラーが発生しました");
-            setIsTtsPlaying(false);
-          }
-        );
-        return;
       }
       
       // Google Cloud TTS API を使用する場合
@@ -4290,7 +4606,9 @@ const renderMarkdownToElements = (contentStr: string) => {
     const active = getActiveNote();
     if (!active) return;
     
-    stopTts();
+    if (isTtsPlayingRef.current) {
+      stopTts();
+    }
     startAudioKeepAlive(active);
 
     const { groups } = getCategorizedNotes();
@@ -4301,11 +4619,9 @@ const renderMarkdownToElements = (contentStr: string) => {
     if (startIndex === -1) return;
     
     const queue = groupList.slice(startIndex);
-    setTimeout(() => {
-      isTtsPlayingRef.current = true;
-      setTtsQueue(queue);
-      setIsTtsPlaying(true);
-    }, 40);
+    isTtsPlayingRef.current = true;
+    setTtsQueue(queue);
+    setIsTtsPlaying(true);
     toast(`${queue.length}件の記事の連続読み上げを開始します ✦`);
   };
 
@@ -4314,14 +4630,59 @@ const renderMarkdownToElements = (contentStr: string) => {
     const active = getActiveNote();
     if (!active) return;
 
-    stopTts();
+    if (isTtsPlayingRef.current) {
+      stopTts();
+    }
     startAudioKeepAlive(active);
-    setTimeout(() => {
-      isTtsPlayingRef.current = true;
-      setTtsQueue([active]);
-      setIsTtsPlaying(true);
-    }, 40);
+    isTtsPlayingRef.current = true;
+    setTtsQueue([active]);
+    setIsTtsPlaying(true);
     toast(`「${active.title || '現在の記事'}」の読み上げを開始します ✦（記事末尾で自動停止）`);
+  };
+
+  // 端末音声クイック診断（1文テスト & 環境判定）
+  const runTtsDiagnostic = () => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      toast("お使いのブラウザは端末音声合成（Web Speech API）に対応していません");
+      return;
+    }
+    const inIframe = typeof window !== "undefined" && window.self !== window.top;
+    const voices = window.speechSynthesis.getVoices();
+    const jaVoices = voices.filter(v => v.lang.startsWith("ja") || v.lang.includes("JP"));
+    const localJa = jaVoices.filter(v => (v as any).localService === true);
+
+    logTts(`[クイック診断] iframe=${inIframe}, voices=${voices.length}件 (ja=${jaVoices.length}件, localJa=${localJa.length}件)`, 7000);
+
+    if (inIframe) {
+      toast("警告: AI Studioプレビュー画面(iframe)内ではブラウザにより端末音声が制限されます。右上の「別タブ」アイコンから直接URLを開いてお試しください。", 8000);
+    }
+
+    try {
+      window.speechSynthesis.cancel();
+      const testUtterance = new SpeechSynthesisUtterance("端末音声テストです。正常に動作しています。");
+      testUtterance.lang = "ja-JP";
+      testUtterance.rate = 1.0;
+
+      testUtterance.onstart = () => {
+        logTts("診断結果: 発話が開始されました（正常）✦", 5000);
+        toast("端末音声は正常に動作しています ✦");
+      };
+      testUtterance.onend = () => {
+        logTts("診断結果: 発話が完了しました", 4000);
+      };
+      testUtterance.onerror = (e) => {
+        logTts(`診断エラー: e.error=${e.error}`, 8000);
+        if (inIframe) {
+          toast(`診断エラー: ${e.error} (プレビューiframeの制限です。画面右上の別タブボタンで開いてください)`, 9000);
+        } else {
+          toast(`診断エラー: ${e.error} (AndroidのGoogle音声サービスの日本語データ未DLや設定を確認してください)`, 9000);
+        }
+      };
+
+      window.speechSynthesis.speak(testUtterance);
+    } catch (err: any) {
+      logTts(`診断例外: ${err?.message}`, 8000);
+    }
   };
 
   // 本文(content)の中から選択テキスト(searchText)の開始位置を高精度に特定する関数（Markdown記法や空白の揺れを吸収）
@@ -4540,7 +4901,7 @@ const renderMarkdownToElements = (contentStr: string) => {
       isTtsPlayingRef.current = true;
       setTtsQueue([customFirstNote, ...subsequent]);
       setIsTtsPlaying(true);
-    }, 40);
+    }, 120);
 
     const previewSnippet = snippet ? `（「${snippet.slice(0, 12)}...」）` : "";
     toast(`読書ガイドバーの位置（${lineNum}行目${previewSnippet}）から読み上げを開始します ✦`);
@@ -4644,11 +5005,12 @@ const renderMarkdownToElements = (contentStr: string) => {
       isTtsPlayingRef.current = true;
       setTtsQueue([customFirstNote, ...subsequent]);
       setIsTtsPlaying(true);
-    }, 40);
+    }, 120);
     toast(displayMsg);
   };
 
   const stopTts = () => {
+    sessionRef.current++;
     setIsTtsPlaying(false);
     isTtsPlayingRef.current = false;
     setIsTtsLoading(false);
@@ -4682,14 +5044,11 @@ const renderMarkdownToElements = (contentStr: string) => {
   const cleanArticleText = useMemo(() => {
     const active = getActiveNote();
     if (!active) return "";
-    let rawText = active.content || "";
-    rawText = rawText.split(/保存日時|保存:|保存：/)[0];
-    const escapedTitle = (active.title || "").replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    if (escapedTitle) {
-      const titleRegex = new RegExp(`^\\s*#*\\s*${escapedTitle}\\s*`, 'i');
-      rawText = rawText.replace(titleRegex, '');
-    }
-    return rawText.replace(/#+\s/g, '').replace(/\[\[(.*?)\]\]/g, '$1').replace(/\*/g, '').trim();
+    const rawText = (active.content && active.content.trim())
+      || (active.summary && active.summary.trim())
+      || (active.rawContent && active.rawContent.trim())
+      || "";
+    return cleanTextForSpeech(rawText, active.title);
   }, [activeId, notes]);
 
   // 音声読み上げ（現在の記事）の予想所要時間（秒）
@@ -4719,14 +5078,11 @@ const renderMarkdownToElements = (contentStr: string) => {
     let totalChars = 0;
     let totalSeconds = 0;
     for (const n of queue) {
-      let raw = n.content || "";
-      raw = raw.split(/保存日時|保存:|保存：/)[0];
-      const escapedTitle = (n.title || "").replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      if (escapedTitle) {
-        const titleRegex = new RegExp(`^\\s*#*\\s*${escapedTitle}\\s*`, 'i');
-        raw = raw.replace(titleRegex, '');
-      }
-      const clean = raw.replace(/#+\s/g, '').replace(/\[\[(.*?)\]\]/g, '$1').replace(/\*/g, '').trim();
+      const raw = (n.content && n.content.trim())
+        || (n.summary && n.summary.trim())
+        || (n.rawContent && n.rawContent.trim())
+        || "";
+      const clean = cleanTextForSpeech(raw, n.title);
       const pCount = (clean.match(/[、。！？\n,!?]/g) || []).length;
       const chars = clean.replace(/[\s\r\n]/g, "").length;
       totalChars += chars;
@@ -4925,6 +5281,345 @@ const renderMarkdownToElements = (contentStr: string) => {
     // ブラウザのネイティブ印刷機能（Save as PDF）を呼び出す
     // CSSの @media print と @page 設定が適用されます
     window.print();
+  };
+
+  const convertMarkdownToHtmlBasic = (md: string): string => {
+    if (!md) return "";
+    let html = md
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+
+    // Code blocks
+    html = html.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_match, lang, code) => {
+      return `<pre><code class="language-${lang}">${code.trim()}</code></pre>`;
+    });
+
+    // Inline code
+    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+
+    // Headings
+    html = html.replace(/^### (.*$)/gim, "<h3>$1</h3>");
+    html = html.replace(/^## (.*$)/gim, "<h2>$1</h2>");
+    html = html.replace(/^# (.*$)/gim, "<h1>$1</h1>");
+
+    // Blockquote
+    html = html.replace(/^\> (.*$)/gim, "<blockquote>$1</blockquote>");
+
+    // Bold & italic
+    html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+
+    // WikiLinks
+    html = html.replace(/\[\[([^\]]+)\]\]/g, '<span class="wikilink">[[$1]]</span>');
+
+    // Horizontal rule
+    html = html.replace(/^---$/gim, "<hr/>");
+
+    // Paragraphs
+    html = html.split("\n\n").map(p => {
+      const trimmed = p.trim();
+      if (!trimmed) return "";
+      if (trimmed.startsWith("<h") || trimmed.startsWith("<pre") || trimmed.startsWith("<blockquote") || trimmed.startsWith("<hr")) {
+        return trimmed;
+      }
+      return `<p>${trimmed.replace(/\n/g, "<br/>")}</p>`;
+    }).join("\n");
+
+    return html;
+  };
+
+  const generateStandaloneHtmlDocument = (note: Note, bodyHtml: string): string => {
+    const safeTitle = (note.title || "無題のノート").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const updatedDate = formatDateStr(note.updatedAt || Date.now());
+    const folderName = getFolder(note);
+    const folder = folderName ? folderName.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") : "";
+    const keywords = note.keywords ? note.keywords.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") : "";
+    const sourceUrl = note.sourceUrl ? note.sourceUrl.replace(/"/g, "&quot;") : "";
+
+    return `<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${safeTitle}</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --text: #1f2328;
+      --subtle: #57606a;
+      --border: #d0d7de;
+      --border-light: #eaeef2;
+      --surface: #f6f8fa;
+      --code-bg: #f6f8fa;
+      --accent: #0969da;
+      --accent-bg: #ddf4ff;
+      --quote-border: #0969da;
+      --quote-bg: #f0f6fc;
+      --table-row-alt: #fbfcfd;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1117;
+        --text: #e6edf3;
+        --subtle: #8b949e;
+        --border: #30363d;
+        --border-light: #21262d;
+        --surface: #161b22;
+        --code-bg: #161b22;
+        --accent: #58a6ff;
+        --accent-bg: #0c2d6b;
+        --quote-border: #1f6feb;
+        --quote-bg: #111a2c;
+        --table-row-alt: #13171f;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.8;
+      margin: 0;
+      padding: 36px 16px;
+      -webkit-font-smoothing: antialiased;
+    }
+    .cn-container {
+      max-width: 880px;
+      margin: 0 auto;
+      padding: 0 12px;
+    }
+    .cn-header {
+      margin-bottom: 28px;
+      padding-bottom: 20px;
+      border-bottom: 2px solid var(--border);
+    }
+    .cn-title {
+      font-size: 2.1rem;
+      font-weight: 800;
+      line-height: 1.3;
+      margin: 0 0 14px 0;
+      letter-spacing: -0.015em;
+      color: var(--text);
+    }
+    .cn-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px 12px;
+      font-size: 0.85rem;
+      color: var(--subtle);
+    }
+    .cn-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 10px;
+      border-radius: 6px;
+      background-color: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 0.82rem;
+      text-decoration: none;
+    }
+    .cn-source-link {
+      color: var(--accent);
+      border-color: var(--accent);
+      transition: opacity 0.2s;
+    }
+    .cn-source-link:hover {
+      opacity: 0.8;
+    }
+    .cn-content {
+      font-size: 1.02rem;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+    .cn-content h1, .cn-content h2, .cn-content h3, .cn-content h4, .cn-content h5, .cn-content h6 {
+      font-weight: 700;
+      line-height: 1.35;
+      margin-top: 2rem;
+      margin-bottom: 0.75rem;
+      color: var(--text);
+    }
+    .cn-content h1 { font-size: 1.75rem; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+    .cn-content h2 { font-size: 1.45rem; border-bottom: 1px solid var(--border-light); padding-bottom: 5px; }
+    .cn-content h3 { font-size: 1.25rem; }
+    .cn-content h4 { font-size: 1.1rem; }
+    .cn-content p { margin: 1em 0; line-height: 1.8; }
+    .cn-content blockquote {
+      margin: 1.2em 0;
+      padding: 10px 18px;
+      background-color: var(--quote-bg);
+      border-left: 4px solid var(--quote-border);
+      border-radius: 0 6px 6px 0;
+      color: var(--subtle);
+    }
+    .cn-content pre {
+      padding: 16px;
+      overflow-x: auto;
+      background-color: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.88rem;
+      line-height: 1.55;
+    }
+    .cn-content code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.88em;
+      background-color: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+    .cn-content pre code {
+      border: none;
+      padding: 0;
+      background: transparent;
+    }
+    .cn-content table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.5em 0;
+      font-size: 0.95rem;
+    }
+    .cn-content th, .cn-content td {
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      text-align: left;
+    }
+    .cn-content th {
+      background-color: var(--surface);
+      font-weight: 700;
+    }
+    .cn-content tr:nth-child(even) {
+      background-color: var(--table-row-alt);
+    }
+    .cn-content ul, .cn-content ol {
+      padding-left: 28px;
+      margin: 1em 0;
+    }
+    .cn-content li { margin: 0.4em 0; }
+    .cn-content hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 2.2em 0;
+    }
+    .cn-content a {
+      color: var(--accent);
+      text-decoration: underline;
+    }
+    .cn-content svg {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      margin: 20px auto;
+    }
+    .cn-content .wikilink {
+      color: var(--accent);
+      font-weight: 600;
+      background: var(--surface);
+      padding: 1px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+    .cn-footer {
+      margin-top: 50px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      font-size: 0.82rem;
+      color: var(--subtle);
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    @media print {
+      body { padding: 0; background: #fff !important; color: #000 !important; }
+      .cn-badge, .cn-content blockquote, .cn-content pre, .cn-content table th {
+        background: #f8f9fa !important;
+        border-color: #ccc !important;
+        color: #000 !important;
+      }
+      .cn-title { color: #000 !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="cn-container">
+    <header class="cn-header">
+      <h1 class="cn-title">${safeTitle}</h1>
+      <div class="cn-meta">
+        ${folder ? `<span class="cn-badge">📁 ${folder}</span>` : ""}
+        <span class="cn-badge">🕒 ${updatedDate}</span>
+        ${keywords ? `<span class="cn-badge">🏷️ ${keywords}</span>` : ""}
+        ${sourceUrl ? `<a class="cn-badge cn-source-link" href="${sourceUrl}" target="_blank" rel="noopener noreferrer">🔗 元ソースを開く</a>` : ""}
+      </div>
+    </header>
+    <main class="cn-content">
+      ${bodyHtml}
+    </main>
+    <footer class="cn-footer">
+      <span>Connected Notes</span>
+      <span>出力日時: ${new Date().toLocaleString("ja-JP")}</span>
+    </footer>
+  </div>
+</body>
+</html>`;
+  };
+
+  const executeHtmlExport = (targetNote: Note) => {
+    const previewEl = document.getElementById("preview");
+    let contentHtml = "";
+
+    if (previewEl) {
+      // プレビューコンテナの複製
+      const clone = previewEl.cloneNode(true) as HTMLElement;
+      // 読書ガイドバー等の動的要素を除去
+      clone.querySelectorAll('#visual-reading-guide-line, #visual-reading-guide-dim-top, #visual-reading-guide-dim-bottom').forEach(el => el.remove());
+      // 印刷用一時非表示見出し(h1.hidden.print:block)を削除（HTMLヘッダーで美しく出すため）
+      const hiddenH1 = clone.querySelector('h1.hidden');
+      if (hiddenH1) hiddenH1.remove();
+
+      contentHtml = clone.innerHTML;
+    }
+
+    if (!contentHtml.trim()) {
+      contentHtml = convertMarkdownToHtmlBasic(targetNote.content);
+    }
+
+    const fullHtml = generateStandaloneHtmlDocument(targetNote, contentHtml);
+    const safeTitle = (targetNote.title || "note").replace(/[/\\:*?"<>|]/g, "_").trim() || "note";
+    const filename = `${safeTitle}.html`;
+
+    // UTF-8 BOM付きでダウンロード（ブラウザ・Excel文字化け完全防止）
+    const blob = new Blob(["\uFEFF" + fullHtml], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    toast(`📄 HTMLファイルをダウンロードしました: ${filename}`);
+  };
+
+  const exportToHTML = () => {
+    const activeNote = getActiveNote();
+    if (!activeNote) return;
+
+    if (mode !== "preview") {
+      setMode("preview");
+      toast("プレビューに切り替えてHTMLファイルを生成中...");
+      setTimeout(() => {
+        executeHtmlExport(activeNote);
+      }, 200);
+      return;
+    }
+
+    executeHtmlExport(activeNote);
   };
 
   const exportNoteToJSON = () => {
@@ -5878,6 +6573,12 @@ const renderMarkdownToElements = (contentStr: string) => {
                 <Download className="w-3 h-3 text-[var(--green)]" /> このノート (.md)
               </button>
               <button
+                onClick={exportToHTML}
+                className="w-full text-left p-1.5 bg-transparent hover:bg-[var(--border)] border border-[var(--border)] rounded text-[var(--subtle)] hover:text-white hover:border-[var(--border2)] text-[11px] cursor-pointer transition-all flex items-center gap-1.5"
+              >
+                <FileCode className="w-3 h-3 text-cyan-400" /> このノート (.html)
+              </button>
+              <button
                 onClick={downloadAllMarkdowns}
                 className="w-full text-left p-1.5 bg-transparent hover:bg-[var(--border)] border border-[var(--border)] rounded text-[var(--subtle)] hover:text-white hover:border-[var(--border2)] text-[11px] cursor-pointer transition-all flex items-center gap-1.5"
               >
@@ -5912,11 +6613,34 @@ const renderMarkdownToElements = (contentStr: string) => {
             onTouchEnd={handleTouchEnd}
           >
             {/* TOOLBAR */}
-            <div className={`border-b border-[var(--border)] bg-[var(--bg)] z-10 select-none print:hidden transition-opacity duration-300 ${
-              isFullScreen ? "landscape:hidden" : ""
-            } ${isGuideBarOpen && isGuideLineDimmed ? "opacity-25" : ""}`}>
+            <div 
+              data-toolbar="true"
+              data-no-swipe="true"
+              onTouchStart={(e) => {
+                e.stopPropagation();
+                touchStartRef.current = null;
+              }}
+              onTouchEnd={(e) => {
+                e.stopPropagation();
+                touchStartRef.current = null;
+              }}
+              className={`border-b border-[var(--border)] bg-[var(--bg)] z-10 select-none print:hidden transition-opacity duration-300 ${
+                isFullScreen ? "landscape:hidden" : ""
+              } ${isGuideBarOpen && isGuideLineDimmed ? "opacity-25" : ""}`}
+            >
               {/* 上段: タイトル・フォルダ & 基本操作（プレビュー/編集・保存・全画面） */}
-              <div className="p-2.5 px-4 flex items-center justify-between gap-3 min-h-[48px]">
+              <div 
+                data-no-swipe="true"
+                onTouchStart={(e) => {
+                  e.stopPropagation();
+                  touchStartRef.current = null;
+                }}
+                onTouchEnd={(e) => {
+                  e.stopPropagation();
+                  touchStartRef.current = null;
+                }}
+                className="p-2.5 px-4 flex items-center justify-between gap-3 min-h-[48px]"
+              >
                 {!isFullScreen && (
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     <button
@@ -6026,11 +6750,38 @@ const renderMarkdownToElements = (contentStr: string) => {
                     {isFullScreen ? <Minimize2 className="w-3.5 h-3.5 text-blue-400 shrink-0" /> : <Maximize2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
                     <span className="portrait:hidden hidden sm:inline">{isFullScreen ? "全画面解除" : "全画面"}</span>
                   </button>
+
+                  <a
+                    href={typeof window !== "undefined" ? window.location.href : "#"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-1 px-2.5 portrait:px-2 bg-transparent border border-[var(--border2)] text-xs font-semibold rounded-md text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] flex items-center gap-1.5 portrait:gap-0 transition-all"
+                    title="現在の画面を独立した新しいブラウザタブで開きます（iframe内の端末音声合成制限を解除）"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                    <span className="portrait:hidden hidden sm:inline">別タブ</span>
+                  </a>
                 </div>
               </div>
 
               {/* 下段: アクションツールバー（機能別に整理された整然とした配列、縦型時はアイコンのみで2行に集約） */}
-              <div className="px-3 py-1.5 border-t border-[var(--border)]/60 bg-[#161b22]/40 flex items-center justify-between portrait:justify-start gap-2 overflow-x-auto custom-scrollbar text-xs">
+              <div 
+                data-no-swipe="true"
+                onTouchStart={(e) => {
+                  e.stopPropagation();
+                  touchStartRef.current = null;
+                }}
+                onTouchEnd={(e) => {
+                  e.stopPropagation();
+                  touchStartRef.current = null;
+                }}
+                onWheel={(e) => {
+                  if (e.deltaY !== 0 && e.deltaX === 0) {
+                    e.currentTarget.scrollLeft += e.deltaY;
+                  }
+                }}
+                className="px-3 py-1.5 border-t border-[var(--border)]/60 bg-[#161b22]/40 flex items-center justify-between portrait:justify-start gap-2 overflow-x-auto overscroll-x-contain touch-pan-x custom-scrollbar text-xs"
+              >
                 {/* 機能ボタングループ群 */}
                 <div className="flex items-center gap-2 shrink-0">
                   {/* 1. AI連携グループ */}
@@ -6165,6 +6916,31 @@ const renderMarkdownToElements = (contentStr: string) => {
                               </div>
                             </div>
                           </button>
+                          <button
+                            type="button"
+                            onClick={runTtsDiagnostic}
+                            className="w-full text-left px-3 py-2 hover:bg-[#1f2d3d] text-cyan-400 flex items-center gap-2 cursor-pointer transition-colors border-t border-[#30363d]"
+                          >
+                            <Sparkles className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                            <div>
+                              <div className="font-semibold text-cyan-300">端末音声クイック診断（1文テスト）</div>
+                              <div className="text-[10px] text-[var(--subtle)]">iframe制限や端末TTSエンジンの動作状態を即座に判定</div>
+                            </div>
+                          </button>
+                          {typeof window !== "undefined" && window.self !== window.top && (
+                            <a
+                              href={window.location.href}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="w-full text-left px-3 py-2 hover:bg-[#1f2d3d] text-blue-400 flex items-center gap-2 cursor-pointer transition-colors border-t border-[#30363d]"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                              <div>
+                                <div className="font-semibold text-blue-300">独立した別タブで開く</div>
+                                <div className="text-[10px] text-[var(--subtle)]">プレビューiframeの音声制限を解除して利用</div>
+                              </div>
+                            </a>
+                          )}
                         </div>
                       </>
                     )}
@@ -6362,6 +7138,15 @@ const renderMarkdownToElements = (contentStr: string) => {
                     </button>
 
                     <button
+                      onClick={exportToHTML}
+                      className="p-1 px-2 portrait:px-1.5 text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all"
+                      title="装飾・図解付きの単一HTMLファイルとしてダウンロード"
+                    >
+                      <FileCode className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                      <span className="portrait:hidden">HTML</span>
+                    </button>
+
+                    <button
                       onClick={exportNoteToJSON}
                       className="p-1 px-2 portrait:px-1.5 text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all"
                       title="JSONファイルとしてダウンロード"
@@ -6377,9 +7162,12 @@ const renderMarkdownToElements = (contentStr: string) => {
                   <div className="flex items-center bg-[#1c2128] border border-[var(--border2)] rounded-md p-0.5 gap-0.5 shrink-0">
                     <span className="portrait:hidden text-[10px] text-[var(--muted)] px-1.5 font-medium select-none">チャート:</span>
                     <button
-                      onClick={() => setIsGraphOpen(true)}
+                      onClick={() => {
+                        setGraphCenterNodeId(activeNote?.id || activeId || null);
+                        setIsGraphOpen(true);
+                      }}
                       className="p-1 px-1.5 text-xs text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded cursor-pointer flex items-center gap-0.5 portrait:gap-0 transition-all"
-                      title="ナレッジグラフ表示"
+                      title="ナレッジグラフ表示（この記事を中心に表示）"
                     >
                       <span>🕸</span>
                       <span className="portrait:hidden">グラフ</span>
@@ -7210,7 +7998,10 @@ const renderMarkdownToElements = (contentStr: string) => {
 
               {/* CARD 4: Network preview (col-span-8) */}
               <div
-                onClick={() => setIsGraphOpen(true)}
+                onClick={() => {
+                  setGraphCenterNodeId(null);
+                  setIsGraphOpen(true);
+                }}
                 className="md:col-span-8 group hover:border-[#58a6ff55] bg-[#161b22] border border-[#30363d] rounded-xl p-5 relative overflow-hidden transition-all duration-300 cursor-pointer flex flex-col justify-between min-h-[300px]"
               >
                 <div className="flex justify-between items-start mb-2">
@@ -7667,7 +8458,7 @@ const renderMarkdownToElements = (contentStr: string) => {
           onForceRefreshNotes={syncFromServer}
           filterStart={filterStartDate}
           filterEnd={filterEndDate}
-          initialCenterNodeId={activeId || undefined}
+          initialCenterNodeId={graphCenterNodeId || activeNote?.id || activeId || undefined}
         />
       )}
 
@@ -8083,6 +8874,49 @@ const renderMarkdownToElements = (contentStr: string) => {
           >
             ✕
           </button>
+        </div>
+      )}
+
+      {/* TTS Debug Console Panel (persistent, scrollable) */}
+      {ttsLogs.length > 0 && (
+        <div className="fixed bottom-24 right-4 z-[9998] w-96 max-w-[92vw] bg-[#0d1117] border border-[var(--purple)] rounded-lg shadow-2xl overflow-hidden flex flex-col font-mono text-[11px]">
+          <div className="bg-[#161b22] p-2 px-3 border-b border-[#30363d] flex items-center justify-between">
+            <span className="font-bold text-purple-400 flex items-center gap-1.5">
+              <span>🔊 端末音声デバッグログ ({ttsLogs.length})</span>
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => {
+                  const text = ttsLogs.join("\n");
+                  copyToClipboard(text, "デバッグログをコピーしました ✦");
+                }}
+                className="px-2 py-0.5 bg-[#30363d] hover:bg-[#484f58] text-gray-200 rounded text-[10px] cursor-pointer transition"
+              >
+                コピー
+              </button>
+              <button
+                onClick={() => setTtsLogs([])}
+                className="px-2 py-0.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded text-[10px] cursor-pointer transition"
+              >
+                クリア
+              </button>
+              <button
+                onClick={() => setIsTtsDebugOpen(!isTtsDebugOpen)}
+                className="px-2 py-0.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded text-[10px] cursor-pointer transition"
+              >
+                {isTtsDebugOpen ? "折りたたむ" : "展開"}
+              </button>
+            </div>
+          </div>
+          {isTtsDebugOpen && (
+            <div className="p-2.5 max-h-60 overflow-y-auto flex flex-col gap-1 text-gray-300 bg-[#0d1117]/95 select-text">
+              {ttsLogs.map((log, i) => (
+                <div key={i} className="border-b border-gray-800 pb-1 whitespace-pre-wrap leading-tight text-[10px] font-mono">
+                  {log}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

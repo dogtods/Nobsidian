@@ -19,6 +19,7 @@ export const PROMPT_KEYS = {
   SYSTEM_PERSONA: "cn_prompt_system_persona",
   SYNC_PROMPT: "cn_prompt_sync_prompt",
   WEEKLY_REPORT_PROMPT: "cn_prompt_weekly_report_prompt",
+  GRAPH_STRUCTURE: "cn_prompt_graph_structure",
 };
 
 export const DEFAULT_PROMPTS = {
@@ -99,6 +100,30 @@ export const DEFAULT_PROMPTS = {
   IMPORT_SUMMARIZE: `以下の文章を分かりやすく要約してください。\n\n{content}`,
   IMPORT_KEYPOINTS: `以下の文章から重要なキーポイントを箇条書きで抽出してください。\n\n{content}`,
   REPORT: `以下のノート群を総合的に読み、日本語でレポートを作成してください。\n\n## 対象ノート\n{notes_content}\n\n## レポートの構成\n1. **概要**: 選択されたノート群の共通テーマや関係性を2〜3文でまとめる\n2. **主要な洞察**: 各ノートから得られる重要な知見を箇条書きで列挙\n3. **ノート間の関連性**: つながりや共通点・相違点を分析\n4. **まとめと次のアクション**: 全体から導かれる結論と今後の行動提案\n\n読みやすく実用的なレポートにしてください。`,
+  GRAPH_STRUCTURE: `あなたは「複数記事・ナレッジ群の構造化図解アナリスト」です。
+入力された関連記事・ノート群（ナレッジグラフから収集された複数記事）を横断的に分析し、文章でダラダラと要約するのではなく、読者の理解コストを下げる「Mermaid記法の構造化グラフ（図解）」を抽出・作成してください。
+
+【対象ノート群】
+{notes_content}
+
+【抽出・図解すべき構造】
+以下の構造の中から、収集されたノート群に実質的に存在するものを選定してMermaid図を作成してください（複数種類の図を出力しても構いません）。
+1. 記事間の関係・因果関係・プロセスの流れ (flowchart TD または flowchart LR)
+   - ノート同士の因果、背景→判断→実施→結果、政策・技術・市場の影響関係
+2. 時系列・歴史的推移・ロードマップ (timeline または gantt)
+   - 各記事で言及されている出来事や変化の順序、今後の予定
+3. 概念・体系・階層構造 (mindmap)
+   - 共通テーマと下位要素、大分類→中分類→小分類
+4. 比較・数値分析 (xychart-beta または pie)
+   - 複数記事にまたがる数値、市場規模、新旧比較、指標の増減
+
+【出力形式の厳格な遵守】
+1. Mermaidの図解は、必ず \`\`\`mermaid [コード] \`\`\` の形式で出力してください。コードの一部を省略したり「...」でまとめたりせず、必ず実行可能な完全なコードを出力してください。
+2. すべてのMermaidコードブロックの先頭（グラフ種別の行より前）に、必ず次のinit行を挿入してください:
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#1f6feb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#ffffff', 'lineColor': '#58a6ff', 'textColor': '#ffffff', 'background': '#0d1117', 'mainBkg': '#0d1117', 'nodeBorder': '#ffffff', 'clusterBkg': '#0d1117', 'edgeLabelBackground':'#0d1117', 'fontSize': '16px' }}}%%
+3. Mermaid図の直後に、その図が示すポイント（100〜150文字程度）を簡潔に記載してください。
+4. ノード内のテキストは枠からはみ出さないよう短く（1行10文字以内目安）し、必要に応じて<br>で改行してください。
+5. 記事に書かれていない数値を創作・推測しないでください。`,
   EXTRACT_STRUCTURE: `あなたは記事の内容を視覚的に理解しやすくするための構造抽出アシスタントです。
 以下の記事から、「比較できるもの」「時系列で変化したもの」「因果関係があるもの」「情報の階層構造」を抽出し、それぞれをMermaid記法の図として出力してください。
 目的は「要約の網羅性」ではなく「理解コストの削減」です。数値や時期の変化など、比較・構造・因果関係を持つ情報は、文章ではなく図として表現してください。
@@ -203,6 +228,7 @@ export default function PromptSettingsModal({ isOpen, onClose, onSettingsClick, 
   const [importSummarizePrompt, setImportSummarizePrompt] = useState("");
   const [importKeypointsPrompt, setImportKeypointsPrompt] = useState("");
   const [reportPrompt, setReportPrompt] = useState("");
+  const [graphStructurePrompt, setGraphStructurePrompt] = useState("");
   const [extractStructurePrompt, setExtractStructurePrompt] = useState("");
   const [organizeFolderPrompt, setOrganizeFolderPrompt] = useState("");
   const [findRelatedPrompt, setFindRelatedPrompt] = useState("");
@@ -222,6 +248,7 @@ export default function PromptSettingsModal({ isOpen, onClose, onSettingsClick, 
       setImportSummarizePrompt(getStoredPrompt("IMPORT_SUMMARIZE"));
       setImportKeypointsPrompt(getStoredPrompt("IMPORT_KEYPOINTS"));
       setReportPrompt(getStoredPrompt("REPORT"));
+      setGraphStructurePrompt(getStoredPrompt("GRAPH_STRUCTURE"));
       setExtractStructurePrompt(getStoredPrompt("EXTRACT_STRUCTURE"));
       setOrganizeFolderPrompt(getStoredPrompt("ORGANIZE_FOLDER"));
       setFindRelatedPrompt(getStoredPrompt("FIND_RELATED"));
@@ -243,6 +270,7 @@ export default function PromptSettingsModal({ isOpen, onClose, onSettingsClick, 
     localStorage.setItem(PROMPT_KEYS.IMPORT_SUMMARIZE, importSummarizePrompt);
     localStorage.setItem(PROMPT_KEYS.IMPORT_KEYPOINTS, importKeypointsPrompt);
     localStorage.setItem(PROMPT_KEYS.REPORT, reportPrompt);
+    localStorage.setItem(PROMPT_KEYS.GRAPH_STRUCTURE, graphStructurePrompt);
     localStorage.setItem(PROMPT_KEYS.EXTRACT_STRUCTURE, extractStructurePrompt);
     localStorage.setItem(PROMPT_KEYS.ORGANIZE_FOLDER, organizeFolderPrompt);
     localStorage.setItem(PROMPT_KEYS.FIND_RELATED, findRelatedPrompt);
@@ -273,6 +301,7 @@ export default function PromptSettingsModal({ isOpen, onClose, onSettingsClick, 
     setImportSummarizePrompt(DEFAULT_PROMPTS.IMPORT_SUMMARIZE);
     setImportKeypointsPrompt(DEFAULT_PROMPTS.IMPORT_KEYPOINTS);
     setReportPrompt(DEFAULT_PROMPTS.REPORT);
+    setGraphStructurePrompt(DEFAULT_PROMPTS.GRAPH_STRUCTURE);
     setExtractStructurePrompt(DEFAULT_PROMPTS.EXTRACT_STRUCTURE);
     setOrganizeFolderPrompt(DEFAULT_PROMPTS.ORGANIZE_FOLDER);
     setFindRelatedPrompt(DEFAULT_PROMPTS.FIND_RELATED);
@@ -282,6 +311,20 @@ export default function PromptSettingsModal({ isOpen, onClose, onSettingsClick, 
     setAiOptSkipKeywords(true);
 
     onSaveToast("プロンプトをリセットしました");
+  };
+
+  const handleDownloadPrompt = (title: string, text: string) => {
+    const filename = `${title}_${new Date().toISOString().slice(0, 10).replace(/-/g, "")}.txt`;
+    const blob = new Blob(["\uFEFF" + text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    onSaveToast(`${title} をテキストファイルとしてダウンロードしました 📥`);
   };
 
   if (!isOpen) return null;
@@ -439,12 +482,68 @@ export default function PromptSettingsModal({ isOpen, onClose, onSettingsClick, 
           </div>
 
           <div>
-            <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1">グラフ レポート生成プロンプト</label>
+            <div className="flex justify-between items-center mb-1">
+              <label className="text-[11px] text-[var(--subtle)] font-bold">グラフ レポート生成プロンプト (テキスト分析)</label>
+              <div className="flex gap-2 items-center">
+                <button
+                  type="button"
+                  className="text-[10px] text-[#7ee787] hover:underline flex items-center gap-0.5 cursor-pointer bg-transparent border-0"
+                  onClick={() => handleDownloadPrompt("レポート生成プロンプト_テンプレート", reportPrompt)}
+                  title="レポート生成プロンプトをテキストファイル(.txt)としてダウンロード"
+                >
+                  <span>📥</span> DL
+                </button>
+                <button
+                  type="button"
+                  className="text-[10px] text-[var(--subtle)] hover:text-white flex items-center gap-0.5 cursor-pointer bg-transparent border-0"
+                  onClick={() => {
+                    navigator.clipboard.writeText(reportPrompt);
+                    onSaveToast("レポートプロンプトをクリップボードにコピーしました 📋");
+                  }}
+                  title="クリップボードにコピー"
+                >
+                  <span>📋</span> コピー
+                </button>
+              </div>
+            </div>
+            <textarea
+              className="w-full font-mono text-xs p-2 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all resize-y"
+              rows={4}
+              value={reportPrompt}
+              onChange={(e) => setReportPrompt(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <div className="flex justify-between items-center mb-1">
+              <label className="text-[11px] text-[#58a6ff] font-bold">グラフ 構造化グラフ生成プロンプト (Mermaid図解・因果・時系列)</label>
+              <div className="flex gap-2 items-center">
+                <button
+                  type="button"
+                  className="text-[10px] text-[#58a6ff] hover:underline flex items-center gap-0.5 cursor-pointer bg-transparent border-0 font-semibold"
+                  onClick={() => handleDownloadPrompt("構造化グラフプロンプト_テンプレート", graphStructurePrompt)}
+                  title="長文の構造化グラフプロンプトをテキストファイル(.txt)としてダウンロード"
+                >
+                  <span>📥</span> テキストDL (.txt)
+                </button>
+                <button
+                  type="button"
+                  className="text-[10px] text-[var(--subtle)] hover:text-white flex items-center gap-0.5 cursor-pointer bg-transparent border-0"
+                  onClick={() => {
+                    navigator.clipboard.writeText(graphStructurePrompt);
+                    onSaveToast("構造化プロンプトをクリップボードにコピーしました 📋");
+                  }}
+                  title="クリップボードにコピー"
+                >
+                  <span>📋</span> コピー
+                </button>
+              </div>
+            </div>
             <textarea
               className="w-full font-mono text-xs p-2 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all resize-y"
               rows={5}
-              value={reportPrompt}
-              onChange={(e) => setReportPrompt(e.target.value)}
+              value={graphStructurePrompt}
+              onChange={(e) => setGraphStructurePrompt(e.target.value)}
             />
           </div>
 
