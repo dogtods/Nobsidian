@@ -29,7 +29,6 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
   const [optimizeTokens, setOptimizeTokens] = useState(true);
   const [maxCandidates, setMaxCandidates] = useState("20");
   const [maxContentLength, setMaxContentLength] = useState("2500");
-  const [noKeepAlive, setNoKeepAlive] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
@@ -50,7 +49,6 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
       setTtsSpeed(localStorage.getItem("cn_tts_speed") || "1.2");
       setUseDeviceSpeech(localStorage.getItem("cn_use_device_speech") === "true");
       setSelectedVoiceURI(localStorage.getItem("cn_selected_voice_uri") || "");
-      setNoKeepAlive(localStorage.getItem("cn_debug_no_keepalive") === "1");
       let m = localStorage.getItem("cn_gemini_model") || "gemini-2.5-flash"; setModel(m);
       setTemp(localStorage.getItem("cn_gemini_temp") || "0.1");
       setTokens(localStorage.getItem("cn_gemini_tokens") || "1024");
@@ -79,7 +77,6 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
     localStorage.setItem("cn_tts_speed", ttsSpeed);
     localStorage.setItem("cn_use_device_speech", useDeviceSpeech ? "true" : "false");
     localStorage.setItem("cn_selected_voice_uri", selectedVoiceURI);
-    localStorage.setItem("cn_debug_no_keepalive", noKeepAlive ? "1" : "0");
     localStorage.setItem("cn_gemini_model", model);
     localStorage.setItem("cn_gemini_temp", temp);
     localStorage.setItem("cn_gemini_tokens", tokens);
@@ -195,48 +192,6 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
                     端末内蔵の標準音声エンジンを使用します。
                   </p>
                 )}
-
-                {/* トラブルシューティング（Android音声競合対策） */}
-                <div className="mt-2 pt-2 border-t border-[var(--border2)] flex flex-col gap-1.5">
-                  <label className="flex items-start gap-2 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      className="mt-0.5 accent-amber-500 cursor-pointer"
-                      checked={noKeepAlive}
-                      onChange={(e) => setNoKeepAlive(e.target.checked)}
-                    />
-                    <div className="flex-1">
-                      <span className="text-[10.5px] font-semibold text-amber-200">
-                        キープアライブ（無音音声）を無効化する
-                      </span>
-                      <p className="text-[9.5px] text-[var(--subtle)] mt-0.5 leading-relaxed">
-                        一部のAndroid端末では、バックグラウンド維持用の無音オーディオとTTSエンジンが音声フォーカス競合を起こし「synthesis-failed」になる場合があります。エラーが出る場合はチェックを入れて保存してください。
-                      </p>
-                    </div>
-                  </label>
-
-                  {/* 外部テスト & 切り分けリンク */}
-                  <div className="mt-1 flex items-center justify-between text-[10px] text-[var(--subtle)] pt-1 border-t border-[var(--border2)]/50">
-                    <a
-                      href="https://mdn.github.io/dom-examples/web-speech-api/speech-synthesiser/"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-cyan-400 hover:underline flex items-center gap-1"
-                    >
-                      <span>🔗 MDN公式Web Speechデモでテスト</span>
-                    </a>
-                    {typeof window !== "undefined" && window.self !== window.top && (
-                      <a
-                        href={window.location.href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-400 hover:underline flex items-center gap-1"
-                      >
-                        <span>↗ 別タブで開く（iframe制限解除）</span>
-                      </a>
-                    )}
-                  </div>
-                </div>
               </div>
             )}
           </div>
