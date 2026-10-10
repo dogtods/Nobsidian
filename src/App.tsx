@@ -150,35 +150,27 @@ const formatVisualStructure = (raw: any): string => {
 // 2. 他記事へのリンク名称（[[...]]）や関連ノートブロックは一切読み上げない
 // 3. プレビューの見た目に基づき、Mermaid図や生JSONの構文、Markdown記号、URLなどを適切に除去・変換
 const cleanTextForSpeech = (rawText: string, title?: string): string => {
-  if (!rawText && !title) return "";
+  let text = (rawText || "").trim();
+  const cleanTitle = (title || "").trim();
 
-  let text = rawText || "";
+  if (!text && !cleanTitle) return "";
 
   // 1. 保存日時・作成日時などの単一メタ情報行の除去（splitによる本文消失を防止し、行単位で安全に除去）
   text = text.replace(/^(?:>|\s*[-*+•▸]\s*)?(?:保存日時|保存日|作成日時|作成日|更新日時|更新日|取得日時|取得日|登録日時|登録日|公開日時|公開日|配信日時|配信日)[：:]\s*.*$/gim, '');
 
-  // 2. タイトルの重複除去（ノート先頭にタイトルが重複している場合）
-  if (title) {
-    const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    if (escapedTitle) {
-      const titleRegex = new RegExp(`^\\s*#*\\s*${escapedTitle}\\s*(?:\\n+|$)`, 'i');
-      text = text.replace(titleRegex, '');
-    }
-  }
-
-  // 3. 【重要】他記事へのリンク名称・関連ノートの完全除外（★ユーザー要望: ほか記事へのリンク名称は読み上げない）
-  // 3-1. 見出しセクション「## 関連ノート」「### 関連ノート」「## 関連記事」等と後続リンク一覧を除去
+  // 2. 【重要】他記事へのリンク名称・関連ノートの完全除外（★ユーザー要望: ほか記事へのリンク名称は読み上げない）
+  // 2-1. 見出しセクション「## 関連ノート」「### 関連ノート」「## 関連記事」等と後続リンク一覧を除去
   text = text.replace(/(?:^|\n)(?:#{1,6}\s+|【\s*)関連(?:ノート|記事|リンク|ナレッジ)[：:]?\s*】?[\s\S]*?(?=(?:\n#{1,6}\s+|\n【|$))/gi, '');
-  // 3-2. 行全体が他記事リンク（例: `- [[ノートA]]`、`[[ノートA]]`、`- [[ノートA|別名]]`）の行を丸ごと削除
+  // 2-2. 行全体が他記事リンク（例: `- [[ノートA]]`、`[[ノートA]]`、`- [[ノートA|別名]]`）の行を丸ごと削除
   text = text.replace(/^\s*(?:[-*+•▸]\s+)?\[\[[^\]]+\]\]\s*$/gm, '');
-  // 3-3. 文中に残っている [[記事名]] や [[記事名|別名]] のリンク記法（コロン含む）を除去（例: `- [[産業動向]]: 説明` -> `- 説明`）
+  // 2-3. 文中に残っている [[記事名]] や [[記事名|別名]] のリンク記法（コロン含む）を除去（例: `- [[産業動向]]: 説明` -> `- 説明`）
   text = text.replace(/\[\[[^\]]+\]\]\s*[:：]?\s*/g, '');
 
-  // 4. 【重要】プレビューの表示に基づくクリーンアップ（★ユーザー要望: プレビューの表示に基づいてほしい）
-  // 4-1. Mermaidコードブロックの除去（図形構文は読み上げない）
+  // 3. 【重要】プレビューの表示に基づくクリーンアップ
+  // 3-1. Mermaidコードブロックの除去（図形構文は読み上げない）
   text = text.replace(/```mermaid[\s\S]*?```/gi, '');
 
-  // 4-2. visual_structure を含むJSONコードブロック・生JSONブロックの処理（コードは除外し、descriptionのみ読み上げ）
+  // 3-2. visual_structure を含むJSONコードブロック・生JSONブロックの処理（コードは除外し、descriptionのみ読み上げ）
   text = text.replace(/```json[\s\S]*?```/gi, (match) => {
     if (match.includes('"visual_structure"')) {
       try {
@@ -205,25 +197,25 @@ const cleanTextForSpeech = (rawText: string, title?: string): string => {
     return '';
   });
 
-  // 4-3. 一般コードブロック（``` ... ```）の除去
+  // 3-3. 一般コードブロック（``` ... ```）の除去
   text = text.replace(/```[\s\S]*?```/g, '');
   // インラインコード (`code`) はコードの中身のテキストのみ残す
   text = text.replace(/`([^`\n]+)`/g, '$1');
 
-  // 4-4. 数式・化学式ブロック ($$...$$, $...$) の除去・平文抽出
+  // 3-4. 数式・化学式ブロック ($$...$$, $...$) の除去・平文抽出
   text = text.replace(/\$\$[\s\S]*?\$\$/g, '');
   text = text.replace(/\$([^\$\n]+)\$/g, '$1');
 
-  // 4-5. 画像記法（![alt](url)）の完全除去
+  // 3-5. 画像記法（![alt](url)）の完全除去
   text = text.replace(/!\[[^\]]*\]\([^\)]+\)/g, '');
 
-  // 4-6. マークダウンリンク [表示テキスト](url) -> プレビュー表示と同様に「表示テキスト」のみ採用（URL部分は一切読まない）
+  // 3-6. マークダウンリンク [表示テキスト](url) -> プレビュー表示と同様に「表示テキスト」のみ採用（URL部分は一切読まない）
   text = text.replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1');
 
-  // 4-7. むき出しのURL (https://..., http://...) の除去
+  // 3-7. むき出しのURL (https://..., http://...) の除去
   text = text.replace(/https?:\/\/[^\s\)\>]+/g, '');
 
-  // 4-8. マークダウン表（テーブル）の処理
+  // 3-8. マークダウン表（テーブル）の処理
   // テーブル区切り行（|---|---|）の除去
   text = text.replace(/^\s*\|[ \-:|]+\|\s*$/gm, '');
   // 各行のセル区切りパイプ | を読点やスペースに変換
@@ -231,33 +223,40 @@ const cleanTextForSpeech = (rawText: string, title?: string): string => {
     return row.split('|').map((col: string) => col.trim()).filter(Boolean).join('、 ');
   });
 
-  // 4-9. マークダウン見出し記号（#）の除去
+  // 3-9. マークダウン見出し記号（#）の除去
   text = text.replace(/^#+\s+/gm, '');
 
-  // 4-10. 文字装飾（太字・斜体・打ち消し線）の記号除去
+  // 3-10. 文字装飾（太字・斜体・打ち消し線）の記号除去
   text = text.replace(/(\*\*|__)(.*?)\1/g, '$2');
   text = text.replace(/(\*|_)(.*?)\1/g, '$2');
   text = text.replace(/~~(.*?)~~/g, '$2');
 
-  // 4-11. 引用記号（>）、リスト記号（- [ ]、-、*、+、1.）のプレーン化
+  // 3-11. 引用記号（>）、リスト記号（- [ ]、-、*、+、1.）のプレーン化
   text = text.replace(/^>\s?/gm, '');
   text = text.replace(/^(\s*)-\s+\[[ xX]\]\s*/gm, '');
   text = text.replace(/^(\s*)[-*+•▸]\s+/gm, '');
   text = text.replace(/^(\s*)\d+\.\s+/gm, '');
 
-  // 4-12. 水平線（---、***、___）の除去
+  // 3-12. 水平線（---、***、___）の除去
   text = text.replace(/^(?:-{3,}|\*{3,}|_{3,})$/gm, '');
 
-  // 4-13. HTMLタグの処理（<br>は改行に、その他タグは除去）
+  // 3-13. HTMLタグの処理（<br>は改行に、その他タグは除去）
   text = text.replace(/<br\s*\/?>/gi, '\n');
   text = text.replace(/<[^>]+>/g, '');
 
-  // 4-14. 連続する改行や空白の整理
+  // 3-14. 連続する改行や空白の整理
   text = text.replace(/\n{3,}/g, '\n\n').trim();
 
-  // 本文が空でもタイトルがある場合はタイトルを読み上げる（空読み飛ばしバグ防止）
-  if (!text && title) {
-    return title.trim();
+  // 4. タイトルの処理: 音声読み上げでは記事冒頭でタイトルが明確に読み上げられることが重要
+  if (cleanTitle) {
+    if (!text) {
+      return cleanTitle;
+    }
+    const firstLine = text.split('\n')[0].trim();
+    // 本文の先頭行がまだタイトルを含んでいない場合、先頭にタイトルを明示的に付与
+    if (!firstLine.includes(cleanTitle) && !cleanTitle.includes(firstLine)) {
+      text = `${cleanTitle}。\n\n${text}`;
+    }
   }
 
   return text;
@@ -3825,20 +3824,43 @@ const renderMarkdownToElements = (contentStr: string) => {
           artist: `${(note ? getFolder(note) : '') || 'ノート'} (読み上げ中)`,
           album: 'Connected Notes'
         });
-        navigator.mediaSession.playbackState = 'playing';
+
+        // 端末音声時はブラウザの無音自動検出によるpause誤爆を防ぐため、MediaSession再生状態の強制は避ける
+        if (!isDeviceSpeech) {
+          navigator.mediaSession.playbackState = 'playing';
+        }
+
         navigator.mediaSession.setActionHandler('play', () => {
-          if (typeof window !== "undefined" && "speechSynthesis" in window && window.speechSynthesis.paused) {
-            window.speechSynthesis.resume();
+          if (isDeviceSpeech) {
+            if (typeof window !== "undefined" && "speechSynthesis" in window && window.speechSynthesis.paused) {
+              window.speechSynthesis.resume();
+            }
+          } else {
+            if (audioRef.current && audioRef.current.paused) {
+              audioRef.current.play().catch(() => {});
+            }
           }
         });
+
         navigator.mediaSession.setActionHandler('pause', () => {
-          stopTts();
+          if (isDeviceSpeech) {
+            // 端末音声では pause ハンドラで stopTts() を呼ぶとブラウザのOS判定により発話が即停止する事故が起きるため、pause() を呼ぶ
+            if (typeof window !== "undefined" && "speechSynthesis" in window) {
+              window.speechSynthesis.pause();
+            }
+          } else {
+            stopTts();
+          }
         });
+
         navigator.mediaSession.setActionHandler('stop', () => {
           stopTts();
         });
+
         navigator.mediaSession.setActionHandler('nexttrack', () => {
-          stopTts();
+          if (!isDeviceSpeech && audioRef.current) {
+            audioRef.current.pause();
+          }
           setTtsQueue(prev => prev.slice(1));
         });
       }
@@ -4053,28 +4075,42 @@ const renderMarkdownToElements = (contentStr: string) => {
     }
 
     try {
-      window.speechSynthesis.cancel();
       isDeviceSpeakingRef.current = true;
       isTtsPlayingRef.current = true;
 
-      // バックグラウンド・消灯時の音声停止を防ぐキープアライブオーディオを開始
+      // バックグラウンド・消灯時の画面維持（WakeLock）
       startAudioKeepAlive(currentNote);
 
-      // 1. 長いテキストを句点や改行（。！？\n）などで安全なチャンク（文ごと）に分割する
-      // これによりブラウザの自動停止バグや文字数制限を完全に回避し、最後までスムーズに発話させます
+      // 1. テキストを句点や改行（。！？\n）で文ごとに分割し、長すぎる文（>120文字）は読点やスペースでも分割
       const rawChunks = text.split(/(?<=[。！？\n])/g).map(s => s.trim()).filter(Boolean);
-      const chunks = rawChunks.length > 0 ? rawChunks : [text];
+      const chunks: string[] = [];
+      for (const rc of rawChunks) {
+        if (rc.length > 120) {
+          const sub = rc.split(/(?<=[、，,])/g).map(s => s.trim()).filter(Boolean);
+          if (sub.length > 1) {
+            chunks.push(...sub);
+          } else {
+            for (let i = 0; i < rc.length; i += 80) {
+              chunks.push(rc.slice(i, i + 80));
+            }
+          }
+        } else {
+          chunks.push(rc);
+        }
+      }
+      const finalChunks = chunks.length > 0 ? chunks : [text];
 
       let currentIndex = 0;
       let lastSpokenChunk = -1;
       let lastActivityTime = Date.now();
+      let retryCount = 0;
 
       const speakNextChunk = () => {
         if (!isTtsPlayingRef.current || !isDeviceSpeakingRef.current) {
           return;
         }
 
-        if (currentIndex >= chunks.length) {
+        if (currentIndex >= finalChunks.length) {
           isDeviceSpeakingRef.current = false;
           if (keepAliveTimerRef.current) {
             clearInterval(keepAliveTimerRef.current);
@@ -4084,18 +4120,20 @@ const renderMarkdownToElements = (contentStr: string) => {
           return;
         }
 
-        lastSpokenChunk = currentIndex;
+        const chunkIndex = currentIndex;
+        const chunkText = finalChunks[chunkIndex];
+        lastSpokenChunk = chunkIndex;
         lastActivityTime = Date.now();
-        const chunkText = chunks[currentIndex++];
-
-        // 読み上げ中のテキスト位置に合わせて画面を自然に下方向へ追従スクロール
-        scrollSpeechIntoView(chunkText);
 
         const utterance = new SpeechSynthesisUtterance(chunkText);
         utterance.lang = "ja-JP";
         utterance.rate = ttsSpeed;
 
+        // ★重要: 読み上げ中のスクロール追従は「実際に音声発話が開始された(onstart)」瞬間にのみ実行
+        // （発話前の事前スクロールや、エラー発生時の誤スクロールを根絶）
         utterance.onstart = () => {
+          retryCount = 0;
+          lastActivityTime = Date.now();
           scrollSpeechIntoView(chunkText);
         };
 
@@ -4111,6 +4149,8 @@ const renderMarkdownToElements = (contentStr: string) => {
 
         utterance.onend = () => {
           lastActivityTime = Date.now();
+          retryCount = 0;
+          currentIndex++;
           // 次のチャンクへ
           if (isTtsPlayingRef.current && isDeviceSpeakingRef.current) {
             speakNextChunk();
@@ -4119,30 +4159,35 @@ const renderMarkdownToElements = (contentStr: string) => {
 
         utterance.onerror = (e) => {
           // 停止やキャンセルによる中断の場合はチャンク連続呼び出しを行わず静かに停止
-          if (e.error === "canceled") {
+          if (e.error === "canceled" || !isTtsPlayingRef.current || !isDeviceSpeakingRef.current) {
             isDeviceSpeakingRef.current = false;
             return;
           }
-          if (e.error !== "interrupted") {
-            console.warn("Device Speech chunk error:", e);
-          }
-          lastActivityTime = Date.now();
-          if (currentIndex < chunks.length && isTtsPlayingRef.current && isDeviceSpeakingRef.current) {
+
+          console.warn(`Device Speech chunk error (error: ${e.error}, chunk: ${chunkIndex}):`, e);
+
+          // 一時的な interrupted や audio-busy の場合: 同じチャンクを最大2回まで再試行
+          // （★重要: 次のチャンクへスキップせず、同一チャンクの安定再生を試行）
+          if ((e.error === "interrupted" || e.error === "audio-busy") && retryCount < 2) {
+            retryCount++;
             setTimeout(() => {
               if (isTtsPlayingRef.current && isDeviceSpeakingRef.current) {
+                if (window.speechSynthesis.paused) {
+                  window.speechSynthesis.resume();
+                }
                 speakNextChunk();
               }
-            }, 60);
-          } else {
-            isDeviceSpeakingRef.current = false;
-            if (keepAliveTimerRef.current) {
-              clearInterval(keepAliveTimerRef.current);
-              keepAliveTimerRef.current = null;
-            }
-            if (isTtsPlayingRef.current) {
-              onEnd();
-            }
+            }, 200);
+            return;
           }
+
+          // 回復不能なエラーまたはリトライ上限超過時は、記事全体をスキップせず安全に停止
+          isDeviceSpeakingRef.current = false;
+          if (keepAliveTimerRef.current) {
+            clearInterval(keepAliveTimerRef.current);
+            keepAliveTimerRef.current = null;
+          }
+          onError(new Error(`端末音声の再生が中断されました (${e.error || '不明なエラー'})`));
         };
 
         if (window.speechSynthesis.paused) {
@@ -4175,20 +4220,15 @@ const renderMarkdownToElements = (contentStr: string) => {
             window.speechSynthesis.resume();
             lastActivityTime = Date.now();
           }
-        } else {
-          // 発話中でないがまだ未発話チャンクが残っている場合（画面消灯時などにonendがスキップされた場合の復元）
-          if (currentIndex < chunks.length && Date.now() - lastActivityTime > 3000) {
-            speakNextChunk();
-          }
         }
       }, 3000);
 
-      // 初回チャンク発話スタート（ブラウザ音声エンジンの直前cancel完了を確実に待機）
+      // 初回チャンク発話スタート（ブラウザ音声エンジンの直前状態安定化を待機）
       setTimeout(() => {
         if (isTtsPlayingRef.current && isDeviceSpeakingRef.current) {
           speakNextChunk();
         }
-      }, 60);
+      }, 100);
 
     } catch (err) {
       isDeviceSpeakingRef.current = false;
@@ -4210,9 +4250,10 @@ const renderMarkdownToElements = (contentStr: string) => {
     setIsTtsLoading(true);
     
     try {
-      const rawBody = (currentNote.content !== undefined && currentNote.content !== null && currentNote.content.trim() !== "")
-        ? currentNote.content
-        : (currentNote.summary || "");
+      const rawBody = (currentNote.content && currentNote.content.trim())
+        || (currentNote.summary && currentNote.summary.trim())
+        || (currentNote.rawContent && currentNote.rawContent.trim())
+        || "";
       const cleanText = cleanTextForSpeech(rawBody, currentNote.title);
       
       if (!cleanText) {
@@ -4234,7 +4275,7 @@ const renderMarkdownToElements = (contentStr: string) => {
           (err) => {
             console.error("Device speech error", err);
             toast("端末音声の再生でエラーが発生しました");
-            setIsTtsPlaying(false);
+            stopTts();
           }
         );
         return;
@@ -4356,7 +4397,7 @@ const renderMarkdownToElements = (contentStr: string) => {
       isTtsPlayingRef.current = true;
       setTtsQueue(queue);
       setIsTtsPlaying(true);
-    }, 40);
+    }, 120);
     toast(`${queue.length}件の記事の連続読み上げを開始します ✦`);
   };
 
@@ -4371,7 +4412,7 @@ const renderMarkdownToElements = (contentStr: string) => {
       isTtsPlayingRef.current = true;
       setTtsQueue([active]);
       setIsTtsPlaying(true);
-    }, 40);
+    }, 120);
     toast(`「${active.title || '現在の記事'}」の読み上げを開始します ✦（記事末尾で自動停止）`);
   };
 
@@ -4591,7 +4632,7 @@ const renderMarkdownToElements = (contentStr: string) => {
       isTtsPlayingRef.current = true;
       setTtsQueue([customFirstNote, ...subsequent]);
       setIsTtsPlaying(true);
-    }, 40);
+    }, 120);
 
     const previewSnippet = snippet ? `（「${snippet.slice(0, 12)}...」）` : "";
     toast(`読書ガイドバーの位置（${lineNum}行目${previewSnippet}）から読み上げを開始します ✦`);
@@ -4695,7 +4736,7 @@ const renderMarkdownToElements = (contentStr: string) => {
       isTtsPlayingRef.current = true;
       setTtsQueue([customFirstNote, ...subsequent]);
       setIsTtsPlaying(true);
-    }, 40);
+    }, 120);
     toast(displayMsg);
   };
 
@@ -4733,9 +4774,10 @@ const renderMarkdownToElements = (contentStr: string) => {
   const cleanArticleText = useMemo(() => {
     const active = getActiveNote();
     if (!active) return "";
-    const rawText = (active.content !== undefined && active.content !== null && active.content.trim() !== "")
-      ? active.content
-      : (active.summary || "");
+    const rawText = (active.content && active.content.trim())
+      || (active.summary && active.summary.trim())
+      || (active.rawContent && active.rawContent.trim())
+      || "";
     return cleanTextForSpeech(rawText, active.title);
   }, [activeId, notes]);
 
@@ -4766,9 +4808,10 @@ const renderMarkdownToElements = (contentStr: string) => {
     let totalChars = 0;
     let totalSeconds = 0;
     for (const n of queue) {
-      const raw = (n.content !== undefined && n.content !== null && n.content.trim() !== "")
-        ? n.content
-        : (n.summary || "");
+      const raw = (n.content && n.content.trim())
+        || (n.summary && n.summary.trim())
+        || (n.rawContent && n.rawContent.trim())
+        || "";
       const clean = cleanTextForSpeech(raw, n.title);
       const pCount = (clean.match(/[、。！？\n,!?]/g) || []).length;
       const chars = clean.replace(/[\s\r\n]/g, "").length;
