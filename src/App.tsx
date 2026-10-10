@@ -4087,7 +4087,7 @@ const renderMarkdownToElements = (contentStr: string) => {
     } catch (_) {}
   };
 
-  // 端末内蔵音声エンジン（Web Speech API）での発話処理（長文対応・連続自動つなぎ方式・消灯/バックグラウンド対応）
+  // 端末内蔵音声エンジン（Web Speech API）での発話処理（原因特定デバッグ版）
   const playDeviceSpeech = (
     text: string,
     currentNote: Note,
@@ -4120,6 +4120,15 @@ const renderMarkdownToElements = (contentStr: string) => {
     };
 
     try {
+      const voicesCount = window.speechSynthesis.getVoices().length;
+      const speaking = window.speechSynthesis.speaking;
+      const pending = window.speechSynthesis.pending;
+      const paused = window.speechSynthesis.paused;
+      const userActive = (navigator as any).userActivation ? (navigator as any).userActivation.hasBeenActive : "N/A";
+      const uAgent = navigator.userAgent;
+
+      toast(`Init: voices=${voicesCount}, speaking=${speaking}, pending=${pending}, paused=${paused}, active=${userActive}\nUA: ${uAgent.substring(0, 45)}`, 8000);
+
       window.speechSynthesis.cancel();
       if (window.speechSynthesis.paused) {
         window.speechSynthesis.resume();
@@ -4128,8 +4137,11 @@ const renderMarkdownToElements = (contentStr: string) => {
       isDeviceSpeakingRef.current = true;
       isTtsPlayingRef.current = true;
 
-      // バックグラウンド・消灯時の画面維持（WakeLock）
-      startAudioKeepAlive(currentNote);
+      // バックグラウンド・消灯時の画面維持（WakeLock / KeepAlive）
+      const noKeepAlive = localStorage.getItem("cn_debug_no_keepalive") === "1";
+      if (!noKeepAlive) {
+        startAudioKeepAlive(currentNote);
+      }
 
       // 1. チャンク分割の置き換え (正規表現の後読み回避)
       const rawSentences = text.match(/[^。！？\n]+[。！？]?/g) || [text.trim()];
@@ -4192,6 +4204,11 @@ const renderMarkdownToElements = (contentStr: string) => {
         // ボイス選択
         pickVoice(utterance);
 
+        const voices = window.speechSynthesis.getVoices();
+        const voiceName = utterance.voice ? utterance.voice.name : "default";
+        const localServ = utterance.voice ? (utterance.voice as any).localService : "unknown";
+        toast(`speak idx=${chunkIndex} len=${chunkText.length} voices=${voices.length}件 voice=${voiceName} localService=${localServ}`, 6000);
+
         let hasStarted = false;
         const chunkStartTime = Date.now();
         let watchdogTimer: any = null;
@@ -4226,6 +4243,7 @@ const renderMarkdownToElements = (contentStr: string) => {
           failStreak = 0;
           lastActivityTime = Date.now();
           clearWatchdog();
+          toast(`start idx=${chunkIndex}`, 4000);
           scrollSpeechIntoView(chunkText);
         };
 
@@ -4235,6 +4253,7 @@ const renderMarkdownToElements = (contentStr: string) => {
           clearWatchdog();
 
           const duration = Date.now() - chunkStartTime;
+          toast(`end idx=${chunkIndex} 経過ms=${duration} started=${hasStarted}`, 5000);
           const minExpectedDuration = chunkText.length * 20; // 20ms per char heuristic
 
           // 無音終了の検知とリトライ
@@ -4271,9 +4290,10 @@ const renderMarkdownToElements = (contentStr: string) => {
         utterance.onerror = (e) => {
           if (session !== sessionRef.current) return;
           clearWatchdog();
+          toast(`error idx=${chunkIndex} e.error=${e.error}`, 6000);
           console.warn(`Device Speech chunk event (${e.error}, chunk ${chunkIndex}):`, e);
 
-          // ユーザー手動停止やキャンセルの場合は静かに終了
+          // ユーザー手動停止やキャンセルの場合も含めて全て表示後、必要に応じて処理
           if (e.error === "canceled" || e.error === "interrupted" || !alive()) {
             return;
           }
