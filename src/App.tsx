@@ -4061,33 +4061,45 @@ const renderMarkdownToElements = (contentStr: string) => {
     }
   }, []);
 
-  // ボイス選択を pickVoice(utterance) 関数に切り出す
-  const pickVoice = (utterance: SpeechSynthesisUtterance) => {
+  // ボイス選択を pickVoice(utterance, retryTier) 関数に切り出す
+  const pickVoice = (utterance: SpeechSynthesisUtterance, retryTier: number, excludedUris: string[]) => {
     try {
       const voices = window.speechSynthesis.getVoices();
+      if (voices.length === 0) return;
+
+      if (retryTier >= 2) {
+        // Tier 2以上ではボイス指定なし（デフォルトシステム音声）
+        return;
+      }
+
+      if (retryTier === 1) {
+        // Tier 1では言語指定のみ
+        utterance.lang = "ja-JP";
+        return;
+      }
+
       const savedVoiceUri = localStorage.getItem("cn_selected_voice_uri");
-      if (savedVoiceUri && voices.length > 0) {
+      if (savedVoiceUri && !excludedUris.includes(savedVoiceUri)) {
         const matched = voices.find(v => v.voiceURI === savedVoiceUri);
         if (matched) {
           utterance.voice = matched;
           return;
         }
       }
-      if (voices.length > 0) {
-        // 2. localService === true の ja 音声
-        let jaVoice = voices.find(v => (v.lang === "ja-JP" || v.lang === "ja_JP" || v.lang.startsWith("ja") || v.lang.includes("JP")) && (v as any).localService === true);
-        // 3. 任意の ja 音声
-        if (!jaVoice) {
-          jaVoice = voices.find(v => v.lang === "ja-JP" || v.lang === "ja_JP" || v.lang.startsWith("ja") || v.lang.includes("JP"));
-        }
-        if (jaVoice) {
-          utterance.voice = jaVoice;
-        }
+
+      // 2. localService === true の ja 音声
+      let jaVoice = voices.find(v => (v.lang === "ja-JP" || v.lang === "ja_JP" || v.lang.startsWith("ja") || v.lang.includes("JP")) && (v as any).localService === true && !excludedUris.includes(v.voiceURI));
+      // 3. 任意の ja 音声
+      if (!jaVoice) {
+        jaVoice = voices.find(v => (v.lang === "ja-JP" || v.lang === "ja_JP" || v.lang.startsWith("ja") || v.lang.includes("JP")) && !excludedUris.includes(v.voiceURI));
+      }
+      if (jaVoice) {
+        utterance.voice = jaVoice;
       }
     } catch (_) {}
   };
 
-  // 端末内蔵音声エンジン（Web Speech API）での発話処理（原因特定デバッグ版）
+  // 端末内蔵音声エンジン（Web Speech API）での発話処理（堅牢版・世代ID & 状態追跡）
   const playDeviceSpeech = (
     text: string,
     currentNote: Note,
@@ -4103,6 +4115,8 @@ const renderMarkdownToElements = (contentStr: string) => {
     const session = ++sessionRef.current;
     const alive = () => session === sessionRef.current && isTtsPlayingRef.current && isDeviceSpeakingRef.current;
 
+    let startedAny = false;
+
     const finish = (err?: any) => {
       if (session !== sessionRef.current) return;
       isDeviceSpeakingRef.current = false;
@@ -4111,6 +4125,10 @@ const renderMarkdownToElements = (contentStr: string) => {
       if (keepAliveTimerRef.current) {
         clearInterval(keepAliveTimerRef.current);
         keepAliveTimerRef.current = null;
+      }
+      if (!err && !startedAny) {
+        toast("音声が一度も再生されませんでした（無音終了）");
+        err = new Error("TTS silent: no chunk started");
       }
       if (err) {
         onError(err);
@@ -4127,7 +4145,7 @@ const renderMarkdownToElements = (contentStr: string) => {
       const userActive = (navigator as any).userActivation ? (navigator as any).userActivation.hasBeenActive : "N/A";
       const uAgent = navigator.userAgent;
 
-      toast(`Init: voices=${voicesCount}, speaking=${speaking}, pending=${pending}, paused=${paused}, active=${userActive}\nUA: ${uAgent.substring(0, 45)}`, 8000);
+      toast(`Init: voices=${voicesCount}, speaking=${speaking}, pending=${pending}, paused=${paused}, active=${userActive}`, 5000);
 
       window.speechSynthesis.cancel();
       if (window.speechSynthesis.paused) {
@@ -4143,7 +4161,7 @@ const renderMarkdownToElements = (contentStr: string) => {
         startAudioKeepAlive(currentNote);
       }
 
-      // 1. チャンク分割の置き換え (正規表現の後読み回避)
+      // 1. チャンク分割 (正規表現の後読み回避)
       const rawSentences = text.match(/[^。！？\n]+[。！？]?/g) || [text.trim()];
       const cleanSentences = rawSentences.map(s => s.trim()).filter(Boolean);
       const chunks: string[] = [];
@@ -4170,9 +4188,37 @@ const renderMarkdownToElements = (contentStr: string) => {
 
       let currentIndex = 0;
       let lastActivityTime = Date.now();
-      let isAdvancing = false;
+      let attemptSeq = 0;
       let failStreak = 0;
       let retryCount = 0;
+      let currentRetryTier = 0;
+      const excludedVoiceUris: string[] = [];
+
+      // Voices load check / wait if needed
+      const checkAndStart = () => {
+        if (!alive()) return;
+        const voices = window.speechSynthesis.getVoices();
+        if (voices.length === 0) {
+          // voiceschanged イベントまたは最大1.5秒待機
+          let loaded = false;
+          const handler = () => {
+            if (loaded) return;
+            loaded = true;
+            window.speechSynthesis.removeEventListener("voiceschanged", handler);
+            if (alive()) speakNextChunk();
+          };
+          window.speechSynthesis.addEventListener("voiceschanged", handler);
+          setTimeout(() => {
+            if (!loaded) {
+              loaded = true;
+              window.speechSynthesis.removeEventListener("voiceschanged", handler);
+              if (alive()) speakNextChunk();
+            }
+          }, 1500);
+          return;
+        }
+        speakNextChunk();
+      };
 
       const speakNextChunk = () => {
         if (!alive()) return;
@@ -4190,24 +4236,21 @@ const renderMarkdownToElements = (contentStr: string) => {
           return;
         }
 
-        lastActivityTime = Date.now();
-        isAdvancing = false;
+        const myAttempt = ++attemptSeq;
+        const stale = () => session !== sessionRef.current || myAttempt !== attemptSeq || !alive();
 
         const utterance = new SpeechSynthesisUtterance(chunkText);
         utterance.lang = "ja-JP";
         utterance.rate = ttsSpeed;
 
-        // ★ GC対策: 参照を外部refおよびwindowに保持（Chromiumのガベージコレクションによる突然停止を防止）
         activeUtteranceRef.current = utterance;
         (window as any).__activeUtterance = utterance;
 
-        // ボイス選択
-        pickVoice(utterance);
+        pickVoice(utterance, currentRetryTier, excludedVoiceUris);
 
-        const voices = window.speechSynthesis.getVoices();
         const voiceName = utterance.voice ? utterance.voice.name : "default";
-        const localServ = utterance.voice ? (utterance.voice as any).localService : "unknown";
-        toast(`speak idx=${chunkIndex} len=${chunkText.length} voices=${voices.length}件 voice=${voiceName} localService=${localServ}`, 6000);
+        const voiceUri = utterance.voice ? utterance.voice.voiceURI : "";
+        toast(`speak idx=${chunkIndex} len=${chunkText.length} tier=${currentRetryTier} voice=${voiceName}`, 4000);
 
         let hasStarted = false;
         const chunkStartTime = Date.now();
@@ -4220,66 +4263,77 @@ const renderMarkdownToElements = (contentStr: string) => {
           }
         };
 
-        // ウォッチドッグ (3秒以内にonstartが来なければ再試行)
+        const abandon = () => {
+          if (utterance) {
+            utterance.onstart = utterance.onend = utterance.onerror = null;
+          }
+          clearWatchdog();
+          try {
+            window.speechSynthesis.cancel();
+          } catch (_) {}
+        };
+
+        // ウォッチドッグ (8秒以内にonstartが来なければ再試行)
         watchdogTimer = setTimeout(() => {
-          if (!alive()) return;
+          if (stale()) return;
           if (!hasStarted) {
-            console.warn(`TTS watchdog triggered for chunk ${chunkIndex}: no onstart within 3s`);
-            clearWatchdog();
-            try {
-              window.speechSynthesis.cancel();
-            } catch (_) {}
+            console.warn(`TTS watchdog triggered for chunk ${chunkIndex}: no onstart within 8s`);
+            abandon();
+            retryCount++;
+            if (retryCount > 2) {
+              currentRetryTier++;
+              retryCount = 0;
+              if (voiceUri) excludedVoiceUris.push(voiceUri);
+            }
             setTimeout(() => {
-              if (!alive()) return;
+              if (stale()) return;
               speakNextChunk();
             }, 100);
           }
-        }, 3000);
+        }, 8000);
 
-        // 読み上げ中のスクロール追従（発話開始時に実行）
         utterance.onstart = () => {
-          if (session !== sessionRef.current) return;
+          if (stale()) return;
           hasStarted = true;
+          startedAny = true;
           failStreak = 0;
+          retryCount = 0;
           lastActivityTime = Date.now();
           clearWatchdog();
-          toast(`start idx=${chunkIndex}`, 4000);
+          toast(`start idx=${chunkIndex}`, 3000);
           scrollSpeechIntoView(chunkText);
         };
 
         utterance.onend = () => {
-          if (session !== sessionRef.current) return;
-          if (isAdvancing) return;
+          if (stale()) return;
           clearWatchdog();
+          utterance.onstart = utterance.onend = utterance.onerror = null;
 
           const duration = Date.now() - chunkStartTime;
-          toast(`end idx=${chunkIndex} 経過ms=${duration} started=${hasStarted}`, 5000);
-          const minExpectedDuration = chunkText.length * 20; // 20ms per char heuristic
+          toast(`end idx=${chunkIndex} 経過ms=${duration} started=${hasStarted}`, 4000);
+          const minExpectedDuration = chunkText.length * 15; // heuristic
 
-          // 無音終了の検知とリトライ
-          if ((!hasStarted || duration < minExpectedDuration) && retryCount < 1) {
+          if ((!hasStarted || duration < minExpectedDuration) && retryCount < 2) {
             retryCount++;
+            if (retryCount > 1 && voiceUri) {
+              excludedVoiceUris.push(voiceUri);
+              currentRetryTier = Math.min(currentRetryTier + 1, 2);
+            }
             console.warn(`Silent end detected on chunk ${chunkIndex} (hasStarted: ${hasStarted}, duration: ${duration}ms). Retrying...`);
-            isAdvancing = true;
-            try {
-              window.speechSynthesis.cancel();
-            } catch (_) {}
+            abandon();
             setTimeout(() => {
-              if (!alive()) return;
-              isAdvancing = false;
+              if (stale()) return;
               speakNextChunk();
             }, 150);
             return;
           }
 
           retryCount = 0;
-          isAdvancing = true;
           activeUtteranceRef.current = null;
           (window as any).__activeUtterance = null;
           lastActivityTime = Date.now();
           currentIndex++;
 
-          // 次のチャンクへ
           setTimeout(() => {
             if (alive()) {
               speakNextChunk();
@@ -4288,13 +4342,29 @@ const renderMarkdownToElements = (contentStr: string) => {
         };
 
         utterance.onerror = (e) => {
-          if (session !== sessionRef.current) return;
+          if (stale()) return;
           clearWatchdog();
-          toast(`error idx=${chunkIndex} e.error=${e.error}`, 6000);
+          utterance.onstart = utterance.onend = utterance.onerror = null;
+
+          toast(`error idx=${chunkIndex} e.error=${e.error}`, 5000);
           console.warn(`Device Speech chunk event (${e.error}, chunk ${chunkIndex}):`, e);
 
-          // ユーザー手動停止やキャンセルの場合も含めて全て表示後、必要に応じて処理
-          if (e.error === "canceled" || e.error === "interrupted" || !alive()) {
+          if (e.error === "canceled" || e.error === "interrupted") {
+            return;
+          }
+
+          if (e.error === "synthesis-failed" && retryCount < 2) {
+            retryCount++;
+            if (voiceUri) excludedVoiceUris.push(voiceUri);
+            if (retryCount >= 2) {
+              currentRetryTier = Math.min(currentRetryTier + 1, 2);
+            }
+            console.warn(`Synthesis failed on chunk ${chunkIndex}. Excluding voice and retrying...`);
+            abandon();
+            setTimeout(() => {
+              if (stale()) return;
+              speakNextChunk();
+            }, 200);
             return;
           }
 
@@ -4305,15 +4375,10 @@ const renderMarkdownToElements = (contentStr: string) => {
             return;
           }
 
-          if (isAdvancing) return;
-          isAdvancing = true;
-          activeUtteranceRef.current = null;
-          (window as any).__activeUtterance = null;
-
+          abandon();
           setTimeout(() => {
-            if (!alive()) return;
+            if (stale()) return;
             currentIndex++;
-            isAdvancing = false;
             speakNextChunk();
           }, 100);
         };
@@ -4326,15 +4391,12 @@ const renderMarkdownToElements = (contentStr: string) => {
         } catch (speakErr) {
           console.error("speechSynthesis.speak error:", speakErr);
           clearWatchdog();
-          if (!isAdvancing) {
-            isAdvancing = true;
-            setTimeout(() => {
-              if (!alive()) return;
-              currentIndex++;
-              isAdvancing = false;
-              speakNextChunk();
-            }, 100);
-          }
+          abandon();
+          setTimeout(() => {
+            if (stale()) return;
+            currentIndex++;
+            speakNextChunk();
+          }, 100);
         }
       };
 
@@ -4361,10 +4423,10 @@ const renderMarkdownToElements = (contentStr: string) => {
         }, 4000);
       }
 
-      // cancel() 後の待機 (100ms)
+      // cancel() 後の待機 (100ms) から voices 読み込みチェック付き開始へ
       setTimeout(() => {
         if (!alive()) return;
-        speakNextChunk();
+        checkAndStart();
       }, 100);
 
     } catch (err) {
