@@ -1099,6 +1099,16 @@ export default function App() {
     setTimeout(() => setToastMessage(""), time);
   };
 
+  const [ttsLogs, setTtsLogs] = useState<string[]>([]);
+  const [isTtsDebugOpen, setIsTtsDebugOpen] = useState(true);
+
+  const logTts = (msg: string, durationMs?: number) => {
+    const timeStr = new Date().toLocaleTimeString();
+    const entry = `[${timeStr}] ${msg}`;
+    setTtsLogs(prev => [entry, ...prev].slice(0, 100));
+    toast(msg, durationMs);
+  };
+
   // 記事閲覧エリアの文字幅トグル（4段階循環: 1広 1/4 → 2中 2/4 → 3狭 3/4 → 4最狭 4/4）
   const cycleContentWidth = () => {
     setContentWidthLevel((prev) => {
@@ -4127,7 +4137,7 @@ const renderMarkdownToElements = (contentStr: string) => {
         keepAliveTimerRef.current = null;
       }
       if (!err && !startedAny) {
-        toast("音声が一度も再生されませんでした（無音終了）");
+        logTts("音声が一度も再生されませんでした（無音終了）");
         err = new Error("TTS silent: no chunk started");
       }
       if (err) {
@@ -4145,7 +4155,7 @@ const renderMarkdownToElements = (contentStr: string) => {
       const userActive = (navigator as any).userActivation ? (navigator as any).userActivation.hasBeenActive : "N/A";
       const uAgent = navigator.userAgent;
 
-      toast(`Init: voices=${voicesCount}, speaking=${speaking}, pending=${pending}, paused=${paused}, active=${userActive}`, 5000);
+      logTts(`Init: voices=${voicesCount}, speaking=${speaking}, pending=${pending}, paused=${paused}, active=${userActive}`, 5000);
 
       window.speechSynthesis.cancel();
       if (window.speechSynthesis.paused) {
@@ -4250,7 +4260,7 @@ const renderMarkdownToElements = (contentStr: string) => {
 
         const voiceName = utterance.voice ? utterance.voice.name : "default";
         const voiceUri = utterance.voice ? utterance.voice.voiceURI : "";
-        toast(`speak idx=${chunkIndex} len=${chunkText.length} tier=${currentRetryTier} voice=${voiceName}`, 4000);
+        logTts(`speak idx=${chunkIndex} len=${chunkText.length} tier=${currentRetryTier} voice=${voiceName}`, 4000);
 
         let hasStarted = false;
         const chunkStartTime = Date.now();
@@ -4300,7 +4310,7 @@ const renderMarkdownToElements = (contentStr: string) => {
           retryCount = 0;
           lastActivityTime = Date.now();
           clearWatchdog();
-          toast(`start idx=${chunkIndex}`, 3000);
+          logTts(`start idx=${chunkIndex}`, 3000);
           scrollSpeechIntoView(chunkText);
         };
 
@@ -4310,7 +4320,7 @@ const renderMarkdownToElements = (contentStr: string) => {
           utterance.onstart = utterance.onend = utterance.onerror = null;
 
           const duration = Date.now() - chunkStartTime;
-          toast(`end idx=${chunkIndex} 経過ms=${duration} started=${hasStarted}`, 4000);
+          logTts(`end idx=${chunkIndex} 経過ms=${duration} started=${hasStarted}`, 4000);
           const minExpectedDuration = chunkText.length * 15; // heuristic
 
           if ((!hasStarted || duration < minExpectedDuration) && retryCount < 2) {
@@ -4346,7 +4356,7 @@ const renderMarkdownToElements = (contentStr: string) => {
           clearWatchdog();
           utterance.onstart = utterance.onend = utterance.onerror = null;
 
-          toast(`error idx=${chunkIndex} e.error=${e.error}`, 5000);
+          logTts(`error idx=${chunkIndex} e.error=${e.error}`, 5000);
           console.warn(`Device Speech chunk event (${e.error}, chunk ${chunkIndex}):`, e);
 
           if (e.error === "canceled" || e.error === "interrupted") {
@@ -4369,8 +4379,9 @@ const renderMarkdownToElements = (contentStr: string) => {
           }
 
           failStreak++;
-          if (failStreak >= 3) {
-            toast(`音声読み上げが連続して失敗しました: ${e.error}`);
+          if (failStreak >= 2 || e.error === "synthesis-failed") {
+            logTts(`端末音声エラー: ${e.error}（※AI Studioプレビュー等の環境ではSpeechSynthesisが制限されています）`);
+            toast(`この環境では端末音声が利用できません。設定からGoogle Cloud TTS APIキーをご設定ください。`, 8000);
             finish(new Error("TTS failed: " + e.error));
             return;
           }
@@ -8768,6 +8779,49 @@ const renderMarkdownToElements = (contentStr: string) => {
           >
             ✕
           </button>
+        </div>
+      )}
+
+      {/* TTS Debug Console Panel (persistent, scrollable) */}
+      {ttsLogs.length > 0 && (
+        <div className="fixed bottom-24 right-4 z-[9998] w-96 max-w-[92vw] bg-[#0d1117] border border-[var(--purple)] rounded-lg shadow-2xl overflow-hidden flex flex-col font-mono text-[11px]">
+          <div className="bg-[#161b22] p-2 px-3 border-b border-[#30363d] flex items-center justify-between">
+            <span className="font-bold text-purple-400 flex items-center gap-1.5">
+              <span>🔊 端末音声デバッグログ ({ttsLogs.length})</span>
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => {
+                  const text = ttsLogs.join("\n");
+                  copyToClipboard(text, "デバッグログをコピーしました ✦");
+                }}
+                className="px-2 py-0.5 bg-[#30363d] hover:bg-[#484f58] text-gray-200 rounded text-[10px] cursor-pointer transition"
+              >
+                コピー
+              </button>
+              <button
+                onClick={() => setTtsLogs([])}
+                className="px-2 py-0.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded text-[10px] cursor-pointer transition"
+              >
+                クリア
+              </button>
+              <button
+                onClick={() => setIsTtsDebugOpen(!isTtsDebugOpen)}
+                className="px-2 py-0.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded text-[10px] cursor-pointer transition"
+              >
+                {isTtsDebugOpen ? "折りたたむ" : "展開"}
+              </button>
+            </div>
+          </div>
+          {isTtsDebugOpen && (
+            <div className="p-2.5 max-h-60 overflow-y-auto flex flex-col gap-1 text-gray-300 bg-[#0d1117]/95 select-text">
+              {ttsLogs.map((log, i) => (
+                <div key={i} className="border-b border-gray-800 pb-1 whitespace-pre-wrap leading-tight text-[10px] font-mono">
+                  {log}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
