@@ -4072,41 +4072,56 @@ const renderMarkdownToElements = (contentStr: string) => {
   }, []);
 
   // ボイス選択を pickVoice(utterance, retryTier) 関数に切り出す
-  const pickVoice = (utterance: SpeechSynthesisUtterance, retryTier: number, excludedUris: string[]) => {
+  const pickVoice = (utterance: SpeechSynthesisUtterance, retryTier: number, excludedVoiceUris: string[]) => {
     try {
+      const isAndroid = typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
       const voices = window.speechSynthesis.getVoices();
-      if (voices.length === 0) return;
+      if (voices.length === 0) {
+        utterance.lang = "ja-JP";
+        return;
+      }
 
       if (retryTier >= 2) {
-        // Tier 2以上ではボイス指定なし（デフォルトシステム音声）
+        // Tier 2以上では言語のみ ja (国コード省略フォールバック)
+        utterance.lang = "ja";
         return;
       }
 
       if (retryTier === 1) {
-        // Tier 1では言語指定のみ
+        // Tier 1では言語指定 ja-JP のみ（ボイスオブジェクトの強制指定を回避）
         utterance.lang = "ja-JP";
         return;
       }
 
       const savedVoiceUri = localStorage.getItem("cn_selected_voice_uri");
-      if (savedVoiceUri && !excludedUris.includes(savedVoiceUri)) {
+      if (savedVoiceUri && !excludedVoiceUris.includes(savedVoiceUri)) {
         const matched = voices.find(v => v.voiceURI === savedVoiceUri);
         if (matched) {
           utterance.voice = matched;
+          utterance.lang = matched.lang || "ja-JP";
           return;
         }
       }
 
       // 2. localService === true の ja 音声
-      let jaVoice = voices.find(v => (v.lang === "ja-JP" || v.lang === "ja_JP" || v.lang.startsWith("ja") || v.lang.includes("JP")) && (v as any).localService === true && !excludedUris.includes(v.voiceURI));
-      // 3. 任意の ja 音声
-      if (!jaVoice) {
-        jaVoice = voices.find(v => (v.lang === "ja-JP" || v.lang === "ja_JP" || v.lang.startsWith("ja") || v.lang.includes("JP")) && !excludedUris.includes(v.voiceURI));
+      const localJaVoice = voices.find(v => (v.lang === "ja-JP" || v.lang === "ja_JP" || v.lang.startsWith("ja") || v.lang.includes("JP")) && (v as any).localService === true && !excludedVoiceUris.includes(v.voiceURI));
+      if (localJaVoice) {
+        utterance.voice = localJaVoice;
+        utterance.lang = localJaVoice.lang || "ja-JP";
+        return;
       }
-      if (jaVoice) {
-        utterance.voice = jaVoice;
+
+      // 3. 任意の ja 音声 (Androidの場合はオンラインGoogle音声オブジェクトの指定でsynthesis-failedが多発するため、lang指定のみに留める)
+      const anyJaVoice = voices.find(v => (v.lang === "ja-JP" || v.lang === "ja_JP" || v.lang.startsWith("ja") || v.lang.includes("JP")) && !excludedVoiceUris.includes(v.voiceURI));
+      if (anyJaVoice && !isAndroid) {
+        utterance.voice = anyJaVoice;
+        utterance.lang = anyJaVoice.lang || "ja-JP";
+      } else {
+        utterance.lang = "ja-JP";
       }
-    } catch (_) {}
+    } catch (_) {
+      utterance.lang = "ja-JP";
+    }
   };
 
   // 端末内蔵音声エンジン（Web Speech API）での発話処理（堅牢版・世代ID & 状態追跡）
@@ -4152,15 +4167,13 @@ const renderMarkdownToElements = (contentStr: string) => {
       const speaking = window.speechSynthesis.speaking;
       const pending = window.speechSynthesis.pending;
       const paused = window.speechSynthesis.paused;
-      const userActive = (navigator as any).userActivation ? (navigator as any).userActivation.hasBeenActive : "N/A";
-      const uAgent = navigator.userAgent;
+      const isTransientActive = (navigator as any).userActivation ? (navigator as any).userActivation.isActive : "N/A";
+      const hasBeenActive = (navigator as any).userActivation ? (navigator as any).userActivation.hasBeenActive : "N/A";
+      const isInIframe = typeof window !== "undefined" && window.self !== window.top;
 
-      logTts(`Init: voices=${voicesCount}, speaking=${speaking}, pending=${pending}, paused=${paused}, active=${userActive}`, 5000);
+      logTts(`Init: voices=${voicesCount}, iframe=${isInIframe}, transient=${isTransientActive}, hasActive=${hasBeenActive}, speaking=${speaking}`, 5000);
 
       window.speechSynthesis.cancel();
-      if (window.speechSynthesis.paused) {
-        window.speechSynthesis.resume();
-      }
 
       isDeviceSpeakingRef.current = true;
       isTtsPlayingRef.current = true;
@@ -4380,8 +4393,14 @@ const renderMarkdownToElements = (contentStr: string) => {
 
           failStreak++;
           if (failStreak >= 2 || e.error === "synthesis-failed") {
-            logTts(`端末音声エラー: ${e.error}（※AI Studioプレビュー等の環境ではSpeechSynthesisが制限されています）`);
-            toast(`この環境では端末音声が利用できません。設定からGoogle Cloud TTS APIキーをご設定ください。`, 8000);
+            const inIframe = typeof window !== "undefined" && window.self !== window.top;
+            if (inIframe) {
+              logTts(`端末音声エラー: ${e.error}（AI Studioプレビュー等のiframe内ではブラウザの権限ポリシーによりWeb Speech APIがブロックされます）`);
+              toast(`プレビュー画面(iframe)内では端末音声が利用できません。右上の「別タブ」アイコンから直接URLを開いてお試しください。`, 9000);
+            } else {
+              logTts(`端末音声エラー: ${e.error}（端末TTSエンジンの合成失敗）`);
+              toast(`端末音声が利用できません (${e.error})。Androidの「設定 > ユーザー補助 > テキスト読み上げ」でGoogle音声サービスの日本語データがダウンロードされているか確認するか、Google Cloud TTSキーをご利用ください。`, 9000);
+            }
             finish(new Error("TTS failed: " + e.error));
             return;
           }
@@ -4395,9 +4414,6 @@ const renderMarkdownToElements = (contentStr: string) => {
         };
 
         try {
-          if (window.speechSynthesis.paused) {
-            window.speechSynthesis.resume();
-          }
           window.speechSynthesis.speak(utterance);
         } catch (speakErr) {
           console.error("speechSynthesis.speak error:", speakErr);
@@ -4592,7 +4608,9 @@ const renderMarkdownToElements = (contentStr: string) => {
     const active = getActiveNote();
     if (!active) return;
     
-    stopTts();
+    if (isTtsPlayingRef.current) {
+      stopTts();
+    }
     startAudioKeepAlive(active);
 
     const { groups } = getCategorizedNotes();
@@ -4603,11 +4621,9 @@ const renderMarkdownToElements = (contentStr: string) => {
     if (startIndex === -1) return;
     
     const queue = groupList.slice(startIndex);
-    setTimeout(() => {
-      isTtsPlayingRef.current = true;
-      setTtsQueue(queue);
-      setIsTtsPlaying(true);
-    }, 120);
+    isTtsPlayingRef.current = true;
+    setTtsQueue(queue);
+    setIsTtsPlaying(true);
     toast(`${queue.length}件の記事の連続読み上げを開始します ✦`);
   };
 
@@ -4616,14 +4632,59 @@ const renderMarkdownToElements = (contentStr: string) => {
     const active = getActiveNote();
     if (!active) return;
 
-    stopTts();
+    if (isTtsPlayingRef.current) {
+      stopTts();
+    }
     startAudioKeepAlive(active);
-    setTimeout(() => {
-      isTtsPlayingRef.current = true;
-      setTtsQueue([active]);
-      setIsTtsPlaying(true);
-    }, 120);
+    isTtsPlayingRef.current = true;
+    setTtsQueue([active]);
+    setIsTtsPlaying(true);
     toast(`「${active.title || '現在の記事'}」の読み上げを開始します ✦（記事末尾で自動停止）`);
+  };
+
+  // 端末音声クイック診断（1文テスト & 環境判定）
+  const runTtsDiagnostic = () => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      toast("お使いのブラウザは端末音声合成（Web Speech API）に対応していません");
+      return;
+    }
+    const inIframe = typeof window !== "undefined" && window.self !== window.top;
+    const voices = window.speechSynthesis.getVoices();
+    const jaVoices = voices.filter(v => v.lang.startsWith("ja") || v.lang.includes("JP"));
+    const localJa = jaVoices.filter(v => (v as any).localService === true);
+
+    logTts(`[クイック診断] iframe=${inIframe}, voices=${voices.length}件 (ja=${jaVoices.length}件, localJa=${localJa.length}件)`, 7000);
+
+    if (inIframe) {
+      toast("警告: AI Studioプレビュー画面(iframe)内ではブラウザにより端末音声が制限されます。右上の「別タブ」アイコンから直接URLを開いてお試しください。", 8000);
+    }
+
+    try {
+      window.speechSynthesis.cancel();
+      const testUtterance = new SpeechSynthesisUtterance("端末音声テストです。正常に動作しています。");
+      testUtterance.lang = "ja-JP";
+      testUtterance.rate = 1.0;
+
+      testUtterance.onstart = () => {
+        logTts("診断結果: 発話が開始されました（正常）✦", 5000);
+        toast("端末音声は正常に動作しています ✦");
+      };
+      testUtterance.onend = () => {
+        logTts("診断結果: 発話が完了しました", 4000);
+      };
+      testUtterance.onerror = (e) => {
+        logTts(`診断エラー: e.error=${e.error}`, 8000);
+        if (inIframe) {
+          toast(`診断エラー: ${e.error} (プレビューiframeの制限です。画面右上の別タブボタンで開いてください)`, 9000);
+        } else {
+          toast(`診断エラー: ${e.error} (AndroidのGoogle音声サービスの日本語データ未DLや設定を確認してください)`, 9000);
+        }
+      };
+
+      window.speechSynthesis.speak(testUtterance);
+    } catch (err: any) {
+      logTts(`診断例外: ${err?.message}`, 8000);
+    }
   };
 
   // 本文(content)の中から選択テキスト(searchText)の開始位置を高精度に特定する関数（Markdown記法や空白の揺れを吸収）
@@ -6691,6 +6752,17 @@ const renderMarkdownToElements = (contentStr: string) => {
                     {isFullScreen ? <Minimize2 className="w-3.5 h-3.5 text-blue-400 shrink-0" /> : <Maximize2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
                     <span className="portrait:hidden hidden sm:inline">{isFullScreen ? "全画面解除" : "全画面"}</span>
                   </button>
+
+                  <a
+                    href={typeof window !== "undefined" ? window.location.href : "#"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-1 px-2.5 portrait:px-2 bg-transparent border border-[var(--border2)] text-xs font-semibold rounded-md text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] flex items-center gap-1.5 portrait:gap-0 transition-all"
+                    title="現在の画面を独立した新しいブラウザタブで開きます（iframe内の端末音声合成制限を解除）"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                    <span className="portrait:hidden hidden sm:inline">別タブ</span>
+                  </a>
                 </div>
               </div>
 
@@ -6846,6 +6918,31 @@ const renderMarkdownToElements = (contentStr: string) => {
                               </div>
                             </div>
                           </button>
+                          <button
+                            type="button"
+                            onClick={runTtsDiagnostic}
+                            className="w-full text-left px-3 py-2 hover:bg-[#1f2d3d] text-cyan-400 flex items-center gap-2 cursor-pointer transition-colors border-t border-[#30363d]"
+                          >
+                            <Sparkles className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                            <div>
+                              <div className="font-semibold text-cyan-300">端末音声クイック診断（1文テスト）</div>
+                              <div className="text-[10px] text-[var(--subtle)]">iframe制限や端末TTSエンジンの動作状態を即座に判定</div>
+                            </div>
+                          </button>
+                          {typeof window !== "undefined" && window.self !== window.top && (
+                            <a
+                              href={window.location.href}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="w-full text-left px-3 py-2 hover:bg-[#1f2d3d] text-blue-400 flex items-center gap-2 cursor-pointer transition-colors border-t border-[#30363d]"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                              <div>
+                                <div className="font-semibold text-blue-300">独立した別タブで開く</div>
+                                <div className="text-[10px] text-[var(--subtle)]">プレビューiframeの音声制限を解除して利用</div>
+                              </div>
+                            </a>
+                          )}
                         </div>
                       </>
                     )}
