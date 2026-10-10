@@ -30,6 +30,7 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
   const [maxCandidates, setMaxCandidates] = useState("20");
   const [maxContentLength, setMaxContentLength] = useState("2500");
   const [noKeepAlive, setNoKeepAlive] = useState(false);
+  const [showTtsDebugLog, setShowTtsDebugLog] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
@@ -51,6 +52,7 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
       setUseDeviceSpeech(localStorage.getItem("cn_use_device_speech") === "true");
       setSelectedVoiceURI(localStorage.getItem("cn_selected_voice_uri") || "");
       setNoKeepAlive(localStorage.getItem("cn_debug_no_keepalive") === "1");
+      setShowTtsDebugLog(localStorage.getItem("cn_show_tts_log") === "true");
       let m = localStorage.getItem("cn_gemini_model") || "gemini-2.5-flash"; setModel(m);
       setTemp(localStorage.getItem("cn_gemini_temp") || "0.1");
       setTokens(localStorage.getItem("cn_gemini_tokens") || "1024");
@@ -80,6 +82,7 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
     localStorage.setItem("cn_use_device_speech", useDeviceSpeech ? "true" : "false");
     localStorage.setItem("cn_selected_voice_uri", selectedVoiceURI);
     localStorage.setItem("cn_debug_no_keepalive", noKeepAlive ? "1" : "0");
+    localStorage.setItem("cn_show_tts_log", showTtsDebugLog ? "true" : "false");
     localStorage.setItem("cn_gemini_model", model);
     localStorage.setItem("cn_gemini_temp", temp);
     localStorage.setItem("cn_gemini_tokens", tokens);
@@ -253,6 +256,26 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
             onChange={(e) => setTtsSpeed(e.target.value)}
             className="w-full accent-[var(--purple)] cursor-pointer"
           />
+
+          {/* 音声欄の最下段：端末音声デバッグ・エラーログ表の表示制御チェックボックス */}
+          <div className="mt-3 pt-2.5 border-t border-[var(--border2)]">
+            <label className="flex items-start gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="mt-0.5 accent-[var(--purple)] cursor-pointer"
+                checked={showTtsDebugLog}
+                onChange={(e) => setShowTtsDebugLog(e.target.checked)}
+              />
+              <div className="flex-1">
+                <span className="text-[11px] font-bold text-white flex items-center gap-1.5">
+                  端末音声デバッグ・エラーログ表を表示する
+                </span>
+                <p className="text-[10px] text-[var(--subtle)] mt-0.5 leading-relaxed">
+                  画面右下に表示される音声ログコンソール表（再生詳細・エラー履歴）の表示／非表示を制御します。チェックを外すとログ表は非表示になります。
+                </p>
+              </div>
+            </label>
+          </div>
           <div className="mt-2.5 bg-[rgba(163,113,247,0.04)] border border-[rgba(163,113,247,0.15)] rounded-lg p-2.5 flex flex-col gap-2">
             <label className="flex items-start gap-2 cursor-pointer select-none">
               <input

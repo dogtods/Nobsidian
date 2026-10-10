@@ -1101,12 +1101,18 @@ export default function App() {
 
   const [ttsLogs, setTtsLogs] = useState<string[]>([]);
   const [isTtsDebugOpen, setIsTtsDebugOpen] = useState(true);
+  const [showTtsDebugLog, setShowTtsDebugLog] = useState<boolean>(() => {
+    return typeof window !== "undefined" && localStorage.getItem("cn_show_tts_log") === "true";
+  });
 
   const logTts = (msg: string, durationMs?: number) => {
     const timeStr = new Date().toLocaleTimeString();
     const entry = `[${timeStr}] ${msg}`;
     setTtsLogs(prev => [entry, ...prev].slice(0, 100));
-    toast(msg, durationMs);
+    // デバッグログ表の表示がONの場合のみトースト表示（OFFの場合は画面をログで邪魔しない）
+    if (showTtsDebugLog) {
+      toast(msg, durationMs);
+    }
   };
 
   // 記事閲覧エリアの文字幅トグル（4段階循環: 1広 1/4 → 2中 2/4 → 3狭 3/4 → 4最狭 4/4）
@@ -8494,7 +8500,10 @@ const renderMarkdownToElements = (contentStr: string) => {
 
       <SettingsModal
         isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
+        onClose={() => {
+          setIsSettingsOpen(false);
+          setShowTtsDebugLog(localStorage.getItem("cn_show_tts_log") === "true");
+        }}
         onPromptOpen={() => {
           setIsSettingsOpen(false);
           setIsPromptOpen(true);
@@ -8878,7 +8887,7 @@ const renderMarkdownToElements = (contentStr: string) => {
       )}
 
       {/* TTS Debug Console Panel (persistent, scrollable) */}
-      {ttsLogs.length > 0 && (
+      {showTtsDebugLog && ttsLogs.length > 0 && (
         <div className="fixed bottom-24 right-4 z-[9998] w-96 max-w-[92vw] bg-[#0d1117] border border-[var(--purple)] rounded-lg shadow-2xl overflow-hidden flex flex-col font-mono text-[11px]">
           <div className="bg-[#161b22] p-2 px-3 border-b border-[#30363d] flex items-center justify-between">
             <span className="font-bold text-purple-400 flex items-center gap-1.5">
@@ -8905,6 +8914,16 @@ const renderMarkdownToElements = (contentStr: string) => {
                 className="px-2 py-0.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded text-[10px] cursor-pointer transition"
               >
                 {isTtsDebugOpen ? "折りたたむ" : "展開"}
+              </button>
+              <button
+                onClick={() => {
+                  setShowTtsDebugLog(false);
+                  localStorage.setItem("cn_show_tts_log", "false");
+                }}
+                className="px-1.5 py-0.5 text-gray-400 hover:text-white text-xs cursor-pointer rounded hover:bg-gray-800"
+                title="非表示にする（設定画面でいつでも再表示可能）"
+              >
+                ✕
               </button>
             </div>
           </div>
