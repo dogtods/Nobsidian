@@ -463,6 +463,7 @@ export default function App() {
   const isTtsPlayingRef = useRef(false);
   const keepAliveTimerRef = useRef<any>(null);
   const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const sessionRef = useRef<number>(0);
   const [ttsSelectionPopup, setTtsSelectionPopup] = useState<{ top: number; left: number; text: string } | null>(null);
   const [isTtsMenuOpen, setIsTtsMenuOpen] = useState(false);
 
@@ -4060,6 +4061,32 @@ const renderMarkdownToElements = (contentStr: string) => {
     }
   }, []);
 
+  // ボイス選択を pickVoice(utterance) 関数に切り出す
+  const pickVoice = (utterance: SpeechSynthesisUtterance) => {
+    try {
+      const voices = window.speechSynthesis.getVoices();
+      const savedVoiceUri = localStorage.getItem("cn_selected_voice_uri");
+      if (savedVoiceUri && voices.length > 0) {
+        const matched = voices.find(v => v.voiceURI === savedVoiceUri);
+        if (matched) {
+          utterance.voice = matched;
+          return;
+        }
+      }
+      if (voices.length > 0) {
+        // 2. localService === true の ja 音声
+        let jaVoice = voices.find(v => (v.lang === "ja-JP" || v.lang === "ja_JP" || v.lang.startsWith("ja") || v.lang.includes("JP")) && (v as any).localService === true);
+        // 3. 任意の ja 音声
+        if (!jaVoice) {
+          jaVoice = voices.find(v => v.lang === "ja-JP" || v.lang === "ja_JP" || v.lang.startsWith("ja") || v.lang.includes("JP"));
+        }
+        if (jaVoice) {
+          utterance.voice = jaVoice;
+        }
+      }
+    } catch (_) {}
+  };
+
   // 端末内蔵音声エンジン（Web Speech API）での発話処理（長文対応・連続自動つなぎ方式・消灯/バックグラウンド対応）
   const playDeviceSpeech = (
     text: string,
@@ -4073,57 +4100,84 @@ const renderMarkdownToElements = (contentStr: string) => {
       return;
     }
 
+    const session = ++sessionRef.current;
+    const alive = () => session === sessionRef.current && isTtsPlayingRef.current && isDeviceSpeakingRef.current;
+
+    const finish = (err?: any) => {
+      if (session !== sessionRef.current) return;
+      isDeviceSpeakingRef.current = false;
+      activeUtteranceRef.current = null;
+      (window as any).__activeUtterance = null;
+      if (keepAliveTimerRef.current) {
+        clearInterval(keepAliveTimerRef.current);
+        keepAliveTimerRef.current = null;
+      }
+      if (err) {
+        onError(err);
+      } else {
+        onEnd();
+      }
+    };
+
     try {
+      window.speechSynthesis.cancel();
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+
       isDeviceSpeakingRef.current = true;
       isTtsPlayingRef.current = true;
 
       // バックグラウンド・消灯時の画面維持（WakeLock）
       startAudioKeepAlive(currentNote);
 
-      // 1. テキストを行や文（。！？\n）単位で分割し、自然な長さ（80〜150文字程度）のチャンクに整理
-      const rawSentences = text.split(/(?<=[。！？\n])/g).map(s => s.trim()).filter(Boolean);
+      // 1. チャンク分割の置き換え (正規表現の後読み回避)
+      const rawSentences = text.match(/[^。！？\n]+[。！？]?/g) || [text.trim()];
+      const cleanSentences = rawSentences.map(s => s.trim()).filter(Boolean);
       const chunks: string[] = [];
       let tempChunk = "";
-      for (const s of rawSentences) {
+      for (const s of cleanSentences) {
         if (!tempChunk) {
           tempChunk = s;
         } else if (tempChunk.length + s.length < 130) {
           tempChunk += (tempChunk.endsWith("\n") || s.startsWith("\n") ? "" : " ") + s;
         } else {
-          chunks.push(tempChunk);
+          if (tempChunk.trim()) chunks.push(tempChunk.trim());
           tempChunk = s;
         }
       }
-      if (tempChunk) {
-        chunks.push(tempChunk);
+      if (tempChunk.trim()) {
+        chunks.push(tempChunk.trim());
       }
-      const finalChunks = chunks.length > 0 ? chunks : [text];
+      const finalChunks = chunks.length > 0 ? chunks.filter(c => c.length > 0) : [text.trim()];
+
+      if (finalChunks.length === 0 || !finalChunks[0]) {
+        finish();
+        return;
+      }
 
       let currentIndex = 0;
-      let lastSpokenChunk = -1;
       let lastActivityTime = Date.now();
       let isAdvancing = false;
+      let failStreak = 0;
+      let retryCount = 0;
 
       const speakNextChunk = () => {
-        if (!isTtsPlayingRef.current || !isDeviceSpeakingRef.current) {
-          return;
-        }
+        if (!alive()) return;
 
         if (currentIndex >= finalChunks.length) {
-          isDeviceSpeakingRef.current = false;
-          activeUtteranceRef.current = null;
-          (window as any).__activeUtterance = null;
-          if (keepAliveTimerRef.current) {
-            clearInterval(keepAliveTimerRef.current);
-            keepAliveTimerRef.current = null;
-          }
-          onEnd();
+          finish();
           return;
         }
 
         const chunkIndex = currentIndex;
         const chunkText = finalChunks[chunkIndex];
-        lastSpokenChunk = chunkIndex;
+        if (!chunkText) {
+          currentIndex++;
+          speakNextChunk();
+          return;
+        }
+
         lastActivityTime = Date.now();
         isAdvancing = false;
 
@@ -4135,102 +4189,166 @@ const renderMarkdownToElements = (contentStr: string) => {
         activeUtteranceRef.current = utterance;
         (window as any).__activeUtterance = utterance;
 
-        // 音声の割り当て
-        const voices = window.speechSynthesis.getVoices();
-        const savedVoiceUri = localStorage.getItem("cn_selected_voice_uri");
-        if (savedVoiceUri && voices.length > 0) {
-          const matched = voices.find(v => v.voiceURI === savedVoiceUri);
-          if (matched) utterance.voice = matched;
-        } else if (voices.length > 0) {
-          const jaVoice = voices.find(v => v.lang === "ja-JP" || v.lang === "ja_JP" || v.lang.startsWith("ja") || v.lang.includes("JP"));
-          if (jaVoice) utterance.voice = jaVoice;
-        }
+        // ボイス選択
+        pickVoice(utterance);
+
+        let hasStarted = false;
+        const chunkStartTime = Date.now();
+        let watchdogTimer: any = null;
+
+        const clearWatchdog = () => {
+          if (watchdogTimer) {
+            clearTimeout(watchdogTimer);
+            watchdogTimer = null;
+          }
+        };
+
+        // ウォッチドッグ (3秒以内にonstartが来なければ再試行)
+        watchdogTimer = setTimeout(() => {
+          if (!alive()) return;
+          if (!hasStarted) {
+            console.warn(`TTS watchdog triggered for chunk ${chunkIndex}: no onstart within 3s`);
+            clearWatchdog();
+            try {
+              window.speechSynthesis.cancel();
+            } catch (_) {}
+            setTimeout(() => {
+              if (!alive()) return;
+              speakNextChunk();
+            }, 100);
+          }
+        }, 3000);
 
         // 読み上げ中のスクロール追従（発話開始時に実行）
         utterance.onstart = () => {
+          if (session !== sessionRef.current) return;
+          hasStarted = true;
+          failStreak = 0;
           lastActivityTime = Date.now();
+          clearWatchdog();
           scrollSpeechIntoView(chunkText);
         };
 
         utterance.onend = () => {
+          if (session !== sessionRef.current) return;
           if (isAdvancing) return;
+          clearWatchdog();
+
+          const duration = Date.now() - chunkStartTime;
+          const minExpectedDuration = chunkText.length * 20; // 20ms per char heuristic
+
+          // 無音終了の検知とリトライ
+          if ((!hasStarted || duration < minExpectedDuration) && retryCount < 1) {
+            retryCount++;
+            console.warn(`Silent end detected on chunk ${chunkIndex} (hasStarted: ${hasStarted}, duration: ${duration}ms). Retrying...`);
+            isAdvancing = true;
+            try {
+              window.speechSynthesis.cancel();
+            } catch (_) {}
+            setTimeout(() => {
+              if (!alive()) return;
+              isAdvancing = false;
+              speakNextChunk();
+            }, 150);
+            return;
+          }
+
+          retryCount = 0;
           isAdvancing = true;
           activeUtteranceRef.current = null;
           (window as any).__activeUtterance = null;
           lastActivityTime = Date.now();
           currentIndex++;
+
           // 次のチャンクへ
-          if (isTtsPlayingRef.current && isDeviceSpeakingRef.current) {
-            speakNextChunk();
-          }
+          setTimeout(() => {
+            if (alive()) {
+              speakNextChunk();
+            }
+          }, 50);
         };
 
         utterance.onerror = (e) => {
+          if (session !== sessionRef.current) return;
+          clearWatchdog();
           console.warn(`Device Speech chunk event (${e.error}, chunk ${chunkIndex}):`, e);
 
           // ユーザー手動停止やキャンセルの場合は静かに終了
-          if (e.error === "canceled" || !isTtsPlayingRef.current || !isDeviceSpeakingRef.current) {
-            isDeviceSpeakingRef.current = false;
-            activeUtteranceRef.current = null;
-            (window as any).__activeUtterance = null;
+          if (e.error === "canceled" || e.error === "interrupted" || !alive()) {
             return;
           }
 
-          // interrupted や一時的なエラーの場合: 誤って全体を停止させず、安全に次へ進行
+          failStreak++;
+          if (failStreak >= 3) {
+            toast(`音声読み上げが連続して失敗しました: ${e.error}`);
+            finish(new Error("TTS failed: " + e.error));
+            return;
+          }
+
           if (isAdvancing) return;
           isAdvancing = true;
           activeUtteranceRef.current = null;
           (window as any).__activeUtterance = null;
 
           setTimeout(() => {
-            if (isTtsPlayingRef.current && isDeviceSpeakingRef.current) {
-              currentIndex++;
-              speakNextChunk();
-            }
-          }, 80);
+            if (!alive()) return;
+            currentIndex++;
+            isAdvancing = false;
+            speakNextChunk();
+          }, 100);
         };
 
-        if (window.speechSynthesis.paused) {
-          window.speechSynthesis.resume();
+        try {
+          if (window.speechSynthesis.paused) {
+            window.speechSynthesis.resume();
+          }
+          window.speechSynthesis.speak(utterance);
+        } catch (speakErr) {
+          console.error("speechSynthesis.speak error:", speakErr);
+          clearWatchdog();
+          if (!isAdvancing) {
+            isAdvancing = true;
+            setTimeout(() => {
+              if (!alive()) return;
+              currentIndex++;
+              isAdvancing = false;
+              speakNextChunk();
+            }, 100);
+          }
         }
-        window.speechSynthesis.speak(utterance);
       };
 
-      // Chrome等で発話が約15秒で止まる既知バグの対策（12秒以上同一チャンクで膠着時のみ微小トグル）
-      if (keepAliveTimerRef.current) clearInterval(keepAliveTimerRef.current);
-      keepAliveTimerRef.current = setInterval(() => {
-        if (!isTtsPlayingRef.current || !isDeviceSpeakingRef.current) {
-          if (keepAliveTimerRef.current) {
-            clearInterval(keepAliveTimerRef.current);
-            keepAliveTimerRef.current = null;
+      // キープアライブ（Androidでは無効化、Android以外では12秒以上膠着時のみpause/resume）
+      const isAndroid = /Android/i.test(navigator.userAgent);
+      if (!isAndroid) {
+        if (keepAliveTimerRef.current) clearInterval(keepAliveTimerRef.current);
+        keepAliveTimerRef.current = setInterval(() => {
+          if (!alive()) {
+            if (keepAliveTimerRef.current) {
+              clearInterval(keepAliveTimerRef.current);
+              keepAliveTimerRef.current = null;
+            }
+            return;
           }
-          return;
-        }
 
-        if (window.speechSynthesis.paused) {
-          window.speechSynthesis.resume();
-        } else if (window.speechSynthesis.speaking && Date.now() - lastActivityTime > 12000) {
-          window.speechSynthesis.pause();
-          window.speechSynthesis.resume();
-          lastActivityTime = Date.now();
-        }
-      }, 4000);
-
-      // 初回発話スタート（既存の発話が残っている場合はクリーンアップして即時開始）
-      if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
-        window.speechSynthesis.cancel();
+          if (window.speechSynthesis.paused) {
+            window.speechSynthesis.resume();
+          } else if (window.speechSynthesis.speaking && Date.now() - lastActivityTime > 12000) {
+            window.speechSynthesis.pause();
+            window.speechSynthesis.resume();
+            lastActivityTime = Date.now();
+          }
+        }, 4000);
       }
+
+      // cancel() 後の待機 (100ms)
       setTimeout(() => {
-        if (isTtsPlayingRef.current && isDeviceSpeakingRef.current) {
-          speakNextChunk();
-        }
-      }, 40);
+        if (!alive()) return;
+        speakNextChunk();
+      }, 100);
 
     } catch (err) {
-      isDeviceSpeakingRef.current = false;
-      activeUtteranceRef.current = null;
-      (window as any).__activeUtterance = null;
-      onError(err);
+      finish(err);
     }
   };
 
@@ -4740,6 +4858,7 @@ const renderMarkdownToElements = (contentStr: string) => {
   };
 
   const stopTts = () => {
+    sessionRef.current++;
     setIsTtsPlaying(false);
     isTtsPlayingRef.current = false;
     setIsTtsLoading(false);
