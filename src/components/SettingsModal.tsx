@@ -31,6 +31,7 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
   const [maxContentLength, setMaxContentLength] = useState("2500");
   const [noKeepAlive, setNoKeepAlive] = useState(false);
   const [showTtsDebugLog, setShowTtsDebugLog] = useState(false);
+  const [learningSpreadsheetUrl, setLearningSpreadsheetUrl] = useState("");
 
   useEffect(() => {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
@@ -53,6 +54,7 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
       setSelectedVoiceURI(localStorage.getItem("cn_selected_voice_uri") || "");
       setNoKeepAlive(localStorage.getItem("cn_debug_no_keepalive") === "1");
       setShowTtsDebugLog(localStorage.getItem("cn_show_tts_log") === "true");
+      setLearningSpreadsheetUrl(localStorage.getItem("cn_learning_spreadsheet_url") || "");
       let m = localStorage.getItem("cn_gemini_model") || "gemini-2.5-flash"; setModel(m);
       setTemp(localStorage.getItem("cn_gemini_temp") || "0.1");
       setTokens(localStorage.getItem("cn_gemini_tokens") || "1024");
@@ -76,6 +78,12 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
       localStorage.setItem("cn_gcp_tts_key", ttsApiKey.trim());
     } else {
       localStorage.removeItem("cn_gcp_tts_key");
+    }
+
+    if (learningSpreadsheetUrl.trim()) {
+      localStorage.setItem("cn_learning_spreadsheet_url", learningSpreadsheetUrl.trim());
+    } else {
+      localStorage.removeItem("cn_learning_spreadsheet_url");
     }
 
     localStorage.setItem("cn_tts_speed", ttsSpeed);
@@ -133,6 +141,20 @@ export default function SettingsModal({ isOpen, onClose, onPromptOpen, onSaveToa
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
           />
+        </div>
+
+        <div>
+          <label className="text-[11px] text-[var(--subtle)] font-bold block mb-1">学習用スプレッドシートURL</label>
+          <input
+            className="w-full font-mono text-xs p-2.5 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all"
+            type="url"
+            placeholder="https://docs.google.com/spreadsheets/d/..."
+            value={learningSpreadsheetUrl}
+            onChange={(e) => setLearningSpreadsheetUrl(e.target.value)}
+          />
+          <p className="text-[10px] text-[var(--subtle)] mt-1 leading-relaxed">
+            問題・解答・復習履歴を保存するスプレッドシートを指定してください。ノート用とは別のファイルを使用します。
+          </p>
         </div>
 
         <div>

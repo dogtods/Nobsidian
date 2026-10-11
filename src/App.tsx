@@ -92,6 +92,7 @@ import TimelineModal from "./components/TimelineModal";
 import ConfirmModal from "./components/ConfirmModal";
 import ExternalAiExportModal from "./components/ExternalAiExportModal";
 import SyncManagerModal from "./components/SyncManagerModal";
+import QuestionGenerationModal from "./components/QuestionGenerationModal";
 import { MermaidViewer } from "./components/MermaidViewer";
 
 const DEFAULT_API_URL = "";
@@ -540,6 +541,7 @@ export default function App() {
   const [externalPasteText, setExternalPasteText] = useState("");
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isSyncManagerOpen, setIsSyncManagerOpen] = useState(false);
+  const [isQuestionModalOpen, setIsQuestionModalOpen] = useState(false);
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
   const [externalExportTarget, setExternalExportTarget] = useState<{ type: 'single' } | { type: 'folder'; folderName: string } | null>(null);
   const [showSourceMemo, setShowSourceMemo] = useState(false);
@@ -1203,6 +1205,29 @@ export default function App() {
       }
     }
     
+    return await fetchGasPost(url, body);
+  };
+
+  // 学習専用API呼び出し関数 (ノート用URLやシート名と混同しない独立実装)
+  const learningApiPost = async (body: any) => {
+    const rawUrl = getApiUrl();
+    const url = sanitizeGasUrl(rawUrl);
+    if (!url || url.includes("YOUR_")) throw new Error("API URL is unconfigured.");
+    
+    // GAS URLの形式チェック
+    if (!url.startsWith("https://script.google.com/macros/s/") || !url.endsWith("/exec")) {
+      console.warn("GAS URL format may be invalid:", url);
+    }
+
+    // 学習用スプレッドシートURLを専用パラメータ learningSpreadsheetUrl として付与
+    const learningSpreadsheetUrl = localStorage.getItem("cn_learning_spreadsheet_url");
+    if (learningSpreadsheetUrl && learningSpreadsheetUrl.trim() !== "") {
+      if (!body.learningSpreadsheetUrl) {
+        body.learningSpreadsheetUrl = learningSpreadsheetUrl.trim();
+      }
+    }
+    // ノート用の cn_gas_sheet_name や cn_gas_target_ss_url は混同防止のため付与しない
+
     return await fetchGasPost(url, body);
   };
 
@@ -6159,6 +6184,13 @@ const renderMarkdownToElements = (contentStr: string) => {
               📥
             </button>
             <button
+              onClick={() => setIsQuestionModalOpen(true)}
+              className="p-2 px-2.5 bg-transparent border border-[var(--border2)] text-indigo-300 text-xs rounded-lg hover:bg-indigo-500/20 cursor-pointer transition-colors"
+              title="学習問題生成・クイズ復習"
+            >
+              🎓
+            </button>
+            <button
               onClick={() => setIsSettingsOpen(true)}
               className="p-2 px-3 bg-transparent border border-[var(--border2)] text-[var(--subtle)] text-xs rounded-lg hover:bg-[var(--border)] hover:text-white cursor-pointer transition-colors"
               title="AI / 全体設定"
@@ -6816,6 +6848,14 @@ const renderMarkdownToElements = (contentStr: string) => {
                     >
                       <Clipboard className="w-3 h-3 shrink-0" />
                       <span className="portrait:hidden">結果の適用</span>
+                    </button>
+                    <button
+                      onClick={() => setIsQuestionModalOpen(true)}
+                      className="p-1 px-2 portrait:px-1.5 text-indigo-300 hover:bg-indigo-500/20 font-semibold text-xs rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all border-l border-[#30363d]"
+                      title="ノートから学習問題を生成（外部AIモード / APIモード対応）"
+                    >
+                      <BookOpen className="w-3 h-3 shrink-0 text-indigo-400" />
+                      <span className="portrait:hidden">🎓 問題生成</span>
                     </button>
                   </div>
 
@@ -7736,6 +7776,14 @@ const renderMarkdownToElements = (contentStr: string) => {
                   📥
                 </button>
                 <button
+                  onClick={() => setIsQuestionModalOpen(true)}
+                  className="p-2 border border-indigo-500/40 bg-indigo-500/10 text-indigo-300 text-xs rounded-lg hover:bg-indigo-500/20 cursor-pointer flex items-center gap-1 font-semibold transition"
+                  title="学習問題生成・クイズ復習"
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">問題生成・復習</span>
+                </button>
+                <button
                   onClick={() => setIsSettingsOpen(true)}
                   className="p-2 border border-[#30363d] bg-[#161b22] text-[var(--subtle)] text-xs rounded-lg hover:bg-[#30363d] hover:text-white cursor-pointer"
                   title="AI / 全体設定"
@@ -8622,6 +8670,7 @@ const renderMarkdownToElements = (contentStr: string) => {
         }}
         onSaveToast={toast}
         apiPost={apiPost}
+        learningApiPost={learningApiPost}
         onNotesUpdateBatch={handleBatchUpgradeNotes}
         onSyncExternalSources={handleSyncExternalSources}
         onSyncFromServer={syncFromServer}
@@ -8651,6 +8700,19 @@ const renderMarkdownToElements = (contentStr: string) => {
         syncLabel={syncLabel}
         autoSync={autoSync}
         setAutoSync={handleAutoSyncChange}
+      />
+
+      <QuestionGenerationModal
+        isOpen={isQuestionModalOpen}
+        onClose={() => setIsQuestionModalOpen(false)}
+        notes={notes}
+        activeNote={activeNote}
+        learningApiPost={learningApiPost}
+        onSaveToast={toast}
+        onOpenSettings={() => {
+          setIsQuestionModalOpen(false);
+          setIsSettingsOpen(true);
+        }}
       />
 
       {/* Batch Folder Link progress modal */}

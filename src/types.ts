@@ -110,3 +110,74 @@ export interface TimelineItem {
   comment?: string; // What nature of date/event is this (e.g. "設立", "業務提携")
 }
 
+// ==== 学習用スプレッドシート & 問題生成用 型定義 ====
+export type QuestionType = "single_choice" | "multiple_choice" | "true_false" | "short_answer";
+
+export interface QuestionChoice {
+  id?: string;
+  order: number;
+  label: string; // "A", "B", "C", "D"
+  text: string;
+  isCorrect: boolean;
+  explanation?: string;
+}
+
+export interface QuestionEvidence {
+  id?: string;
+  quote: string; // 根拠となる元ノートの正確な引用
+  section?: string;
+  noteId?: string;
+  noteTitle?: string;
+}
+
+export interface LearningQuestion {
+  id: string;
+  noteId: string;
+  noteTitle: string;
+  type: QuestionType;
+  question: string;
+  correctAnswer: string;
+  explanation: string;
+  difficulty: "easy" | "medium" | "hard";
+  tags?: string[];
+  source: "ai_api" | "external_ai_prompt" | "manual";
+  status: "approved" | "draft" | "review";
+  choices?: QuestionChoice[];
+  evidence?: QuestionEvidence;
+  createdAt: number;
+  updatedAt: number;
+  // 承認UI用の選択状態
+  isApproved?: boolean;
+}
+
+export interface ReviewLog {
+  id: string;
+  questionId: string;
+  userAnswer: string;
+  isCorrect: boolean;
+  timeSpentSeconds: number;
+  rating: number; // 1: Again, 2: Hard, 3: Good, 4: Easy
+  memo?: string;
+  answeredAt: number;
+}
+
+export interface ReviewState {
+  questionId: string;
+  totalReviews: number;
+  correctCount: number;
+  consecutiveCorrect: number;
+  easinessFactor: number;
+  intervalDays: number;
+  lastReviewedAt: number;
+  nextReviewDate: string; // YYYY-MM-DD
+  masteryLevel: "new" | "learning" | "review" | "mastered";
+  updatedAt: number;
+}
+
+export interface QuestionGenerationConfig {
+  count: number;
+  type: QuestionType | "mix";
+  difficulty: "easy" | "medium" | "hard";
+  mode: "external_prompt" | "api";
+}
+

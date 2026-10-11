@@ -48,6 +48,7 @@ interface ImportModalProps {
   onCreateNoteExt: (title: string, content: string, folder: string, sourceUrl: string, timestamp?: number) => void;
   onSaveToast: (msg: string) => void;
   apiPost: (body: any) => Promise<any>;
+  learningApiPost?: (body: any) => Promise<any>;
   onNotesUpdateBatch: (newNotes: Note[], overwrite?: boolean) => void;
   onSyncExternalSources?: (options: { 
     raindrop: boolean; 
@@ -73,6 +74,7 @@ export default function ImportModal({
   onCreateNoteExt, 
   onSaveToast, 
   apiPost, 
+  learningApiPost,
   onNotesUpdateBatch,
   onSyncExternalSources,
   onSyncFromServer,
@@ -130,6 +132,8 @@ export default function ImportModal({
   const [extractSheetName, setExtractSheetName] = useState("未処理データ");
   const [targetSsUrl, setTargetSsUrl] = useState(() => localStorage.getItem("cn_target_ss_url") || "");
   const [gasSheetName, setGasSheetName] = useState(() => localStorage.getItem("cn_gas_sheet_name") || "Notes");
+  const [learningSpreadsheetUrl, setLearningSpreadsheetUrl] = useState(() => localStorage.getItem("cn_learning_spreadsheet_url") || "");
+  const [learningSpreadsheetSheetName, setLearningSpreadsheetSheetName] = useState(() => localStorage.getItem("cn_learning_spreadsheet_sheet_name") || "学習データ");
   const [showExtractHelp, setShowExtractHelp] = useState(false);
   const [pendingSheetItems, setPendingSheetItems] = useState<any[]>([]);
   const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
@@ -168,6 +172,8 @@ export default function ImportModal({
 
       setExtractSheetUrl(localStorage.getItem("cn_extract_sheet_url") || "");
       setExtractSheetName(localStorage.getItem("cn_extract_sheet_name") || storedExtSheet);
+      setLearningSpreadsheetUrl(localStorage.getItem("cn_learning_spreadsheet_url") || "");
+      setLearningSpreadsheetSheetName(localStorage.getItem("cn_learning_spreadsheet_sheet_name") || "学習データ");
 
       setSyncPersonaInput(getStoredPrompt("SYSTEM_PERSONA"));
       setSyncPromptInput(getStoredPrompt("SYNC_PROMPT"));
@@ -217,6 +223,18 @@ export default function ImportModal({
       localStorage.setItem("cn_external_sync_sheet_name", finalExtSheet);
     } else {
       localStorage.removeItem("cn_external_sync_sheet_name");
+    }
+
+    if (learningSpreadsheetUrl.trim()) {
+      localStorage.setItem("cn_learning_spreadsheet_url", learningSpreadsheetUrl.trim());
+    } else {
+      localStorage.removeItem("cn_learning_spreadsheet_url");
+    }
+
+    if (learningSpreadsheetSheetName.trim()) {
+      localStorage.setItem("cn_learning_spreadsheet_sheet_name", learningSpreadsheetSheetName.trim());
+    } else {
+      localStorage.removeItem("cn_learning_spreadsheet_sheet_name");
     }
   };
 
@@ -1651,6 +1669,101 @@ export default function ImportModal({
                         <span>{isProcessing ? processingText : `選択した ${selectedIndices.length} 件をアプリへ取り込む`}</span>
                       </button>
                     </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Visual Arrow */}
+            <div className="flex justify-center -my-2 relative z-10">
+              <div className="bg-[#0d1117] border border-[#30363d] p-1.5 rounded-full text-gray-400">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+              </div>
+            </div>
+
+            {/* Learning Spreadsheet Settings (学習用スプレッドシート設定) */}
+            <div className="bg-[#161b22] border border-indigo-500/30 rounded-xl p-4 flex flex-col gap-3 relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500/50"></div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-gray-200 flex items-center gap-1.5">
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-400" />
+                    学習用スプレッドシート設定 (問題・解答・復習履歴)
+                  </h4>
+                  <p className="text-[10px] text-gray-400">問題・解答・復習履歴を保存する専用のスプレッドシートURLとシート名を指定します（ノート用とは別ファイル）。</p>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] font-bold text-gray-300">学習用スプレッドシート URL (または ID)</label>
+                  <input
+                    type="text"
+                    className="w-full font-mono text-[11px] p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-indigo-500 transition-all"
+                    value={learningSpreadsheetUrl}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setLearningSpreadsheetUrl(val);
+                      if (val.trim()) {
+                        localStorage.setItem("cn_learning_spreadsheet_url", val.trim());
+                      } else {
+                        localStorage.removeItem("cn_learning_spreadsheet_url");
+                      }
+                    }}
+                    placeholder="https://docs.google.com/spreadsheets/d/..."
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] font-bold text-gray-300">学習用シート (タブ) 名</label>
+                  <input
+                    type="text"
+                    className="w-full font-mono text-[11px] p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-indigo-500 transition-all"
+                    value={learningSpreadsheetSheetName}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setLearningSpreadsheetSheetName(val);
+                      if (val.trim()) {
+                        localStorage.setItem("cn_learning_spreadsheet_sheet_name", val.trim());
+                      } else {
+                        localStorage.removeItem("cn_learning_spreadsheet_sheet_name");
+                      }
+                    }}
+                    placeholder="学習データ"
+                  />
+                  <span className="text-[9px] text-gray-500">※クイズ・問題生成・復習履歴データの保存先タブ名です</span>
+                </div>
+
+                {learningApiPost && (
+                  <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-[#30363d]/80">
+                    <span className="text-[10px] text-gray-400">
+                      5タブ (Questions, QuestionEvidence, QuestionChoices, ReviewLogs, ReviewState)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const url = localStorage.getItem("cn_learning_spreadsheet_url");
+                        if (!url || !url.trim()) {
+                          onSaveToast("学習用スプレッドシートURLを入力してください。");
+                          return;
+                        }
+                        try {
+                          onSaveToast("学習用スプレッドシートの5タブを初期化・検証中...");
+                          const res = await learningApiPost({ action: "initLearningSheets" });
+                          if (res && res.success) {
+                            onSaveToast("✓ 学習用スプレッドシートの5タブを正常に初期化・確認しました！");
+                          } else {
+                            throw new Error(res?.error || "初期化エラー");
+                          }
+                        } catch (e: any) {
+                          onSaveToast(`初期化失敗: ${e.message}`);
+                        }
+                      }}
+                      className="px-3 py-1.5 text-xs font-bold rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition cursor-pointer flex items-center gap-1 shadow-sm"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      <span>🚀 5タブ初期化・検証</span>
+                    </button>
                   </div>
                 )}
               </div>

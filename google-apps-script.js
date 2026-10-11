@@ -1230,6 +1230,479 @@ function getSheet(targetSheetName, targetSsUrl) {
   return sheet;
 }
 
+// ==== 学習用スプレッドシート 5タブ用ヘッダー定義 ====
+const LEARNING_HEADERS = {
+  Questions: [
+    "question_id", "note_id", "note_title", "question_type", "question",
+    "correct_answer", "explanation", "difficulty", "tags", "source", "status", "created_at", "updated_at"
+  ],
+  QuestionEvidence: [
+    "evidence_id", "question_id", "note_id", "note_title", "quote", "section", "created_at"
+  ],
+  QuestionChoices: [
+    "choice_id", "question_id", "choice_order", "choice_label", "choice_text", "is_correct", "explanation"
+  ],
+  ReviewLogs: [
+    "log_id", "question_id", "user_answer", "is_correct", "time_spent_seconds", "rating", "memo", "answered_at"
+  ],
+  ReviewState: [
+    "question_id", "total_reviews", "correct_count", "consecutive_correct", "easiness_factor", "interval_days", "last_reviewed_at", "next_review_date", "mastery_level", "updated_at"
+  ]
+};
+
+// 学習用スプレッドシートを開くヘルパー
+function openLearningSpreadsheet(learningSpreadsheetUrl) {
+  let ss = null;
+  if (learningSpreadsheetUrl && String(learningSpreadsheetUrl).trim() !== "") {
+    const raw = String(learningSpreadsheetUrl).trim();
+    try {
+      ss = SpreadsheetApp.openByUrl(raw);
+    } catch(e) {
+      const match = raw.match(/[a-zA-Z0-9-_]{25,}/);
+      if (match) {
+        ss = SpreadsheetApp.openById(match[0]);
+      } else {
+        throw new Error("指定された学習用スプレッドシートを開けません。URLまたはIDを確認してください: " + raw);
+      }
+    }
+  } else {
+    ss = SpreadsheetApp.getActiveSpreadsheet();
+  }
+  if (!ss) {
+    throw new Error("学習用スプレッドシートが見つかりません。URLが正しいか確認してください。");
+  }
+  return ss;
+}
+
+// 学習用シート取得/自動生成 (既存のgetSheetは流用せず独立)
+function getLearningSheet(tabName, learningSpreadsheetUrl) {
+  const ss = openLearningSpreadsheet(learningSpreadsheetUrl);
+  let sheet = ss.getSheetByName(tabName);
+  const headers = LEARNING_HEADERS[tabName] || [];
+
+  if (!sheet) {
+    sheet = ss.insertSheet(tabName);
+    if (headers.length > 0) {
+      sheet.appendRow(headers);
+      try {
+        const headerRange = sheet.getRange(1, 1, 1, headers.length);
+        headerRange.setBackground("#1f2937");
+        headerRange.setFontColor("#f9fafb");
+        headerRange.setFontWeight("bold");
+        sheet.setFrozenRows(1);
+      } catch(e) {}
+    }
+  } else {
+    // 存在するタブやデータは消さない
+    const lastCol = sheet.getLastColumn();
+    const lastRow = sheet.getLastRow();
+    if (lastCol === 0 || lastRow === 0) {
+      if (headers.length > 0) {
+        sheet.appendRow(headers);
+        try {
+          const headerRange = sheet.getRange(1, 1, 1, headers.length);
+          headerRange.setBackground("#1f2937");
+          headerRange.setFontColor("#f9fafb");
+          headerRange.setFontWeight("bold");
+          sheet.setFrozenRows(1);
+        } catch(e) {}
+      }
+    } else if (headers.length > 0 && lastCol < headers.length) {
+      for (let c = 1; c <= headers.length; c++) {
+        const headerCell = sheet.getRange(1, c);
+        if (headerCell.getValue() === "") {
+          headerCell.setValue(headers[c - 1]);
+        }
+      }
+    }
+  }
+  return sheet;
+}
+
+// 学習用5タブ初期化関数
+function initializeLearningSheets(learningSpreadsheetUrl) {
+  const targetTabs = ["Questions", "QuestionEvidence", "QuestionChoices", "ReviewLogs", "ReviewState"];
+  const initializedTabs = [];
+  for (let i = 0; i < targetTabs.length; i++) {
+    const tabName = targetTabs[i];
+    const sheet = getLearningSheet(tabName, learningSpreadsheetUrl);
+    initializedTabs.push({
+      tabName: tabName,
+      rowCount: sheet.getLastRow(),
+      colCount: sheet.getLastColumn()
+    });
+  }
+  return {
+    success: true,
+    message: "学習用スプレッドシート（5タブ）の初期化・検証が完了しました。",
+    tabs: initializedTabs
+  };
+}
+
+// 学習用問題取得
+function handleGetLearningQuestions(learningSpreadsheetUrl) {
+  const qSheet = getLearningSheet("Questions", learningSpreadsheetUrl);
+  const qLastRow = qSheet.getLastRow();
+  if (qLastRow <= 1) {
+    return { success: true, questions: [] };
+  }
+
+  const qHeaders = LEARNING_HEADERS.Questions;
+  const qValues = qSheet.getRange(2, 1, qLastRow - 1, Math.max(qHeaders.length, qSheet.getLastColumn())).getValues();
+
+  // 選択肢読み込み
+  const cSheet = getLearningSheet("QuestionChoices", learningSpreadsheetUrl);
+  const cLastRow = cSheet.getLastRow();
+  const choicesMap = {};
+  if (cLastRow > 1) {
+    const cHeaders = LEARNING_HEADERS.QuestionChoices;
+    const cValues = cSheet.getRange(2, 1, cLastRow - 1, Math.max(cHeaders.length, cSheet.getLastColumn())).getValues();
+    for (let i = 0; i < cValues.length; i++) {
+      const row = cValues[i];
+      const qId = String(row[1] || "").trim();
+      if (!qId) continue;
+      if (!choicesMap[qId]) choicesMap[qId] = [];
+      choicesMap[qId].push({
+        id: String(row[0] || ""),
+        order: Number(row[2]) || (choicesMap[qId].length + 1),
+        label: String(row[3] || ""),
+        text: String(row[4] || ""),
+        isCorrect: row[5] === true || String(row[5]).toLowerCase() === "true",
+        explanation: String(row[6] || "")
+      });
+    }
+  }
+
+  // 根拠引用読み込み
+  const eSheet = getLearningSheet("QuestionEvidence", learningSpreadsheetUrl);
+  const eLastRow = eSheet.getLastRow();
+  const evidenceMap = {};
+  if (eLastRow > 1) {
+    const eHeaders = LEARNING_HEADERS.QuestionEvidence;
+    const eValues = eSheet.getRange(2, 1, eLastRow - 1, Math.max(eHeaders.length, eSheet.getLastColumn())).getValues();
+    for (let i = 0; i < eValues.length; i++) {
+      const row = eValues[i];
+      const qId = String(row[1] || "").trim();
+      if (!qId) continue;
+      evidenceMap[qId] = {
+        id: String(row[0] || ""),
+        noteId: String(row[2] || ""),
+        noteTitle: String(row[3] || ""),
+        quote: String(row[4] || ""),
+        section: String(row[5] || "")
+      };
+    }
+  }
+
+  const questions = [];
+  for (let i = 0; i < qValues.length; i++) {
+    const row = qValues[i];
+    const qId = String(row[0] || "").trim();
+    if (!qId) continue;
+
+    let tagList = [];
+    const tagRaw = String(row[8] || "");
+    if (tagRaw.startsWith("[")) {
+      try { tagList = JSON.parse(tagRaw); } catch(e) { tagList = tagRaw.split(","); }
+    } else if (tagRaw) {
+      tagList = tagRaw.split(",").map(function(s) { return s.trim(); });
+    }
+
+    questions.push({
+      id: qId,
+      noteId: String(row[1] || ""),
+      noteTitle: String(row[2] || ""),
+      type: String(row[3] || "single_choice"),
+      question: String(row[4] || ""),
+      correctAnswer: String(row[5] || ""),
+      explanation: String(row[6] || ""),
+      difficulty: String(row[7] || "medium"),
+      tags: tagList,
+      source: String(row[9] || "external_ai_prompt"),
+      status: String(row[10] || "approved"),
+      createdAt: row[11] ? new Date(row[11]).getTime() : Date.now(),
+      updatedAt: row[12] ? new Date(row[12]).getTime() : Date.now(),
+      choices: choicesMap[qId] || [],
+      evidence: evidenceMap[qId] || undefined
+    });
+  }
+
+  return { success: true, questions: questions };
+}
+
+// 学習用問題保存
+function handleSaveLearningQuestions(questions, learningSpreadsheetUrl) {
+  if (!questions || !Array.isArray(questions)) {
+    throw new Error("questions は配列である必要があります。");
+  }
+
+  const qSheet = getLearningSheet("Questions", learningSpreadsheetUrl);
+  const eSheet = getLearningSheet("QuestionEvidence", learningSpreadsheetUrl);
+  const cSheet = getLearningSheet("QuestionChoices", learningSpreadsheetUrl);
+  const sSheet = getLearningSheet("ReviewState", learningSpreadsheetUrl);
+
+  const qLastRow = qSheet.getLastRow();
+  const existingQRowMap = {};
+  if (qLastRow > 1) {
+    const qIds = qSheet.getRange(2, 1, qLastRow - 1, 1).getValues();
+    for (let r = 0; r < qIds.length; r++) {
+      const idStr = String(qIds[r][0] || "").trim();
+      if (idStr) existingQRowMap[idStr] = r + 2;
+    }
+  }
+
+  const sLastRow = sSheet.getLastRow();
+  const existingSRowMap = {};
+  if (sLastRow > 1) {
+    const sIds = sSheet.getRange(2, 1, sLastRow - 1, 1).getValues();
+    for (let r = 0; r < sIds.length; r++) {
+      const idStr = String(sIds[r][0] || "").trim();
+      if (idStr) existingSRowMap[idStr] = r + 2;
+    }
+  }
+
+  let savedCount = 0;
+  const now = new Date();
+
+  for (let i = 0; i < questions.length; i++) {
+    const q = questions[i];
+    const qId = q.id || ("q_" + Date.now() + "_" + i + "_" + Math.floor(Math.random() * 1000));
+    const targetRowNum = existingQRowMap[qId];
+
+    const tagsVal = Array.isArray(q.tags) ? q.tags.join(", ") : (q.tags || "");
+    const qRowData = [
+      qId,
+      q.noteId || "",
+      q.noteTitle || "",
+      q.type || "single_choice",
+      q.question || "",
+      q.correctAnswer || "",
+      q.explanation || "",
+      q.difficulty || "medium",
+      tagsVal,
+      q.source || "external_ai_prompt",
+      q.status || "approved",
+      q.createdAt ? new Date(q.createdAt) : now,
+      now
+    ];
+
+    if (targetRowNum) {
+      qSheet.getRange(targetRowNum, 1, 1, qRowData.length).setValues([qRowData]);
+    } else {
+      qSheet.appendRow(qRowData);
+      existingQRowMap[qId] = qSheet.getLastRow();
+    }
+
+    // 根拠 (QuestionEvidence)
+    if (q.evidence && (q.evidence.quote || typeof q.evidence === "string")) {
+      const quoteText = typeof q.evidence === "string" ? q.evidence : (q.evidence.quote || "");
+      const sectionText = typeof q.evidence === "object" ? (q.evidence.section || "") : "";
+      const evId = (q.evidence && q.evidence.id) ? q.evidence.id : ("ev_" + Date.now() + "_" + i);
+      eSheet.appendRow([
+        evId,
+        qId,
+        q.noteId || "",
+        q.noteTitle || "",
+        quoteText,
+        sectionText,
+        now
+      ]);
+    }
+
+    // 選択肢 (QuestionChoices)
+    if (Array.isArray(q.choices) && q.choices.length > 0) {
+      for (let c = 0; c < q.choices.length; c++) {
+        const choice = q.choices[c];
+        const chId = choice.id || ("ch_" + Date.now() + "_" + i + "_" + c);
+        cSheet.appendRow([
+          chId,
+          qId,
+          choice.order !== undefined ? choice.order : (c + 1),
+          choice.label || String.fromCharCode(65 + c),
+          choice.text || "",
+          choice.isCorrect ? true : false,
+          choice.explanation || ""
+        ]);
+      }
+    }
+
+    // ReviewState 初期化
+    if (!existingSRowMap[qId]) {
+      const nextDateStr = new Date(Date.now() + 86400000).toISOString().split("T")[0];
+      sSheet.appendRow([
+        qId,
+        0, // total_reviews
+        0, // correct_count
+        0, // consecutive_correct
+        2.5, // easiness_factor
+        1, // interval_days
+        "", // last_reviewed_at
+        nextDateStr, // next_review_date
+        "new", // mastery_level
+        now // updated_at
+      ]);
+      existingSRowMap[qId] = sSheet.getLastRow();
+    }
+
+    savedCount++;
+  }
+
+  SpreadsheetApp.flush();
+  return {
+    success: true,
+    count: savedCount,
+    message: `${savedCount}件の問題を学習用スプレッドシートに保存しました。`
+  };
+}
+
+// 復習ログ保存 & ReviewState 更新
+function handleSaveReviewLog(logData, learningSpreadsheetUrl) {
+  if (!logData || !logData.questionId) {
+    throw new Error("logData.questionId は必須です。");
+  }
+
+  const logSheet = getLearningSheet("ReviewLogs", learningSpreadsheetUrl);
+  const stateSheet = getLearningSheet("ReviewState", learningSpreadsheetUrl);
+  const now = new Date();
+
+  const logId = logData.id || ("log_" + Date.now() + "_" + Math.floor(Math.random() * 1000));
+  const isCorrect = logData.isCorrect === true || String(logData.isCorrect).toLowerCase() === "true";
+
+  logSheet.appendRow([
+    logId,
+    logData.questionId,
+    logData.userAnswer || "",
+    isCorrect,
+    Number(logData.timeSpentSeconds) || 0,
+    Number(logData.rating) || (isCorrect ? 3 : 1),
+    logData.memo || "",
+    now
+  ]);
+
+  const sLastRow = stateSheet.getLastRow();
+  let targetRow = -1;
+  let currentState = {
+    totalReviews: 0,
+    correctCount: 0,
+    consecutiveCorrect: 0,
+    easinessFactor: 2.5,
+    intervalDays: 1,
+    masteryLevel: "learning"
+  };
+
+  if (sLastRow > 1) {
+    const sIds = stateSheet.getRange(2, 1, sLastRow - 1, 1).getValues();
+    for (let r = 0; r < sIds.length; r++) {
+      if (String(sIds[r][0] || "").trim() === String(logData.questionId).trim()) {
+        targetRow = r + 2;
+        const rowVals = stateSheet.getRange(targetRow, 1, 1, 10).getValues()[0];
+        currentState.totalReviews = Number(rowVals[1]) || 0;
+        currentState.correctCount = Number(rowVals[2]) || 0;
+        currentState.consecutiveCorrect = Number(rowVals[3]) || 0;
+        currentState.easinessFactor = Number(rowVals[4]) || 2.5;
+        currentState.intervalDays = Number(rowVals[5]) || 1;
+        currentState.masteryLevel = String(rowVals[8]) || "learning";
+        break;
+      }
+    }
+  }
+
+  const newTotal = currentState.totalReviews + 1;
+  const newCorrectCount = currentState.correctCount + (isCorrect ? 1 : 0);
+  const newConsecutive = isCorrect ? (currentState.consecutiveCorrect + 1) : 0;
+
+  let newInterval = 1;
+  let newEf = currentState.easinessFactor;
+  if (isCorrect) {
+    if (newConsecutive === 1) {
+      newInterval = 1;
+    } else if (newConsecutive === 2) {
+      newInterval = 3;
+    } else {
+      newInterval = Math.round(currentState.intervalDays * newEf);
+      if (newInterval < 4) newInterval = 4;
+    }
+    const rating = Number(logData.rating) || 3;
+    newEf = Math.max(1.3, newEf + (0.1 - (4 - rating) * (0.08 + (4 - rating) * 0.02)));
+  } else {
+    newInterval = 1;
+    newEf = Math.max(1.3, newEf - 0.2);
+  }
+
+  let newMastery = "learning";
+  if (newConsecutive >= 4 || newInterval >= 21) {
+    newMastery = "mastered";
+  } else if (newConsecutive >= 2) {
+    newMastery = "review";
+  }
+
+  const nextDueDate = new Date(now.getTime() + newInterval * 86400000).toISOString().split("T")[0];
+
+  const updatedStateRow = [
+    logData.questionId,
+    newTotal,
+    newCorrectCount,
+    newConsecutive,
+    Math.round(newEf * 100) / 100,
+    newInterval,
+    now,
+    nextDueDate,
+    newMastery,
+    now
+  ];
+
+  if (targetRow > 1) {
+    stateSheet.getRange(targetRow, 1, 1, 10).setValues([updatedStateRow]);
+  } else {
+    stateSheet.appendRow(updatedStateRow);
+  }
+
+  SpreadsheetApp.flush();
+  return {
+    success: true,
+    intervalDays: newInterval,
+    nextReviewDate: nextDueDate,
+    masteryLevel: newMastery
+  };
+}
+
+// 復習用データ一括取得
+function handleGetLearningReviewData(learningSpreadsheetUrl) {
+  const qResult = handleGetLearningQuestions(learningSpreadsheetUrl);
+  const questions = qResult.questions || [];
+
+  const stateSheet = getLearningSheet("ReviewState", learningSpreadsheetUrl);
+  const sLastRow = stateSheet.getLastRow();
+  const stateMap = {};
+
+  if (sLastRow > 1) {
+    const sValues = stateSheet.getRange(2, 1, sLastRow - 1, 10).getValues();
+    for (let i = 0; i < sValues.length; i++) {
+      const row = sValues[i];
+      const qId = String(row[0] || "").trim();
+      if (!qId) continue;
+      stateMap[qId] = {
+        questionId: qId,
+        totalReviews: Number(row[1]) || 0,
+        correctCount: Number(row[2]) || 0,
+        consecutiveCorrect: Number(row[3]) || 0,
+        easinessFactor: Number(row[4]) || 2.5,
+        intervalDays: Number(row[5]) || 1,
+        lastReviewedAt: row[6] ? new Date(row[6]).getTime() : 0,
+        nextReviewDate: String(row[7] || ""),
+        masteryLevel: String(row[8] || "new"),
+        updatedAt: row[9] ? new Date(row[9]).getTime() : 0
+      };
+    }
+  }
+
+  return {
+    success: true,
+    questions: questions,
+    reviewStates: stateMap
+  };
+}
+
 // ==== 統合リクエスト処理関数 ====
 function processApiRequest(e) {
   if (!e) {
@@ -1261,6 +1734,7 @@ function processApiRequest(e) {
   const action = postData.action || (e.parameter ? e.parameter.action : "");
   const targetSheet = postData.sheetName || (e.parameter ? e.parameter.sheetName : "");
   const targetSsUrl = postData.targetSsUrl || (e.parameter ? e.parameter.targetSsUrl : "");
+  const learningSsUrl = postData.learningSpreadsheetUrl || (e.parameter ? e.parameter.learningSpreadsheetUrl : "");
 
   if (!action) {
     return createJsonResponse({
@@ -1282,6 +1756,18 @@ function processApiRequest(e) {
     } else if (action === "saveAll") {
       const notes = typeof postData.notes === "string" ? JSON.parse(postData.notes) : postData.notes;
       result = saveAll(notes, targetSheet, targetSsUrl);
+    } else if (action === "initLearningSheets") {
+      result = initializeLearningSheets(learningSsUrl);
+    } else if (action === "getLearningQuestions") {
+      result = handleGetLearningQuestions(learningSsUrl);
+    } else if (action === "saveLearningQuestions") {
+      const questions = typeof postData.questions === "string" ? JSON.parse(postData.questions) : postData.questions;
+      result = handleSaveLearningQuestions(questions, learningSsUrl);
+    } else if (action === "getLearningReviewData") {
+      result = handleGetLearningReviewData(learningSsUrl);
+    } else if (action === "saveReviewLog") {
+      const logData = typeof postData.logData === "string" ? JSON.parse(postData.logData) : postData.logData;
+      result = handleSaveReviewLog(logData, learningSsUrl);
     } else if (action === "syncExternalSources" || action === "syncAllExternalSources") {
       const options = postData.options || { raindrop: true, drive: true };
       result = syncExternalSources(options, targetSheet, targetSsUrl);
