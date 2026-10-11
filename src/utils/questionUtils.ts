@@ -56,17 +56,18 @@ export function buildQuestionPrompt(note: Note, config: QuestionGenerationConfig
 
 5. 【出力形式（最重要・厳格なJSON出力）】
    以下のJSONスキーマに従った「JSON配列 [ ... ] のみ」を出力してください。
-   ※前置き（例: 「承知しました」「以下が問題です」など）や後書き、挨拶文は一切含めないでください。
+   ※前置きや挨拶文、マークダウンのコードブロック以外の余計なテキストは含めないでください。
    ※必ず先頭文字を '[' 、末尾文字を ']' にしてください。
+   ※JSONの中にコメント（ // 等）は絶対に含めないでください（エラーの原因になります）。
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-■ 期待するJSONスキーマ
+■ 期待するJSONスキーマ例
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [
   {
-    "type": "single_choice", // "single_choice" | "multiple_choice" | "true_false" | "short_answer"
+    "type": "single_choice",
     "question": "問題文をここに具体的に記述してください。",
-    "choices": [ // 選択式または○×式の場合に記述。短文記述式の場合は空配列 []
+    "choices": [
       {
         "label": "A",
         "text": "選択肢Aのテキスト",
@@ -94,7 +95,7 @@ export function buildQuestionPrompt(note: Note, config: QuestionGenerationConfig
     ],
     "correctAnswer": "正解のテキスト（選択肢テキストまたは正解記号、○/×、模範解答）",
     "explanation": "なぜそれが正解なのか、根拠に基づく詳細で丁寧な解説。",
-    "difficulty": "${difficulty}", // "easy" | "medium" | "hard"
+    "difficulty": "${difficulty}",
     "tags": ["関連キーワード1", "関連キーワード2"],
     "evidence": {
       "quote": "問題および正解の根拠となった提供ノート本文内の文章をそのまま抜粋引用してください。",
