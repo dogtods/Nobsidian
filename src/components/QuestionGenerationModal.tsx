@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Sparkles,
   Copy,
@@ -24,19 +24,24 @@ import {
   RefreshCw,
   Loader2,
   ListChecks,
-  Quote
+  Quote,
+  CheckCheck,
+  Award,
+  Undo2
 } from "lucide-react";
 import {
   Note,
   LearningQuestion,
   QuestionGenerationConfig,
   QuestionType,
-  QuestionChoice
+  QuestionChoice,
+  ReviewState
 } from "../types";
 import {
   buildQuestionPrompt,
   validateQuestionJson,
-  generateQuestionsViaGemini
+  generateQuestionsViaGemini,
+  calculateSM2Review
 } from "../utils/questionUtils";
 
 interface QuestionGenerationModalProps {
@@ -77,8 +82,15 @@ export default function QuestionGenerationModal({
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [isValidating, setIsValidating] = useState<boolean>(false);
 
-  // 承認待ち問題リスト (APIモード/外部AIモード共通)
-  const [candidateQuestions, setCandidateQuestions] = useState<LearningQuestion[]>([]);
+  // 承認待ち問題リスト (APIモード/外部AIモード共通) - ローカル一時記憶対応
+  const [candidateQuestions, setCandidateQuestions] = useState<LearningQuestion[]>(() => {
+    try {
+      const cached = localStorage.getItem("cn_learning_cached_candidate_questions");
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
 
   // 学習用スプレッドシートへの保存状態
@@ -88,13 +100,75 @@ export default function QuestionGenerationModal({
   // API生成ローディング状態
   const [isGeneratingApi, setIsGeneratingApi] = useState<boolean>(false);
 
-  // 保存済み問題一覧 & クイズ状態
-  const [savedQuestions, setSavedQuestions] = useState<LearningQuestion[]>([]);
+  // 保存済み問題一覧 & クイズ状態 - ローカル一時記憶（キャッシュ）による爆速動作
+  const [savedQuestions, setSavedQuestions] = useState<LearningQuestion[]>(() => {
+    try {
+      const cached = localStorage.getItem("cn_learning_cached_questions");
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [reviewStates, setReviewStates] = useState<Record<string, ReviewState>>(() => {
+    try {
+      const cached = localStorage.getItem("cn_learning_cached_review_states");
+      return cached ? JSON.parse(cached) : {};
+    } catch {
+      return {};
+    }
+  });
+  const [quizFilter, setQuizFilter] = useState<"active" | "all" | "mastered">("active");
   const [isLoadingSaved, setIsLoadingSaved] = useState<boolean>(false);
+  const [isSyncingBackground, setIsSyncingBackground] = useState<boolean>(false);
+  const [lastSyncedTime, setLastSyncedTime] = useState<string>(() => localStorage.getItem("cn_learning_last_synced_at") || "");
   const [currentQuizIndex, setCurrentQuizIndex] = useState<number>(0);
   const [selectedQuizChoice, setSelectedQuizChoice] = useState<string | null>(null);
   const [isQuizAnswerRevealed, setIsQuizAnswerRevealed] = useState<boolean>(false);
-  const [isSubmittingReview, setIsSubmittingReview] = useState<boolean>(false);
+
+  // ローカルキャッシュの永続化 (変更時に即時一時記憶)
+  useEffect(() => {
+    try {
+      localStorage.setItem("cn_learning_cached_candidate_questions", JSON.stringify(candidateQuestions));
+    } catch (e) {
+      console.warn("Failed to cache candidateQuestions:", e);
+    }
+  }, [candidateQuestions]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("cn_learning_cached_questions", JSON.stringify(savedQuestions));
+    } catch (e) {
+      console.warn("Failed to cache savedQuestions:", e);
+    }
+  }, [savedQuestions]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("cn_learning_cached_review_states", JSON.stringify(reviewStates));
+    } catch (e) {
+      console.warn("Failed to cache reviewStates:", e);
+    }
+  }, [reviewStates]);
+
+  // 習得済み・未習得の集計とフィルタ
+  const masteredCount = useMemo(() => {
+    return savedQuestions.filter(q => q.status === "mastered" || reviewStates[q.id]?.masteryLevel === "mastered").length;
+  }, [savedQuestions, reviewStates]);
+
+  const activeCount = useMemo(() => {
+    return savedQuestions.filter(q => q.status !== "mastered" && reviewStates[q.id]?.masteryLevel !== "mastered").length;
+  }, [savedQuestions, reviewStates]);
+
+  const filteredQuizQuestions = useMemo(() => {
+    if (quizFilter === "mastered") {
+      return savedQuestions.filter(q => q.status === "mastered" || reviewStates[q.id]?.masteryLevel === "mastered");
+    }
+    if (quizFilter === "all") {
+      return savedQuestions;
+    }
+    // "active": 通常復習対象（未習得）のみ
+    return savedQuestions.filter(q => q.status !== "mastered" && reviewStates[q.id]?.masteryLevel !== "mastered");
+  }, [savedQuestions, reviewStates, quizFilter]);
 
   // 学習用スプレッドシートURL設定状態
   const [learningSsUrl, setLearningSsUrl] = useState<string>(() => localStorage.getItem("cn_learning_spreadsheet_url") || "");
@@ -255,6 +329,16 @@ export default function QuestionGenerationModal({
     setIsSavingToSheet(true);
     setSaveStatusMessage(null);
 
+    // 1. 【即時一時記憶 (0ms)】ローカル保存済みリストへ直ちに追加（クイズタブで即演習可能に）
+    setSavedQuestions(prev => {
+      const existingIds = new Set(prev.map(q => q.id));
+      const newItems = approved.filter(q => !existingIds.has(q.id));
+      return [...prev, ...newItems];
+    });
+    // 候補リストから承認済みを除去
+    const approvedIds = new Set(approved.map(q => q.id));
+    setCandidateQuestions(prev => prev.filter(q => !approvedIds.has(q.id)));
+
     try {
       const res = await learningApiPost({
         action: "saveLearningQuestions",
@@ -262,11 +346,11 @@ export default function QuestionGenerationModal({
       });
 
       if (res && res.success) {
-        onSaveToast(`🎉 ${approved.length}件の問題を学習用スプレッドシートに保存しました！`);
-        // 保存済みを候補から除去
-        const approvedIds = new Set(approved.map(q => q.id));
-        setCandidateQuestions(prev => prev.filter(q => !approvedIds.has(q.id)));
-        setSaveStatusMessage(`${approved.length}問を保存完了しました。`);
+        onSaveToast(`🎉 ${approved.length}件の問題を保存しました！（アプリに一時記憶され、クイズですぐ使えます）`);
+        setSaveStatusMessage(`${approved.length}問をスプレッドシートに保存完了しました。`);
+        const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        setLastSyncedTime(timeStr);
+        localStorage.setItem("cn_learning_last_synced_at", timeStr);
       } else {
         throw new Error(res?.error || "保存処理でエラーが発生しました。");
       }
@@ -308,76 +392,192 @@ export default function QuestionGenerationModal({
   };
 
   // 保存済み問題の読み込み (クイズ・復習用)
-  const handleFetchSavedQuestions = async () => {
-    setIsLoadingSaved(true);
+  // isSilent: true の場合はバックグラウンドで静かに取得し、ローカルキャッシュを更新する
+  const handleFetchSavedQuestions = async (isSilent = false) => {
+    if (!isSilent) setIsLoadingSaved(true);
+    else setIsSyncingBackground(true);
+
     try {
-      const res = await learningApiPost({
-        action: "getLearningQuestions"
+      let res = await learningApiPost({
+        action: "getLearningReviewData"
       });
+      // Fallback
+      if (!res || !res.success || !Array.isArray(res.questions)) {
+        res = await learningApiPost({
+          action: "getLearningQuestions"
+        });
+      }
       if (res && res.success && Array.isArray(res.questions)) {
         setSavedQuestions(res.questions);
-        setCurrentQuizIndex(0);
-        setSelectedQuizChoice(null);
-        setIsQuizAnswerRevealed(false);
-        if (res.questions.length === 0) {
-          onSaveToast("保存された問題はまだありません。先に問題を生成して保存してください。");
-        } else {
-          onSaveToast(`${res.questions.length}件の保存済み問題を読み込みました ✦`);
+        if (res.reviewStates && typeof res.reviewStates === "object") {
+          setReviewStates(res.reviewStates);
+        }
+        const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        setLastSyncedTime(timeStr);
+        localStorage.setItem("cn_learning_last_synced_at", timeStr);
+
+        if (!isSilent) {
+          if (res.questions.length === 0) {
+            onSaveToast("保存された問題はまだありません。先に問題を生成して保存してください。");
+          } else {
+            onSaveToast(`${res.questions.length}件の最新問題をスプレッドシートから読み込みました ✦`);
+          }
         }
       } else {
         throw new Error(res?.error || "問題の取得に失敗しました。");
       }
     } catch (err: any) {
-      onSaveToast(`取得エラー: ${err.message || String(err)}`);
+      if (!isSilent) {
+        onSaveToast(`取得エラー: ${err.message || String(err)}`);
+      } else {
+        console.warn("Background fetch failed:", err);
+      }
     } finally {
-      setIsLoadingSaved(false);
+      if (!isSilent) setIsLoadingSaved(false);
+      else setIsSyncingBackground(false);
     }
   };
 
-  // クイズの解答判定とレビュー記録
-  const handleSubmitQuizReview = async (rating: number) => {
-    if (savedQuestions.length === 0) return;
-    const currentQ = savedQuestions[currentQuizIndex];
+  // 個別問題の習得済み（出題停止）/ 出題対象の切り替え (即時反映0ms + バックグラウンド同期)
+  const handleToggleMastery = (questionId: string, currentIsMastered: boolean) => {
+    const newStatus = currentIsMastered ? "approved" : "mastered";
+
+    // 1. 【即時実行 (0ms)】ローカル状態の即時更新
+    setSavedQuestions(prev => prev.map(q => q.id === questionId ? { ...q, status: newStatus } : q));
+    setReviewStates(prev => ({
+      ...prev,
+      [questionId]: {
+        ...(prev[questionId] || {
+          questionId: questionId,
+          totalReviews: 0,
+          correctCount: 0,
+          consecutiveCorrect: 0,
+          easinessFactor: 2.5,
+          intervalDays: 1,
+          lastReviewedAt: Date.now(),
+          nextReviewDate: "",
+          updatedAt: Date.now()
+        }),
+        masteryLevel: newStatus === "mastered" ? "mastered" : "learning",
+        intervalDays: newStatus === "mastered" ? 3650 : 1
+      }
+    }));
+
+    if (newStatus === "mastered") {
+      onSaveToast("習得済み（出題停止）に設定しました。次回の通常復習から除外されます ✦");
+      if (quizFilter === "active" && currentQuizIndex >= filteredQuizQuestions.length - 1) {
+        setCurrentQuizIndex(0);
+      }
+    } else {
+      onSaveToast("出題対象に復元しました（次回復習から出題されます）✦");
+    }
+    setSelectedQuizChoice(null);
+    setIsQuizAnswerRevealed(false);
+
+    // 2. 【非同期バックグラウンド同期】裏でスプレッドシートを更新
+    setIsSyncingBackground(true);
+    learningApiPost({
+      action: "updateQuestionStatus",
+      questionId: questionId,
+      status: newStatus
+    }).then(() => {
+      setIsSyncingBackground(false);
+      const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      setLastSyncedTime(timeStr);
+      localStorage.setItem("cn_learning_last_synced_at", timeStr);
+    }).catch(err => {
+      console.warn("バックグラウンド更新失敗:", err);
+      setIsSyncingBackground(false);
+    });
+  };
+
+  // クイズの解答判定とレビュー記録 (即時UI更新0ms + バックグラウンド非同期同期)
+  const handleSubmitQuizReview = (rating: number) => {
+    if (filteredQuizQuestions.length === 0) return;
+    const currentQ = filteredQuizQuestions[currentQuizIndex];
     if (!currentQ) return;
 
-    setIsSubmittingReview(true);
-    try {
-      let isCorrect = false;
-      if (currentQ.type === "single_choice" || currentQ.type === "true_false" || currentQ.type === "multiple_choice") {
-        const correctChoice = currentQ.choices?.find(c => c.isCorrect);
-        isCorrect = selectedQuizChoice === correctChoice?.label || selectedQuizChoice === correctChoice?.text || selectedQuizChoice === currentQ.correctAnswer;
-      } else {
-        // 記述式は自己採点 (rating >= 3 で正解扱い)
-        isCorrect = rating >= 3;
+    const isMastered = rating === 5;
+    let isCorrect = false;
+    if (isMastered) {
+      isCorrect = true;
+    } else if (currentQ.type === "single_choice" || currentQ.type === "true_false" || currentQ.type === "multiple_choice") {
+      const correctChoice = currentQ.choices?.find(c => c.isCorrect);
+      isCorrect = selectedQuizChoice === correctChoice?.label || selectedQuizChoice === correctChoice?.text || selectedQuizChoice === currentQ.correctAnswer;
+    } else {
+      // 記述式は自己採点 (rating >= 3 で正解扱い)
+      isCorrect = rating >= 3;
+    }
+
+    // 1. 【即時実行 (0ms)】クライアント側でSM-2アルゴリズムを計算
+    const nextState = calculateSM2Review(
+      reviewStates[currentQ.id],
+      rating,
+      isMastered,
+      isCorrect
+    );
+
+    // ローカル状態を即座に更新
+    setReviewStates(prev => ({
+      ...prev,
+      [currentQ.id]: {
+        questionId: currentQ.id,
+        totalReviews: nextState.totalReviews,
+        correctCount: nextState.correctCount,
+        consecutiveCorrect: nextState.consecutiveCorrect,
+        easinessFactor: nextState.easinessFactor,
+        intervalDays: nextState.intervalDays,
+        lastReviewedAt: Date.now(),
+        nextReviewDate: nextState.nextReviewDate,
+        masteryLevel: nextState.masteryLevel,
+        updatedAt: Date.now()
       }
+    }));
 
-      await learningApiPost({
-        action: "saveReviewLog",
-        logData: {
-          questionId: currentQ.id,
-          userAnswer: selectedQuizChoice || "",
-          isCorrect: isCorrect,
-          rating: rating,
-          timeSpentSeconds: 10
-        }
-      });
+    if (isMastered) {
+      setSavedQuestions(prev => prev.map(q => q.id === currentQ.id ? { ...q, status: "mastered" } : q));
+      onSaveToast(`「${currentQ.question.slice(0, 16)}...」を習得済み（出題停止）に設定しました ✦`);
+    } else {
+      onSaveToast(`自己評価を記録しました（次回出題: ${nextState.intervalDays}日後）✦`);
+    }
 
-      onSaveToast("復習ログをスプレッドシートに記録しました ✦");
-
-      // 次の問題へ進む
-      if (currentQuizIndex < savedQuestions.length - 1) {
+    // 2. 【即時画面遷移 (0ms)】待ち時間ゼロで次の問題へ切り替え
+    if (quizFilter === "active" && isMastered) {
+      if (currentQuizIndex >= filteredQuizQuestions.length - 1) {
+        setCurrentQuizIndex(0);
+      }
+    } else {
+      if (currentQuizIndex < filteredQuizQuestions.length - 1) {
         setCurrentQuizIndex(prev => prev + 1);
-        setSelectedQuizChoice(null);
-        setIsQuizAnswerRevealed(false);
       } else {
         onSaveToast("すべての問題の復習が完了しました！お疲れ様でした。");
-        setIsQuizAnswerRevealed(false);
       }
-    } catch (err: any) {
-      onSaveToast(`ログ保存失敗: ${err.message || String(err)}`);
-    } finally {
-      setIsSubmittingReview(false);
     }
+    setSelectedQuizChoice(null);
+    setIsQuizAnswerRevealed(false);
+
+    // 3. 【非同期バックグラウンド同期】SpreadSheetへ裏でログ保存（操作を一切止めない）
+    setIsSyncingBackground(true);
+    learningApiPost({
+      action: "saveReviewLog",
+      logData: {
+        questionId: currentQ.id,
+        userAnswer: selectedQuizChoice || "",
+        isCorrect: isCorrect,
+        rating: rating,
+        isMastered: isMastered,
+        memo: isMastered ? "習得済み・出題停止" : undefined,
+        timeSpentSeconds: 10
+      }
+    }).then(() => {
+      setIsSyncingBackground(false);
+      const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      setLastSyncedTime(timeStr);
+      localStorage.setItem("cn_learning_last_synced_at", timeStr);
+    }).catch(err => {
+      console.warn("バックグラウンド復習ログ同期エラー:", err);
+      setIsSyncingBackground(false);
+    });
   };
 
   const approvedCount = candidateQuestions.filter(q => q.isApproved !== false).length;
@@ -391,9 +591,9 @@ export default function QuestionGenerationModal({
 
       <div className="bg-[#161b22] border border-[#30363d] rounded-2xl w-[860px] max-w-full shadow-2xl relative z-[351] flex flex-col max-h-[92vh] overflow-hidden text-gray-200">
         {/* Header */}
-        <div className="px-5 py-4 border-b border-[#30363d] flex items-center justify-between bg-[#1c2128]">
+        <div className="shrink-0 px-5 py-4 border-b border-[#30363d] flex items-center justify-between bg-[#1c2128]">
           <div className="flex items-center gap-2.5">
-            <span className="p-2 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+            <span className="p-2 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 shrink-0">
               <BookOpen className="w-5 h-5" />
             </span>
             <div>
@@ -411,78 +611,93 @@ export default function QuestionGenerationModal({
           <button
             onClick={onClose}
             disabled={isGeneratingApi || isSavingToSheet}
-            className="text-gray-400 hover:text-gray-100 p-1.5 rounded-lg hover:bg-[#30363d] transition-colors cursor-pointer text-sm"
+            className="text-gray-400 hover:text-gray-100 p-1.5 rounded-lg hover:bg-[#30363d] transition-colors cursor-pointer text-sm shrink-0"
+            title="閉じる"
           >
             ✕
           </button>
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-[#30363d] bg-[#12161c] px-4 gap-1 overflow-x-auto">
-          <button
-            type="button"
-            onClick={() => setActiveTab("generate")}
-            className={`px-3 py-2.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === "generate"
-                ? "border-indigo-500 text-indigo-300 bg-indigo-500/5"
-                : "border-transparent text-gray-400 hover:text-gray-200"
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-            <span>1. 問題生成</span>
-          </button>
+        <div className="shrink-0 border-b border-[#30363d] bg-[#12161c] px-4 py-2.5">
+          <div className="flex items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden py-0.5">
+            <button
+              type="button"
+              onClick={() => setActiveTab("generate")}
+              className={`min-h-[38px] px-3.5 py-2 text-xs font-bold rounded-xl flex items-center gap-1.5 shrink-0 transition-all cursor-pointer whitespace-nowrap active:scale-[0.98] ${
+                activeTab === "generate"
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-950/40 border border-indigo-400/50"
+                  : "bg-[#161b22] text-gray-300 hover:text-white hover:bg-[#21262d] border border-[#30363d]"
+              }`}
+              title="ノートの内容から学習問題を生成"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-indigo-300" />
+              <span>1. 問題生成</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab("approval")}
-            className={`px-3 py-2.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === "approval"
-                ? "border-emerald-500 text-emerald-300 bg-emerald-500/5"
-                : "border-transparent text-gray-400 hover:text-gray-200"
-            }`}
-          >
-            <ListChecks className="w-3.5 h-3.5 text-emerald-400" />
-            <span>2. 承認・編集フロー</span>
-            {candidateQuestions.length > 0 && (
-              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/40">
-                {candidateQuestions.length}
-              </span>
-            )}
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("approval")}
+              className={`min-h-[38px] px-3.5 py-2 text-xs font-bold rounded-xl flex items-center gap-1.5 shrink-0 transition-all cursor-pointer whitespace-nowrap active:scale-[0.98] ${
+                activeTab === "approval"
+                  ? "bg-emerald-600 text-white shadow-md shadow-emerald-950/40 border border-emerald-400/50"
+                  : "bg-[#161b22] text-gray-300 hover:text-white hover:bg-[#21262d] border border-[#30363d]"
+              }`}
+              title="生成・取り込んだ問題の確認・編集・承認フロー"
+            >
+              <ListChecks className="w-3.5 h-3.5 text-emerald-300" />
+              <span>2. 承認・編集</span>
+              {candidateQuestions.length > 0 && (
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-extrabold ${
+                  activeTab === "approval"
+                    ? "bg-black/30 text-emerald-100 border border-white/20"
+                    : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                }`}>
+                  {candidateQuestions.length}
+                </span>
+              )}
+            </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab("quiz");
-              if (savedQuestions.length === 0) handleFetchSavedQuestions();
-            }}
-            className={`px-3 py-2.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === "quiz"
-                ? "border-sky-500 text-sky-300 bg-sky-500/5"
-                : "border-transparent text-gray-400 hover:text-gray-200"
-            }`}
-          >
-            <Zap className="w-3.5 h-3.5 text-sky-400" />
-            <span>3. クイズ・復習</span>
-            {savedQuestions.length > 0 && (
-              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-sky-500/20 text-sky-300 font-bold border border-sky-500/40">
-                {savedQuestions.length}
-              </span>
-            )}
-          </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab("quiz");
+                if (savedQuestions.length === 0) handleFetchSavedQuestions();
+              }}
+              className={`min-h-[38px] px-3.5 py-2 text-xs font-bold rounded-xl flex items-center gap-1.5 shrink-0 transition-all cursor-pointer whitespace-nowrap active:scale-[0.98] ${
+                activeTab === "quiz"
+                  ? "bg-sky-600 text-white shadow-md shadow-sky-950/40 border border-sky-400/50"
+                  : "bg-[#161b22] text-gray-300 hover:text-white hover:bg-[#21262d] border border-[#30363d]"
+              }`}
+              title="保存済み問題のクイズ解答と復習・SRS間隔学習"
+            >
+              <Zap className="w-3.5 h-3.5 text-sky-300" />
+              <span>3. クイズ・復習</span>
+              {savedQuestions.length > 0 && (
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-extrabold ${
+                  activeTab === "quiz"
+                    ? "bg-black/30 text-sky-100 border border-white/20"
+                    : "bg-sky-500/20 text-sky-300 border border-sky-500/40"
+                }`} title={masteredCount > 0 ? `復習対象: ${activeCount}問 (習得済み: ${masteredCount}問)` : `全${savedQuestions.length}問`}>
+                  {activeCount}
+                </span>
+              )}
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab("settings")}
-            className={`px-3 py-2.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === "settings"
-                ? "border-purple-500 text-purple-300 bg-purple-500/5"
-                : "border-transparent text-gray-400 hover:text-gray-200"
-            }`}
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-purple-400" />
-            <span>4. 保存先スプレッドシート設定</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("settings")}
+              className={`min-h-[38px] px-3.5 py-2 text-xs font-bold rounded-xl flex items-center gap-1.5 shrink-0 transition-all cursor-pointer whitespace-nowrap active:scale-[0.98] ${
+                activeTab === "settings"
+                  ? "bg-purple-600 text-white shadow-md shadow-purple-950/40 border border-purple-400/50"
+                  : "bg-[#161b22] text-gray-300 hover:text-white hover:bg-[#21262d] border border-[#30363d]"
+              }`}
+              title="学習用スプレッドシート（5タブ）のURL設定と検証"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-purple-300" />
+              <span>4. シート設定</span>
+            </button>
+          </div>
         </div>
 
         {/* Modal Body */}
@@ -1046,22 +1261,110 @@ export default function QuestionGenerationModal({
           {/* TAB 3: QUIZ & PRACTICE */}
           {activeTab === "quiz" && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between bg-[#1c2128] border border-[#30363d] rounded-xl p-3 px-4">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-white">復習クイズセッション</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 font-bold border border-sky-500/30">
-                    問題 {savedQuestions.length > 0 ? `${currentQuizIndex + 1} / ${savedQuestions.length}` : "0件"}
+              <div className="flex flex-wrap items-center justify-between gap-2.5 bg-[#1c2128] border border-[#30363d] rounded-xl p-3 px-4">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <Zap className="w-3.5 h-3.5 text-sky-400" />
+                    <span>復習クイズセッション</span>
                   </span>
+
+                  {/* Filter Selector */}
+                  <div className="flex items-center gap-1 bg-[#0d1117] p-1 rounded-lg border border-[#30363d] text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuizFilter("active");
+                        setCurrentQuizIndex(0);
+                        setSelectedQuizChoice(null);
+                        setIsQuizAnswerRevealed(false);
+                      }}
+                      className={`px-2.5 py-1 rounded-md font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                        quizFilter === "active"
+                          ? "bg-sky-600 text-white shadow-xs"
+                          : "text-gray-400 hover:text-white"
+                      }`}
+                      title="習得済みを除いた、現在復習が必要な問題を出題します"
+                    >
+                      <span>復習対象</span>
+                      <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-sky-950/80 text-sky-200 border border-sky-400/30">
+                        {activeCount}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuizFilter("all");
+                        setCurrentQuizIndex(0);
+                        setSelectedQuizChoice(null);
+                        setIsQuizAnswerRevealed(false);
+                      }}
+                      className={`px-2.5 py-1 rounded-md font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                        quizFilter === "all"
+                          ? "bg-indigo-600 text-white shadow-xs"
+                          : "text-gray-400 hover:text-white"
+                      }`}
+                      title="習得済みを含むすべての保存済み問題を出題します"
+                    >
+                      <span>すべて</span>
+                      <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-950/80 text-indigo-200 border border-indigo-400/30">
+                        {savedQuestions.length}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuizFilter("mastered");
+                        setCurrentQuizIndex(0);
+                        setSelectedQuizChoice(null);
+                        setIsQuizAnswerRevealed(false);
+                      }}
+                      className={`px-2.5 py-1 rounded-md font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                        quizFilter === "mastered"
+                          ? "bg-purple-600 text-white shadow-xs"
+                          : "text-gray-400 hover:text-white"
+                      }`}
+                      title="もう出題しない（習得済み）に設定した問題を確認・復元します"
+                    >
+                      <span>★ 習得済み</span>
+                      <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-purple-950/80 text-purple-200 border border-purple-400/30">
+                        {masteredCount}
+                      </span>
+                    </button>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleFetchSavedQuestions}
-                  disabled={isLoadingSaved}
-                  className="text-xs px-2.5 py-1 rounded bg-[#21262d] border border-[#30363d] text-gray-200 hover:text-white flex items-center gap-1 cursor-pointer"
-                >
-                  <RefreshCw className={`w-3 h-3 ${isLoadingSaved ? "animate-spin" : ""}`} />
-                  <span>最新の問題を再取得</span>
-                </button>
+
+                <div className="flex items-center gap-2.5">
+                  {/* Cache & Background Sync status */}
+                  <div className="flex items-center gap-1.5 text-[11px]">
+                    <span className="flex items-center gap-1 text-emerald-400 font-semibold bg-emerald-950/40 border border-emerald-500/30 px-2 py-0.5 rounded-md text-[10px]" title="アプリ内に一時記憶（ローカルキャッシュ）されているため、クイズ解答や復習が待ち時間ゼロ（0ms）でサクサク進みます">
+                      <Zap className="w-2.5 h-2.5 text-emerald-400" />
+                      <span>一時記憶（爆速）</span>
+                    </span>
+                    {isSyncingBackground ? (
+                      <span className="text-sky-300 text-[10px] flex items-center gap-1 bg-sky-950/40 border border-sky-500/30 px-2 py-0.5 rounded-md animate-pulse">
+                        <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                        <span>シート同期中...</span>
+                      </span>
+                    ) : lastSyncedTime ? (
+                      <span className="text-gray-400 text-[10px] hidden md:inline">
+                        最終同期: {lastSyncedTime}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleFetchSavedQuestions(false)}
+                    disabled={isLoadingSaved}
+                    className="text-xs px-2.5 py-1 rounded-lg bg-[#21262d] border border-[#30363d] text-gray-200 hover:text-white flex items-center gap-1.5 cursor-pointer shrink-0 transition hover:bg-[#30363d]"
+                    title="Googleスプレッドシートから最新の問題データを直接再読み込みして一時記憶を更新します"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isLoadingSaved ? "animate-spin" : ""}`} />
+                    <span>シートと最新同期</span>
+                  </button>
+                </div>
               </div>
 
               {savedQuestions.length === 0 ? (
@@ -1075,17 +1378,77 @@ export default function QuestionGenerationModal({
                     先に問題を生成してスプレッドシートへ保存してください →
                   </button>
                 </div>
+              ) : filteredQuizQuestions.length === 0 ? (
+                quizFilter === "active" ? (
+                  <div className="bg-[#1c2128] border border-purple-500/30 rounded-xl p-8 text-center space-y-3">
+                    <div className="w-12 h-12 mx-auto rounded-full bg-purple-500/20 text-purple-300 flex items-center justify-center">
+                      <Award className="w-6 h-6" />
+                    </div>
+                    <h4 className="text-base font-bold text-white">
+                      すべての問題が習得済み（出題停止中）です！🎉
+                    </h4>
+                    <p className="text-xs text-gray-400 max-w-md mx-auto leading-relaxed">
+                      保存されている全 {savedQuestions.length} 問が「もう出題しない（習得済み）」に設定されています。<br />
+                      復習を再開したい問題がある場合は「習得済み」タブからいつでも出題対象に戻せます。
+                    </p>
+                    <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuizFilter("mastered");
+                          setCurrentQuizIndex(0);
+                        }}
+                        className="px-4 py-2 rounded-lg text-xs font-bold bg-purple-600 hover:bg-purple-500 text-white transition cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Award className="w-4 h-4" />
+                        <span>★ 習得済み問題（{masteredCount}問）を確認・復元する</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuizFilter("all");
+                          setCurrentQuizIndex(0);
+                        }}
+                        className="px-4 py-2 rounded-lg text-xs font-bold bg-[#21262d] hover:bg-[#30363d] text-gray-200 transition cursor-pointer"
+                      >
+                        <span>全問題を通して通しクイズを行う</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-[#1c2128] border border-[#30363d] rounded-xl p-8 text-center space-y-3">
+                    <div className="w-12 h-12 mx-auto rounded-full bg-sky-500/20 text-sky-300 flex items-center justify-center">
+                      <BookOpen className="w-6 h-6" />
+                    </div>
+                    <h4 className="text-sm font-bold text-white">
+                      習得済み（出題停止）の問題はまだありません
+                    </h4>
+                    <p className="text-xs text-gray-400 max-w-md mx-auto leading-relaxed">
+                      クイズ解答後の自己評価アンケートで「★ 習得済みにする（もう出題しない）」を押すか、問題右上の「★ もう出題しない」ボタンを押すと、この一覧に登録され通常の復習から自動除外されます。
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setQuizFilter("active")}
+                      className="px-4 py-2 rounded-lg text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white transition cursor-pointer"
+                    >
+                      復習対象の問題に戻る →
+                    </button>
+                  </div>
+                )
               ) : (
                 (() => {
-                  const currentQ = savedQuestions[currentQuizIndex];
+                  const currentQ = filteredQuizQuestions[currentQuizIndex] || filteredQuizQuestions[0];
                   if (!currentQ) return null;
+                  const isCurrentQMastered = currentQ.status === "mastered" || reviewStates[currentQ.id]?.masteryLevel === "mastered";
 
                   return (
                     <div className="bg-[#1c2128] border border-[#30363d] rounded-xl p-5 space-y-4">
                       {/* Question meta */}
-                      <div className="flex items-center justify-between text-xs text-gray-400">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sky-300 font-bold">第 {currentQuizIndex + 1} 問</span>
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-400">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sky-300 font-bold">
+                            第 {currentQuizIndex + 1} / {filteredQuizQuestions.length} 問
+                          </span>
                           <span className="text-[10px] px-2 py-0.5 rounded bg-gray-800 text-gray-300">
                             {currentQ.type === "single_choice"
                               ? "4択問題"
@@ -1093,10 +1456,45 @@ export default function QuestionGenerationModal({
                               ? "○×問題"
                               : "記述問題"}
                           </span>
+                          {isCurrentQMastered ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-purple-950/70 text-purple-300 border border-purple-500/40 font-bold flex items-center gap-1">
+                              <Award className="w-3 h-3 text-purple-400" />
+                              <span>★ 習得済み（出題停止中）</span>
+                            </span>
+                          ) : (
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-sky-950/50 text-sky-300 border border-sky-500/30 font-medium">
+                              復習対象
+                            </span>
+                          )}
                         </div>
-                        <span className="text-[10px] text-gray-400 truncate max-w-[200px]">
-                          ノート: {currentQ.noteTitle}
-                        </span>
+
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-gray-400 truncate max-w-[160px] hidden sm:inline" title={currentQ.noteTitle}>
+                            ノート: {currentQ.noteTitle}
+                          </span>
+                          {/* Quick mastery toggle button in header */}
+                          {isCurrentQMastered ? (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleMastery(currentQ.id, true)}
+                              className="px-2 py-0.5 rounded text-[11px] font-bold bg-[#21262d] hover:bg-[#30363d] text-emerald-300 border border-emerald-500/30 transition cursor-pointer flex items-center gap-1 active:scale-95"
+                              title="次回以降の通常復習に出題されるように復元します"
+                            >
+                              <Undo2 className="w-3 h-3" />
+                              <span>↩ 出題対象に戻す</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleMastery(currentQ.id, false)}
+                              className="px-2 py-0.5 rounded text-[11px] font-bold bg-[#21262d] hover:bg-purple-950/40 text-purple-300 border border-purple-500/30 transition cursor-pointer flex items-center gap-1 active:scale-95"
+                              title="この問題はもう覚えたため、次回以降の通常復習から除外します"
+                            >
+                              <Award className="w-3 h-3" />
+                              <span>★ もう出題しない</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       {/* Question Text */}
@@ -1183,43 +1581,84 @@ export default function QuestionGenerationModal({
                             )}
                           </div>
 
-                          <div className="bg-[#12161c] p-3 rounded-xl border border-[#30363d] space-y-2">
-                            <span className="text-[11px] font-bold text-gray-300 block">
-                              自己評価（復習間隔アルゴリズムへ記録）:
-                            </span>
+                          {/* Self Evaluation Survey Box */}
+                          <div className="bg-[#12161c] p-3.5 rounded-xl border border-[#30363d] space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-bold text-gray-300 block">
+                                自己評価（復習間隔アルゴリズムへ記録）:
+                              </span>
+                              <span className="text-[10px] text-gray-400">
+                                次回出題間隔を自動最適化
+                              </span>
+                            </div>
+
+                            {/* Standard 4-level SRS Rating */}
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                               <button
                                 type="button"
-                                disabled={isSubmittingReview}
                                 onClick={() => handleSubmitQuizReview(1)}
-                                className="py-2 px-3 rounded-lg text-xs font-bold bg-red-950/30 hover:bg-red-900/40 text-red-300 border border-red-500/30 transition cursor-pointer"
+                                className="py-2 px-3 rounded-lg text-xs font-bold bg-red-950/30 hover:bg-red-900/40 text-red-300 border border-red-500/30 transition cursor-pointer text-center active:scale-95"
                               >
-                                ✕ もう一度 (Again)
+                                <div>✕ もう一度 (Again)</div>
+                                <div className="text-[9px] text-red-400/80 font-normal">明日復習</div>
                               </button>
                               <button
                                 type="button"
-                                disabled={isSubmittingReview}
                                 onClick={() => handleSubmitQuizReview(2)}
-                                className="py-2 px-3 rounded-lg text-xs font-bold bg-amber-950/30 hover:bg-amber-900/40 text-amber-300 border border-amber-500/30 transition cursor-pointer"
+                                className="py-2 px-3 rounded-lg text-xs font-bold bg-amber-950/30 hover:bg-amber-900/40 text-amber-300 border border-amber-500/30 transition cursor-pointer text-center active:scale-95"
                               >
-                                △ 難しい (Hard)
+                                <div>△ 難しい (Hard)</div>
+                                <div className="text-[9px] text-amber-400/80 font-normal">短期間で再出題</div>
                               </button>
                               <button
                                 type="button"
-                                disabled={isSubmittingReview}
                                 onClick={() => handleSubmitQuizReview(3)}
-                                className="py-2 px-3 rounded-lg text-xs font-bold bg-sky-950/30 hover:bg-sky-900/40 text-sky-300 border border-sky-500/30 transition cursor-pointer"
+                                className="py-2 px-3 rounded-lg text-xs font-bold bg-sky-950/30 hover:bg-sky-900/40 text-sky-300 border border-sky-500/30 transition cursor-pointer text-center active:scale-95"
                               >
-                                ○ 正解 (Good)
+                                <div>○ 正解 (Good)</div>
+                                <div className="text-[9px] text-sky-400/80 font-normal">標準間隔で出題</div>
                               </button>
                               <button
                                 type="button"
-                                disabled={isSubmittingReview}
                                 onClick={() => handleSubmitQuizReview(4)}
-                                className="py-2 px-3 rounded-lg text-xs font-bold bg-emerald-950/30 hover:bg-emerald-900/40 text-emerald-300 border border-emerald-500/30 transition cursor-pointer"
+                                className="py-2 px-3 rounded-lg text-xs font-bold bg-emerald-950/30 hover:bg-emerald-900/40 text-emerald-300 border border-emerald-500/30 transition cursor-pointer text-center active:scale-95"
                               >
-                                ◎ 簡単 (Easy)
+                                <div>◎ 簡単 (Easy)</div>
+                                <div className="text-[9px] text-emerald-400/80 font-normal">長期間隔へ延長</div>
                               </button>
+                            </div>
+
+                            {/* Dedicated Survey Action: もう出さなくていいものの設定 */}
+                            <div className="pt-2.5 border-t border-[#30363d]/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-[#0d1117]/60 -mx-1 px-3 py-2.5 rounded-lg border border-[#30363d]/40">
+                              <div className="text-[11px] text-gray-300">
+                                <div className="font-bold text-purple-300 flex items-center gap-1.5">
+                                  <Award className="w-3.5 h-3.5 text-purple-400" />
+                                  <span>もう出題しなくてよい問題（完璧に習得・卒業）:</span>
+                                </div>
+                                <span className="text-[10px] text-gray-400">
+                                  自己評価アンケートで選択すると、次回の通常復習から自動的に除外されます
+                                </span>
+                              </div>
+
+                              {isCurrentQMastered ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleMastery(currentQ.id, true)}
+                                  className="shrink-0 py-1.5 px-3 rounded-lg text-xs font-bold bg-[#21262d] hover:bg-[#30363d] text-emerald-300 border border-emerald-500/40 transition cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
+                                >
+                                  <Undo2 className="w-3.5 h-3.5" />
+                                  <span>↩ 出題対象に戻す (復習再開)</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSubmitQuizReview(5)}
+                                  className="shrink-0 py-2 px-3.5 rounded-lg text-xs font-bold bg-purple-900/40 hover:bg-purple-800/60 text-purple-200 border border-purple-500/50 shadow-sm transition cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
+                                >
+                                  <Award className="w-3.5 h-3.5 text-purple-300" />
+                                  <span>★ 習得済みにする (もう出題しない)</span>
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>

@@ -133,7 +133,6 @@ export default function ImportModal({
   const [targetSsUrl, setTargetSsUrl] = useState(() => localStorage.getItem("cn_target_ss_url") || "");
   const [gasSheetName, setGasSheetName] = useState(() => localStorage.getItem("cn_gas_sheet_name") || "Notes");
   const [learningSpreadsheetUrl, setLearningSpreadsheetUrl] = useState(() => localStorage.getItem("cn_learning_spreadsheet_url") || "");
-  const [learningSpreadsheetSheetName, setLearningSpreadsheetSheetName] = useState(() => localStorage.getItem("cn_learning_spreadsheet_sheet_name") || "学習データ");
   const [showExtractHelp, setShowExtractHelp] = useState(false);
   const [pendingSheetItems, setPendingSheetItems] = useState<any[]>([]);
   const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
@@ -173,7 +172,7 @@ export default function ImportModal({
       setExtractSheetUrl(localStorage.getItem("cn_extract_sheet_url") || "");
       setExtractSheetName(localStorage.getItem("cn_extract_sheet_name") || storedExtSheet);
       setLearningSpreadsheetUrl(localStorage.getItem("cn_learning_spreadsheet_url") || "");
-      setLearningSpreadsheetSheetName(localStorage.getItem("cn_learning_spreadsheet_sheet_name") || "学習データ");
+      localStorage.removeItem("cn_learning_spreadsheet_sheet_name");
 
       setSyncPersonaInput(getStoredPrompt("SYSTEM_PERSONA"));
       setSyncPromptInput(getStoredPrompt("SYNC_PROMPT"));
@@ -230,12 +229,7 @@ export default function ImportModal({
     } else {
       localStorage.removeItem("cn_learning_spreadsheet_url");
     }
-
-    if (learningSpreadsheetSheetName.trim()) {
-      localStorage.setItem("cn_learning_spreadsheet_sheet_name", learningSpreadsheetSheetName.trim());
-    } else {
-      localStorage.removeItem("cn_learning_spreadsheet_sheet_name");
-    }
+    localStorage.removeItem("cn_learning_spreadsheet_sheet_name");
   };
 
   // Test GAS Connection
@@ -1690,7 +1684,7 @@ export default function ImportModal({
                     <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-400" />
                     学習用スプレッドシート設定 (問題・解答・復習履歴)
                   </h4>
-                  <p className="text-[10px] text-gray-400">問題・解答・復習履歴を保存する専用のスプレッドシートURLとシート名を指定します（ノート用とは別ファイル）。</p>
+                  <p className="text-[10px] text-gray-400">問題・解答・復習履歴を保存する専用のスプレッドシートURLを指定します（ノート用とは別スプレッドシートを推奨）。</p>
                 </div>
               </div>
 
@@ -1712,26 +1706,10 @@ export default function ImportModal({
                     }}
                     placeholder="https://docs.google.com/spreadsheets/d/..."
                   />
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[11px] font-bold text-gray-300">学習用シート (タブ) 名</label>
-                  <input
-                    type="text"
-                    className="w-full font-mono text-[11px] p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-indigo-500 transition-all"
-                    value={learningSpreadsheetSheetName}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setLearningSpreadsheetSheetName(val);
-                      if (val.trim()) {
-                        localStorage.setItem("cn_learning_spreadsheet_sheet_name", val.trim());
-                      } else {
-                        localStorage.removeItem("cn_learning_spreadsheet_sheet_name");
-                      }
-                    }}
-                    placeholder="学習データ"
-                  />
-                  <span className="text-[9px] text-gray-500">※クイズ・問題生成・復習履歴データの保存先タブ名です</span>
+                  <div className="flex items-center gap-1.5 text-[10px] text-indigo-300/90 bg-indigo-950/30 px-2.5 py-1.5 rounded-lg border border-indigo-500/20">
+                    <span className="text-xs">💡</span>
+                    <span>シート名（タブ名）の指定は不要です。スプレッドシート内に5つの専用タブ（Questions, QuestionEvidence, QuestionChoices, ReviewLogs, ReviewState）が自動作成・管理されます。</span>
+                  </div>
                 </div>
 
                 {learningApiPost && (

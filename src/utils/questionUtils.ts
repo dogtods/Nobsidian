@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Note, LearningQuestion, QuestionGenerationConfig, QuestionType, QuestionChoice, QuestionEvidence } from "../types";
+import { Note, LearningQuestion, QuestionGenerationConfig, QuestionType, QuestionChoice, QuestionEvidence, ReviewState } from "../types";
 
 /**
  * 外部AI (ChatGPT, Claude, Gemini Web等) 用の問題生成プロンプトを組み立てる
@@ -520,4 +520,71 @@ export async function generateQuestionsViaGemini(
   // 3. Third Try: Heuristic / Local Text Extraction (Zero API call fallback)
   const localQuestions = generateQuestionsLocally(note, config);
   return { questions: localQuestions, fallbackUsed: "local_heuristic" };
+}
+
+/**
+ * SuperMemo (SM-2) アルゴリズムによるクライアント即時計算
+ * スプレッドシート側の handleSaveReviewLog と完全に同一の計算を即座に実行
+ */
+export function calculateSM2Review(
+  currentState: ReviewState | undefined,
+  rating: number,
+  isMasteredExplicit: boolean,
+  isCorrect: boolean
+): {
+  totalReviews: number;
+  correctCount: number;
+  consecutiveCorrect: number;
+  easinessFactor: number;
+  intervalDays: number;
+  masteryLevel: "new" | "learning" | "review" | "mastered";
+  nextReviewDate: string;
+} {
+  const currentTotal = currentState?.totalReviews || 0;
+  const currentCorrect = currentState?.correctCount || 0;
+  const currentConsecutive = currentState?.consecutiveCorrect || 0;
+  let ef = currentState?.easinessFactor || 2.5;
+  const currentInterval = currentState?.intervalDays || 1;
+
+  const newTotal = currentTotal + 1;
+  const newCorrectCount = currentCorrect + ((isCorrect || isMasteredExplicit) ? 1 : 0);
+  const newConsecutive = (isCorrect || isMasteredExplicit) ? (currentConsecutive + 1) : 0;
+
+  let newInterval = 1;
+  if (isMasteredExplicit) {
+    newInterval = 3650; // 10年後（実質的に出題停止）
+    ef = Math.max(2.5, ef + 0.3);
+  } else if (isCorrect) {
+    if (newConsecutive === 1) {
+      newInterval = 1;
+    } else if (newConsecutive === 2) {
+      newInterval = 3;
+    } else {
+      newInterval = Math.round(currentInterval * ef);
+      if (newInterval < 4) newInterval = 4;
+    }
+    ef = Math.max(1.3, ef + (0.1 - (4 - rating) * (0.08 + (4 - rating) * 0.02)));
+  } else {
+    newInterval = 1;
+    ef = Math.max(1.3, ef - 0.2);
+  }
+
+  let newMastery: "new" | "learning" | "review" | "mastered" = "learning";
+  if (isMasteredExplicit || newConsecutive >= 4 || newInterval >= 21) {
+    newMastery = "mastered";
+  } else if (newConsecutive >= 2) {
+    newMastery = "review";
+  }
+
+  const nextDueDate = new Date(Date.now() + newInterval * 86400000).toISOString().split("T")[0];
+
+  return {
+    totalReviews: newTotal,
+    correctCount: newCorrectCount,
+    consecutiveCorrect: newConsecutive,
+    easinessFactor: Math.round(ef * 100) / 100,
+    intervalDays: newInterval,
+    masteryLevel: newMastery,
+    nextReviewDate: nextDueDate
+  };
 }

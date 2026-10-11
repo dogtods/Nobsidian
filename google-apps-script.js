@@ -20,7 +20,7 @@
  *
  * 【スプレッドシートの列構成（15列）】
  * A(id) B(title) C(url) D(tags) E(highlights) F(saved_at) G(processed) H(nobsidian)
- * I(all:本文原文) J(apendix:メタ情報) K(date:日付) L(timeline:年表) M(source:取得元)
+ * I(all:本文原文) J(aapendix:メタ情報) K(date:日付) L(timeline:年表) M(source:取得元)
  * N(カテゴリ・ロット情報:14列目) O(updated_at:アプリ更新日時)
  *
  * ※ A〜M列の外部取り込み元データは非破壊で保持され、アプリ内での編集や加筆はN列・O列に追記されます。
@@ -1250,19 +1250,26 @@ const LEARNING_HEADERS = {
   ]
 };
 
-// 学習用スプレッドシートを開くヘルパー
+// 学習用スプレッドシートを開くヘルパー (リクエスト内キャッシュで高速化)
+let _learningSsCache = null;
+let _learningSsCacheKey = "";
+
 function openLearningSpreadsheet(learningSpreadsheetUrl) {
+  const rawKey = String(learningSpreadsheetUrl || "").trim();
+  if (_learningSsCache && _learningSsCacheKey === rawKey) {
+    return _learningSsCache;
+  }
+
   let ss = null;
-  if (learningSpreadsheetUrl && String(learningSpreadsheetUrl).trim() !== "") {
-    const raw = String(learningSpreadsheetUrl).trim();
+  if (rawKey !== "") {
     try {
-      ss = SpreadsheetApp.openByUrl(raw);
+      ss = SpreadsheetApp.openByUrl(rawKey);
     } catch(e) {
-      const match = raw.match(/[a-zA-Z0-9-_]{25,}/);
+      const match = rawKey.match(/[a-zA-Z0-9-_]{25,}/);
       if (match) {
         ss = SpreadsheetApp.openById(match[0]);
       } else {
-        throw new Error("指定された学習用スプレッドシートを開けません。URLまたはIDを確認してください: " + raw);
+        throw new Error("指定された学習用スプレッドシートを開けません。URLまたはIDを確認してください: " + rawKey);
       }
     }
   } else {
@@ -1271,6 +1278,8 @@ function openLearningSpreadsheet(learningSpreadsheetUrl) {
   if (!ss) {
     throw new Error("学習用スプレッドシートが見つかりません。URLが正しいか確認してください。");
   }
+  _learningSsCache = ss;
+  _learningSsCacheKey = rawKey;
   return ss;
 }
 
@@ -1563,19 +1572,22 @@ function handleSaveReviewLog(logData, learningSpreadsheetUrl) {
 
   const logSheet = getLearningSheet("ReviewLogs", learningSpreadsheetUrl);
   const stateSheet = getLearningSheet("ReviewState", learningSpreadsheetUrl);
+  const qSheet = getLearningSheet("Questions", learningSpreadsheetUrl);
   const now = new Date();
 
   const logId = logData.id || ("log_" + Date.now() + "_" + Math.floor(Math.random() * 1000));
   const isCorrect = logData.isCorrect === true || String(logData.isCorrect).toLowerCase() === "true";
+  const rating = Number(logData.rating) || (isCorrect ? 3 : 1);
+  const isMasteredExplicit = rating === 5 || logData.isMastered === true || logData.excludeFromReview === true;
 
   logSheet.appendRow([
     logId,
     logData.questionId,
     logData.userAnswer || "",
-    isCorrect,
+    isMasteredExplicit ? true : isCorrect,
     Number(logData.timeSpentSeconds) || 0,
-    Number(logData.rating) || (isCorrect ? 3 : 1),
-    logData.memo || "",
+    rating,
+    logData.memo || (isMasteredExplicit ? "習得済み・出題停止" : ""),
     now
   ]);
 
@@ -1608,12 +1620,16 @@ function handleSaveReviewLog(logData, learningSpreadsheetUrl) {
   }
 
   const newTotal = currentState.totalReviews + 1;
-  const newCorrectCount = currentState.correctCount + (isCorrect ? 1 : 0);
-  const newConsecutive = isCorrect ? (currentState.consecutiveCorrect + 1) : 0;
+  const newCorrectCount = currentState.correctCount + ((isCorrect || isMasteredExplicit) ? 1 : 0);
+  const newConsecutive = (isCorrect || isMasteredExplicit) ? (currentState.consecutiveCorrect + 1) : 0;
 
   let newInterval = 1;
   let newEf = currentState.easinessFactor;
-  if (isCorrect) {
+
+  if (isMasteredExplicit) {
+    newInterval = 3650; // 10年後（実質的に出題停止）
+    newEf = Math.max(2.5, newEf + 0.3);
+  } else if (isCorrect) {
     if (newConsecutive === 1) {
       newInterval = 1;
     } else if (newConsecutive === 2) {
@@ -1622,7 +1638,6 @@ function handleSaveReviewLog(logData, learningSpreadsheetUrl) {
       newInterval = Math.round(currentState.intervalDays * newEf);
       if (newInterval < 4) newInterval = 4;
     }
-    const rating = Number(logData.rating) || 3;
     newEf = Math.max(1.3, newEf + (0.1 - (4 - rating) * (0.08 + (4 - rating) * 0.02)));
   } else {
     newInterval = 1;
@@ -1630,7 +1645,7 @@ function handleSaveReviewLog(logData, learningSpreadsheetUrl) {
   }
 
   let newMastery = "learning";
-  if (newConsecutive >= 4 || newInterval >= 21) {
+  if (isMasteredExplicit || newConsecutive >= 4 || newInterval >= 21) {
     newMastery = "mastered";
   } else if (newConsecutive >= 2) {
     newMastery = "review";
@@ -1657,12 +1672,93 @@ function handleSaveReviewLog(logData, learningSpreadsheetUrl) {
     stateSheet.appendRow(updatedStateRow);
   }
 
+  // Questionsシートのstatus列(11列目)も習得済みに更新
+  if (isMasteredExplicit && qSheet) {
+    const qLastRow = qSheet.getLastRow();
+    if (qLastRow > 1) {
+      const qIds = qSheet.getRange(2, 1, qLastRow - 1, 1).getValues();
+      for (let qi = 0; qi < qIds.length; qi++) {
+        if (String(qIds[qi][0] || "").trim() === String(logData.questionId).trim()) {
+          qSheet.getRange(qi + 2, 11).setValue("mastered");
+          qSheet.getRange(qi + 2, 13).setValue(now);
+          break;
+        }
+      }
+    }
+  }
+
   SpreadsheetApp.flush();
   return {
     success: true,
     intervalDays: newInterval,
     nextReviewDate: nextDueDate,
     masteryLevel: newMastery
+  };
+}
+
+// 個別問題のステータス更新 (習得済み・出題停止 / 出題対象への復元)
+function handleUpdateQuestionStatus(questionId, newStatus, learningSpreadsheetUrl) {
+  if (!questionId) throw new Error("questionId は必須です。");
+  const targetStatus = newStatus || "approved";
+  const isMastered = targetStatus === "mastered" || targetStatus === "excluded" || targetStatus === "archived";
+
+  const qSheet = getLearningSheet("Questions", learningSpreadsheetUrl);
+  const stateSheet = getLearningSheet("ReviewState", learningSpreadsheetUrl);
+  const now = new Date();
+
+  // 1. Questionsシートのstatus列(11列目)を更新
+  if (qSheet) {
+    const qLastRow = qSheet.getLastRow();
+    if (qLastRow > 1) {
+      const qIds = qSheet.getRange(2, 1, qLastRow - 1, 1).getValues();
+      for (let i = 0; i < qIds.length; i++) {
+        if (String(qIds[i][0] || "").trim() === String(questionId).trim()) {
+          qSheet.getRange(i + 2, 11).setValue(targetStatus);
+          qSheet.getRange(i + 2, 13).setValue(now);
+          break;
+        }
+      }
+    }
+  }
+
+  // 2. ReviewStateシートのmastery_level列(9列目) & interval_daysを更新
+  if (stateSheet) {
+    let foundStateRow = -1;
+    const sLastRow = stateSheet.getLastRow();
+    if (sLastRow > 1) {
+      const sIds = stateSheet.getRange(2, 1, sLastRow - 1, 1).getValues();
+      for (let j = 0; j < sIds.length; j++) {
+        if (String(sIds[j][0] || "").trim() === String(questionId).trim()) {
+          foundStateRow = j + 2;
+          break;
+        }
+      }
+    }
+
+    const intervalDays = isMastered ? 3650 : 1;
+    const nextDueDate = new Date(now.getTime() + intervalDays * 86400000).toISOString().split("T")[0];
+    const masteryLevel = isMastered ? "mastered" : (targetStatus === "new" ? "new" : "learning");
+
+    if (foundStateRow > 1) {
+      stateSheet.getRange(foundStateRow, 6).setValue(intervalDays);
+      stateSheet.getRange(foundStateRow, 8).setValue(nextDueDate);
+      stateSheet.getRange(foundStateRow, 9).setValue(masteryLevel);
+      stateSheet.getRange(foundStateRow, 10).setValue(now);
+    } else {
+      stateSheet.appendRow([
+        questionId,
+        0, 0, 0, 2.5, intervalDays, now, nextDueDate, masteryLevel, now
+      ]);
+    }
+  }
+
+  SpreadsheetApp.flush();
+  return {
+    success: true,
+    questionId: questionId,
+    status: targetStatus,
+    masteryLevel: isMastered ? "mastered" : "learning",
+    message: isMastered ? "習得済み（出題停止）に設定しました。" : "出題対象に復元しました。"
   };
 }
 
@@ -1768,6 +1864,10 @@ function processApiRequest(e) {
     } else if (action === "saveReviewLog") {
       const logData = typeof postData.logData === "string" ? JSON.parse(postData.logData) : postData.logData;
       result = handleSaveReviewLog(logData, learningSsUrl);
+    } else if (action === "updateQuestionStatus") {
+      const qId = postData.questionId || (e.parameter ? e.parameter.questionId : "");
+      const newStatus = postData.status || (e.parameter ? e.parameter.status : "");
+      result = handleUpdateQuestionStatus(qId, newStatus, learningSsUrl);
     } else if (action === "syncExternalSources" || action === "syncAllExternalSources") {
       const options = postData.options || { raindrop: true, drive: true };
       result = syncExternalSources(options, targetSheet, targetSsUrl);

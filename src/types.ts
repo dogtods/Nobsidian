@@ -141,7 +141,7 @@ export interface LearningQuestion {
   difficulty: "easy" | "medium" | "hard";
   tags?: string[];
   source: "ai_api" | "external_ai_prompt" | "manual";
-  status: "approved" | "draft" | "review";
+  status: "approved" | "draft" | "review" | "mastered" | "excluded";
   choices?: QuestionChoice[];
   evidence?: QuestionEvidence;
   createdAt: number;
@@ -156,7 +156,7 @@ export interface ReviewLog {
   userAnswer: string;
   isCorrect: boolean;
   timeSpentSeconds: number;
-  rating: number; // 1: Again, 2: Hard, 3: Good, 4: Easy
+  rating: number; // 1: Again, 2: Hard, 3: Good, 4: Easy, 5: Mastered (出題停止)
   memo?: string;
   answeredAt: number;
 }
@@ -170,7 +170,7 @@ export interface ReviewState {
   intervalDays: number;
   lastReviewedAt: number;
   nextReviewDate: string; // YYYY-MM-DD
-  masteryLevel: "new" | "learning" | "review" | "mastered";
+  masteryLevel: "new" | "learning" | "review" | "mastered" | "excluded";
   updatedAt: number;
 }
 
