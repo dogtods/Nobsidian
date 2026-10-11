@@ -122,8 +122,11 @@ export default function QuestionGenerationModal({
   const [isSyncingBackground, setIsSyncingBackground] = useState<boolean>(false);
   const [lastSyncedTime, setLastSyncedTime] = useState<string>(() => localStorage.getItem("cn_learning_last_synced_at") || "");
   const [currentQuizIndex, setCurrentQuizIndex] = useState<number>(0);
-  const [selectedQuizChoice, setSelectedQuizChoice] = useState<string | null>(null);
+  const [selectedQuizChoices, setSelectedQuizChoices] = useState<string[]>([]);
+  const [essayAnswer, setEssayAnswer] = useState<string>("");
   const [isQuizAnswerRevealed, setIsQuizAnswerRevealed] = useState<boolean>(false);
+  const [externalAiQuestionInput, setExternalAiQuestionInput] = useState<string>("");
+  const [showExternalAiPromptBox, setShowExternalAiPromptBox] = useState<boolean>(false);
 
   // ローカルキャッシュの永続化 (変更時に即時一時記憶)
   useEffect(() => {
@@ -471,7 +474,8 @@ export default function QuestionGenerationModal({
     } else {
       onSaveToast("出題対象に復元しました（次回復習から出題されます）✦");
     }
-    setSelectedQuizChoice(null);
+    setSelectedQuizChoices([]);
+    setEssayAnswer("");
     setIsQuizAnswerRevealed(false);
 
     // 2. 【非同期バックグラウンド同期】裏でスプレッドシートを更新
@@ -501,9 +505,13 @@ export default function QuestionGenerationModal({
     let isCorrect = false;
     if (isMastered) {
       isCorrect = true;
-    } else if (currentQ.type === "single_choice" || currentQ.type === "true_false" || currentQ.type === "multiple_choice") {
+    } else if (currentQ.type === "multiple_choice") {
+      const correctLabels = currentQ.choices?.filter(c => c.isCorrect).map(c => c.label) || [];
+      isCorrect = correctLabels.length === selectedQuizChoices.length && correctLabels.every(l => selectedQuizChoices.includes(l));
+    } else if (currentQ.type === "single_choice" || currentQ.type === "true_false") {
+      const sel = selectedQuizChoices[0] || null;
       const correctChoice = currentQ.choices?.find(c => c.isCorrect);
-      isCorrect = selectedQuizChoice === correctChoice?.label || selectedQuizChoice === correctChoice?.text || selectedQuizChoice === currentQ.correctAnswer;
+      isCorrect = sel === correctChoice?.label || sel === correctChoice?.text || sel === currentQ.correctAnswer;
     } else {
       // 記述式は自己採点 (rating >= 3 で正解扱い)
       isCorrect = rating >= 3;
@@ -553,8 +561,11 @@ export default function QuestionGenerationModal({
         onSaveToast("すべての問題の復習が完了しました！お疲れ様でした。");
       }
     }
-    setSelectedQuizChoice(null);
+    setSelectedQuizChoices([]);
+    setEssayAnswer("");
     setIsQuizAnswerRevealed(false);
+    setExternalAiQuestionInput("");
+    setShowExternalAiPromptBox(false);
 
     // 3. 【非同期バックグラウンド同期】SpreadSheetへ裏でログ保存（操作を一切止めない）
     setIsSyncingBackground(true);
@@ -562,7 +573,7 @@ export default function QuestionGenerationModal({
       action: "saveReviewLog",
       logData: {
         questionId: currentQ.id,
-        userAnswer: selectedQuizChoice || "",
+        userAnswer: currentQ.type === "multiple_choice" ? selectedQuizChoices.join(", ") : (selectedQuizChoices[0] || essayAnswer || ""),
         isCorrect: isCorrect,
         rating: rating,
         isMastered: isMastered,
@@ -1280,7 +1291,8 @@ export default function QuestionGenerationModal({
                       onClick={() => {
                         setQuizFilter("active");
                         setCurrentQuizIndex(0);
-                        setSelectedQuizChoice(null);
+                        setSelectedQuizChoices([]);
+                        setEssayAnswer("");
                         setIsQuizAnswerRevealed(false);
                       }}
                       className={`px-2.5 py-1 rounded-md font-bold transition cursor-pointer flex items-center gap-1.5 ${
@@ -1301,7 +1313,8 @@ export default function QuestionGenerationModal({
                       onClick={() => {
                         setQuizFilter("all");
                         setCurrentQuizIndex(0);
-                        setSelectedQuizChoice(null);
+                        setSelectedQuizChoices([]);
+                        setEssayAnswer("");
                         setIsQuizAnswerRevealed(false);
                       }}
                       className={`px-2.5 py-1 rounded-md font-bold transition cursor-pointer flex items-center gap-1.5 ${
@@ -1322,7 +1335,8 @@ export default function QuestionGenerationModal({
                       onClick={() => {
                         setQuizFilter("mastered");
                         setCurrentQuizIndex(0);
-                        setSelectedQuizChoice(null);
+                        setSelectedQuizChoices([]);
+                        setEssayAnswer("");
                         setIsQuizAnswerRevealed(false);
                       }}
                       className={`px-2.5 py-1 rounded-md font-bold transition cursor-pointer flex items-center gap-1.5 ${
@@ -1510,8 +1524,20 @@ export default function QuestionGenerationModal({
                       {/* Choices or Input */}
                       {currentQ.choices && currentQ.choices.length > 0 ? (
                         <div className="space-y-2 pt-2">
+                          {(() => {
+                            const isMulti = currentQ.type === "multiple_choice" || (currentQ.choices?.filter(c => c.isCorrect).length || 0) > 1 || (currentQ.correctAnswer && (currentQ.correctAnswer.includes(",") || currentQ.correctAnswer.includes("、")));
+                            return (
+                              <>
+                                {isMulti && (
+                                  <div className="text-[11px] text-sky-400 font-medium bg-sky-950/30 border border-sky-500/30 px-2.5 py-1.5 rounded-md flex items-center gap-1.5 mb-2">
+                                    <span>💡 【複数選択】この問題は正解が複数あります。すべて選択してください。</span>
+                                  </div>
+                                )}
+                              </>
+                            );
+                          })()}
                           {currentQ.choices.map((ch, idx) => {
-                            const isSelected = selectedQuizChoice === ch.label || selectedQuizChoice === ch.text;
+                            const isSelected = selectedQuizChoices.includes(ch.label);
                             let choiceStyle = "bg-[#0d1117] border-[#30363d] hover:border-gray-500 text-gray-200";
 
                             if (isQuizAnswerRevealed) {
@@ -1529,11 +1555,27 @@ export default function QuestionGenerationModal({
                                 key={idx}
                                 type="button"
                                 disabled={isQuizAnswerRevealed}
-                                onClick={() => setSelectedQuizChoice(ch.label)}
+                                onClick={() => {
+                                  const isMulti = currentQ.type === "multiple_choice" || (currentQ.choices?.filter(c => c.isCorrect).length || 0) > 1 || (currentQ.correctAnswer && (currentQ.correctAnswer.includes(",") || currentQ.correctAnswer.includes("、")));
+                                  if (isMulti) {
+                                    if (selectedQuizChoices.includes(ch.label)) {
+                                      setSelectedQuizChoices(selectedQuizChoices.filter(l => l !== ch.label));
+                                    } else {
+                                      setSelectedQuizChoices([...selectedQuizChoices, ch.label]);
+                                    }
+                                  } else {
+                                    setSelectedQuizChoices([ch.label]);
+                                  }
+                                }}
                                 className={`w-full p-3 rounded-lg border text-left text-xs transition cursor-pointer flex items-center justify-between ${choiceStyle}`}
                               >
-                                <span>
-                                  <strong className="mr-2 font-mono">{ch.label}:</strong> {ch.text}
+                                <span className="flex items-center gap-2">
+                                  <span className={`w-4 h-4 ${currentQ.type === "multiple_choice" ? "rounded" : "rounded-full"} border border-gray-500 flex items-center justify-center text-[10px] ${isSelected ? "bg-sky-500 text-white border-sky-400 font-bold" : "bg-black/20"}`}>
+                                    {currentQ.type === "multiple_choice" ? (isSelected ? "✓" : "") : (isSelected ? "●" : "")}
+                                  </span>
+                                  <span>
+                                    <strong className="mr-2 font-mono">{ch.label}:</strong> {ch.text}
+                                  </span>
                                 </span>
                                 {isQuizAnswerRevealed && ch.isCorrect && (
                                   <span className="text-emerald-400 text-xs font-bold">✓ 正解</span>
@@ -1548,8 +1590,8 @@ export default function QuestionGenerationModal({
                           <textarea
                             rows={3}
                             placeholder="あなたの解答を入力..."
-                            value={selectedQuizChoice || ""}
-                            onChange={(e) => setSelectedQuizChoice(e.target.value)}
+                            value={essayAnswer}
+                            onChange={(e) => setEssayAnswer(e.target.value)}
                             disabled={isQuizAnswerRevealed}
                             className="w-full p-2.5 bg-[#0d1117] border border-[#30363d] rounded-lg text-xs text-white outline-none focus:border-sky-500"
                           />
@@ -1582,6 +1624,72 @@ export default function QuestionGenerationModal({
                             {currentQ.evidence && currentQ.evidence.quote && (
                               <div className="pt-1 text-[11px] text-indigo-300 italic border-t border-[#30363d]/60">
                                 📌 <strong>出題根拠:</strong> 「{currentQ.evidence.quote}」
+                              </div>
+                            )}
+                          </div>
+
+                          {/* External AI Prompt Generator for unclear parts (#10) */}
+                          <div className="bg-[#0b0f15] border border-indigo-500/40 rounded-xl p-3 space-y-2.5 text-xs">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-indigo-300 flex items-center gap-1.5">
+                                <span>🤖 答えや解説が分からない場合（外部AI用プロンプト生成）</span>
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setShowExternalAiPromptBox(!showExternalAiPromptBox)}
+                                className="text-[10px] text-indigo-400 hover:text-indigo-300 bg-indigo-950/60 border border-indigo-500/30 px-2.5 py-0.5 rounded cursor-pointer transition"
+                              >
+                                {showExternalAiPromptBox ? "閉じる" : "質問する"}
+                              </button>
+                            </div>
+
+                            {showExternalAiPromptBox && (
+                              <div className="space-y-2 pt-1 border-t border-[#30363d]/60">
+                                <p className="text-gray-300 text-[11px] leading-relaxed">
+                                  分からない部分や質問したい内容を以下に記入し、プロンプトをコピーしてChatGPT、Claude、Gemini等の外部AIに貼り付けてください。
+                                </p>
+                                <textarea
+                                  rows={2}
+                                  value={externalAiQuestionInput}
+                                  onChange={(e) => setExternalAiQuestionInput(e.target.value)}
+                                  placeholder="例: 選択肢Bの概念と正解の選択肢の違いがいまいち分かりません。わかりやすく噛み砕いて解説してください。"
+                                  className="w-full p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-xs text-white outline-none focus:border-indigo-500 leading-relaxed"
+                                />
+                                <div className="flex justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const promptText = `あなたは優秀なAI家庭教師です。以下の学習問題の解答・解説を読みましたが、分からない点があります。分かりやすく詳しく解説してください。
+
+【対象ノート】
+タイトル: ${currentQ.noteTitle || "学習ノート"}
+
+【問題】
+${currentQ.question}
+
+${currentQ.choices ? `【選択肢】\n${currentQ.choices.map(c => `${c.label}: ${c.text}${c.isCorrect ? " (正解)" : ""}`).join("\n")}` : ""}
+
+【模範解答】
+${currentQ.correctAnswer}
+
+【解説】
+${currentQ.explanation}
+
+${currentQ.evidence?.quote ? `【出題根拠引用】\n「${currentQ.evidence.quote}」` : ""}
+
+【ユーザーの質問・分からない点】
+${externalAiQuestionInput.trim() || "この問題と解説の背景概念、およびなぜこの解答になるのかのプロセスについて、初心者にもわかりやすく噛み砕いて説明してください。"}
+
+上記について、丁寧なステップバイステップの解説をお願いします。`;
+
+                                      navigator.clipboard.writeText(promptText);
+                                      onSaveToast("✓ 外部AI用の質問プロンプトをクリップボードにコピーしました！ChatGPTやClaudeに貼り付けてご活用ください。");
+                                    }}
+                                    className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition cursor-pointer flex items-center gap-1.5 shadow"
+                                  >
+                                    <span>📋 質問プロンプトをコピー</span>
+                                  </button>
+                                </div>
                               </div>
                             )}
                           </div>
