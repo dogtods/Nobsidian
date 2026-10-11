@@ -3756,6 +3756,17 @@ const renderMarkdownToElements = (contentStr: string) => {
     return { groups, sortedFolders };
   };
 
+  const getFilteredAndSortedNotesForQuiz = (): Note[] => {
+    const { groups, sortedFolders } = getCategorizedNotes();
+    const result: Note[] = [];
+    sortedFolders.forEach(folder => {
+      if (groups[folder]) {
+        result.push(...groups[folder]);
+      }
+    });
+    return result.length > 0 ? result : notes;
+  };
+
   const toggleFolderCollapse = (folderName: string) => {
     setCollapsedFolders(prev => {
       const current = prev[folderName] ?? false;
@@ -8705,7 +8716,7 @@ const renderMarkdownToElements = (contentStr: string) => {
       <QuestionGenerationModal
         isOpen={isQuestionModalOpen}
         onClose={() => setIsQuestionModalOpen(false)}
-        notes={notes}
+        notes={getFilteredAndSortedNotesForQuiz()}
         activeNote={activeNote}
         learningApiPost={learningApiPost}
         onSaveToast={toast}

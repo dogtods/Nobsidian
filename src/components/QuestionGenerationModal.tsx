@@ -796,13 +796,18 @@ export default function QuestionGenerationModal({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {/* Select Note */}
                   <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-gray-300 flex items-center gap-1">
-                      <span>出題元ノートの選択</span>
-                      {activeNote && selectedNoteId === activeNote.id && (
-                        <span className="text-[9px] text-indigo-300 bg-indigo-500/20 px-1.5 py-0.2 rounded border border-indigo-500/30">
-                          編集中
-                        </span>
-                      )}
+                    <label className="text-[11px] font-bold text-gray-300 flex items-center justify-between gap-1">
+                      <div className="flex items-center gap-1">
+                        <span>出題元ノートの選択</span>
+                        {activeNote && selectedNoteId === activeNote.id && (
+                          <span className="text-[9px] text-indigo-300 bg-indigo-500/20 px-1.5 py-0.2 rounded border border-indigo-500/30">
+                            編集中
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-indigo-400 font-normal">
+                        表示中 {notes.length} 件
+                      </span>
                     </label>
                     <select
                       value={selectedNoteId}
