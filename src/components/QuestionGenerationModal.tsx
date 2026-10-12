@@ -127,6 +127,7 @@ export default function QuestionGenerationModal({
   const [isQuizAnswerRevealed, setIsQuizAnswerRevealed] = useState<boolean>(false);
   const [externalAiQuestionInput, setExternalAiQuestionInput] = useState<string>("");
   const [showExternalAiPromptBox, setShowExternalAiPromptBox] = useState<boolean>(false);
+  const [isSessionCompleted, setIsSessionCompleted] = useState<boolean>(false);
 
   // ローカルキャッシュの永続化 (変更時に即時一時記憶)
   useEffect(() => {
@@ -552,13 +553,14 @@ export default function QuestionGenerationModal({
     // 2. 【即時画面遷移 (0ms)】待ち時間ゼロで次の問題へ切り替え
     if (quizFilter === "active" && isMastered) {
       if (currentQuizIndex >= filteredQuizQuestions.length - 1) {
-        setCurrentQuizIndex(0);
+        setIsSessionCompleted(true);
       }
     } else {
       if (currentQuizIndex < filteredQuizQuestions.length - 1) {
         setCurrentQuizIndex(prev => prev + 1);
       } else {
-        onSaveToast("すべての問題の復習が完了しました！お疲れ様でした。");
+        onSaveToast("🎉 すべての問題の一巡が完了しました！お疲れ様でした。");
+        setIsSessionCompleted(true);
       }
     }
     setSelectedQuizChoices([]);

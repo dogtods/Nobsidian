@@ -48,8 +48,9 @@ export function buildQuestionPrompt(note: Note, config: QuestionGenerationConfig
 2. 【出題根拠（evidence.quote）の必須引用】
    各問題について、正解の直接の裏付けとなるノート本文の文章を、一文字一句違わずそのまま "quote" に引用してください。
 
-3. 【問題形式】
+3. 【問題形式・明確性の原則】
    ${formatInstruction}
+   ※問題文(question)は、単なる文章の切り抜きや曖昧な穴埋めではなく、何を問われているのか（背景概念、理由、因果関係、定義など）が初見でも明確に伝わる具体的な文面としてください。
 
 4. 【難易度】
    ${difficultyInstruction}
@@ -333,7 +334,7 @@ export function validateQuestionJson(
         tags: Array.isArray(item.tags) ? item.tags : sourceNote?.keywords ? sourceNote.keywords.split(",").map(k => k.trim()) : [],
         source: "external_ai_prompt",
         status: "approved",
-        choices: choices.length > 0 ? choices : undefined,
+        choices: choices.length > 0 ? shuffleChoices(choices) : undefined,
         evidence: evidenceObj,
         createdAt: now,
         updatedAt: now,
@@ -589,3 +590,17 @@ export function calculateSM2Review(
     nextReviewDate: nextDueDate
   };
 }
+
+function shuffleChoices(choices: QuestionChoice[]): QuestionChoice[] {
+  const shuffled = [...choices];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  shuffled.forEach((c, idx) => {
+    c.order = idx + 1;
+    c.label = String.fromCharCode(65 + idx);
+  });
+  return shuffled;
+}
+
