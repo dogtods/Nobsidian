@@ -47,10 +47,17 @@ import {
   Type,
   Pin,
   Moon,
-  Bookmark
+  Bookmark,
+  Crop,
+  Image as ImageIcon,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpToLine,
+  ArrowDownToLine
 } from "lucide-react";
 
 import { Note, FolderRelation } from "./types";
+import { ImageCropModal } from "./components/ImageCropModal";
 import { GuideBar } from "./components/GuideBar";
 import { ChemicalFormula, LatexMathViewer, isChemicalExpression } from "./components/ChemicalRenderer";
 import { getStoredPrompt, DEFAULT_PROMPTS } from "./components/PromptSettingsModal";
@@ -207,8 +214,13 @@ const cleanTextForSpeech = (rawText: string, title?: string): string => {
   text = text.replace(/\$\$[\s\S]*?\$\$/g, '');
   text = text.replace(/\$([^\$\n]+)\$/g, '$1');
 
-  // 3-5. 画像記法（![alt](url)）の完全除去
+  // 3-5. 画像の完全除去（★ユーザー要望: 音声読み上げ時は画像、コメント、URL、Base64を完全に無視する）
   text = text.replace(/!\[[^\]]*\]\([^\)]+\)/g, '');
+  text = text.replace(/!\[[\s\S]*?\]\([\s\S]*?\)/g, '');
+  text = text.replace(/<figure\b[\s\S]*?<\/figure>/gi, '');
+  text = text.replace(/<figcaption\b[\s\S]*?<\/figcaption>/gi, '');
+  text = text.replace(/<img\b[^>]*>/gi, '');
+  text = text.replace(/data:image\/[a-zA-Z0-9+.\/]+;base64,[a-zA-Z0-9+/=\s]+/gi, '');
 
   // 3-6. マークダウンリンク [表示テキスト](url) -> プレビュー表示と同様に「表示テキスト」のみ採用（URL部分は一切読まない）
   text = text.replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1');
@@ -542,6 +554,11 @@ export default function App() {
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isSyncManagerOpen, setIsSyncManagerOpen] = useState(false);
   const [isQuestionModalOpen, setIsQuestionModalOpen] = useState(false);
+  const [isImageCropModalOpen, setIsImageCropModalOpen] = useState(false);
+  const [cropModalInitialImage, setCropModalInitialImage] = useState<string | null>(null);
+  const [cropModalInitialAlt, setCropModalInitialAlt] = useState<string>("");
+  const [cropModalInitialSize, setCropModalInitialSize] = useState<string>("260px");
+  const [previewImageModalUrl, setPreviewImageModalUrl] = useState<string | null>(null);
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
   const [externalExportTarget, setExternalExportTarget] = useState<{ type: 'single' } | { type: 'folder'; folderName: string } | null>(null);
   const [showSourceMemo, setShowSourceMemo] = useState(false);
@@ -641,6 +658,7 @@ export default function App() {
           // ガイドバー要素自身、非表示要素、スクリプトなどは除外
           if (
             parent.closest("#visual-reading-guide-line") ||
+            parent.closest(".image-block-wrapper") ||
             parent.closest(".hidden") ||
             parent.closest("button") ||
             parent.tagName.toLowerCase() === "script" ||
@@ -2142,8 +2160,39 @@ $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$
         flushPendingSave(true);
       }
     };
+
+    const handleGlobalPaste = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+        return;
+      }
+      const active = notes.find(n => n.id === activeId);
+      if (!active) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith("image/")) {
+          const blob = items[i].getAsFile();
+          if (blob) {
+            e.preventDefault();
+            const reader = new FileReader();
+            reader.onload = (event) => {
+              setCropModalInitialImage(event.target?.result as string);
+              setIsImageCropModalOpen(true);
+            };
+            reader.readAsDataURL(blob);
+            break;
+          }
+        }
+      }
+    };
+
     window.addEventListener("keydown", handleGlobalKeyDown);
-    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+    window.addEventListener("paste", handleGlobalPaste);
+    return () => {
+      window.removeEventListener("keydown", handleGlobalKeyDown);
+      window.removeEventListener("paste", handleGlobalPaste);
+    };
   }, [activeId, notes]);
 
   // Parsing WikiLinks and raw elements inside Markdown Renderer
@@ -2449,6 +2498,52 @@ $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$
           />
         );
         lastIndex = commonSpeciesRegex.lastIndex;
+      }
+      if (lastIndex < part.length) {
+        nextParts.push(part.slice(lastIndex));
+      }
+    }
+    parts = nextParts;
+
+    // Stage 1.9: Markdown Images ![alt](url) or ![alt|size](url)
+    nextParts = [];
+    const mdImageRegex = /!\[([^\]|]*)(?:\|([^\]]*))?\]\((data:image\/[a-zA-Z0-9+.\/]+;base64,[^\s\)]+|https?:\/\/[^\s\)]+)\)/g;
+    for (const part of parts) {
+      if (typeof part !== "string") {
+        nextParts.push(part);
+        continue;
+      }
+      let lastIndex = 0;
+      let match;
+      mdImageRegex.lastIndex = 0;
+      while ((match = mdImageRegex.exec(part)) !== null) {
+        const matchIndex = match.index;
+        if (matchIndex > lastIndex) {
+          nextParts.push(part.slice(lastIndex, matchIndex));
+        }
+        const altText = (match[1] || "").trim();
+        const sizeSpec = (match[2] || "").trim();
+        const imgUrl = match[3];
+        const resolvedWidth = sizeSpec
+          ? (sizeSpec === "100%" || sizeSpec === "full" ? "100%" : (/^\d+$/.test(sizeSpec) ? `${sizeSpec}px` : sizeSpec))
+          : "auto";
+
+        nextParts.push(
+          <span
+            key={`inline-img-${matchIndex}`}
+            className="inline-block my-1 max-w-full align-middle image-block-wrapper"
+            style={{ width: resolvedWidth !== "auto" ? resolvedWidth : undefined }}
+          >
+            <img
+              src={imgUrl}
+              alt={altText}
+              style={{ width: resolvedWidth !== "auto" ? "100%" : undefined, height: "auto" }}
+              className="max-w-full max-h-[360px] rounded-lg border border-[var(--border2)] object-contain shadow-sm cursor-zoom-in hover:border-sky-500 transition-colors"
+              onClick={() => setPreviewImageModalUrl(imgUrl)}
+            />
+          </span>
+        );
+        lastIndex = mdImageRegex.lastIndex;
       }
       if (lastIndex < part.length) {
         nextParts.push(part.slice(lastIndex));
@@ -2864,6 +2959,159 @@ const renderMarkdownToElements = (contentStr: string) => {
           </div>
         );
       }
+      continue;
+    }
+
+    // 1.8. ブロック画像処理 (![alt](url) または ![alt|size](url) または ![|size](url))
+    const standaloneImgMatch = line.trim().match(/^!\[([^\]|]*)(?:\|([^\]]*))?\]\((data:image\/[a-zA-Z0-9+.\/]+;base64,[^\s\)]+|https?:\/\/[^\s\)]+)\)$/);
+    if (standaloneImgMatch) {
+      const altComment = (standaloneImgMatch[1] || "").trim();
+      const rawSize = (standaloneImgMatch[2] || "").trim();
+      const imgUrl = standaloneImgMatch[3];
+
+      const currentSize = rawSize || "260px";
+      const resolvedWidth = currentSize === "100%" || currentSize === "full"
+        ? "100%"
+        : (/^\d+$/.test(currentSize) ? `${currentSize}px` : currentSize);
+
+      elements.push(
+        <div
+          key={`block-img-${keySeq++}`}
+          className="my-4 group relative inline-flex flex-col items-center max-w-full"
+          style={{ width: resolvedWidth !== "100%" ? resolvedWidth : "100%" }}
+        >
+          <div className="relative w-full flex justify-center">
+            <img
+              src={imgUrl}
+              alt={altComment}
+              style={{ width: resolvedWidth !== "100%" ? "100%" : undefined, height: "auto" }}
+              className="max-w-full max-h-[600px] rounded-xl border border-[var(--border2)] object-contain shadow-md hover:border-sky-500 transition-colors cursor-zoom-in bg-black/20"
+              onClick={() => setPreviewImageModalUrl(imgUrl)}
+            />
+
+            {/* Quick floating toolbar (Shows on hover/focus) */}
+            <div className="absolute top-2 right-2 flex flex-wrap items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity bg-black/85 backdrop-blur-md p-1 rounded-lg border border-white/15 shadow-xl z-10 max-w-[calc(100%-16px)]">
+              {/* Size preset pills (Includes 極小 160px and 小 260px) */}
+              <div className="flex items-center gap-0.5 px-1 py-0.5 bg-white/10 rounded">
+                {[
+                  { label: "極小", size: "160px" },
+                  { label: "小", size: "260px" },
+                  { label: "中", size: "460px" },
+                  { label: "大", size: "720px" },
+                  { label: "全幅", size: "100%" },
+                ].map((s) => (
+                  <button
+                    key={s.size}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleResizeImage(imgUrl, s.size);
+                    }}
+                    className={`px-1.5 py-0.5 text-[10px] rounded font-medium cursor-pointer transition ${
+                      currentSize === s.size
+                        ? "bg-sky-500 text-white font-bold shadow-sm"
+                        : "text-gray-300 hover:text-white hover:bg-white/10"
+                    }`}
+                    title={`画像サイズを${s.label}(${s.size})に変更`}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="w-px h-3.5 bg-white/20 mx-0.5" />
+
+              {/* Move position arrows */}
+              <div className="flex items-center gap-0.5">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleMoveImage(imgUrl, 'up');
+                  }}
+                  className="p-1 text-gray-300 hover:text-white hover:bg-white/15 rounded text-[10px] cursor-pointer transition"
+                  title="1段落上へ移動"
+                >
+                  <ArrowUp className="w-3 h-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleMoveImage(imgUrl, 'down');
+                  }}
+                  className="p-1 text-gray-300 hover:text-white hover:bg-white/15 rounded text-[10px] cursor-pointer transition"
+                  title="1段落下へ移動"
+                >
+                  <ArrowDown className="w-3 h-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleMoveImage(imgUrl, 'top');
+                  }}
+                  className="p-1 text-gray-300 hover:text-white hover:bg-white/15 rounded text-[10px] cursor-pointer transition"
+                  title="ノート先頭へ移動"
+                >
+                  <ArrowUpToLine className="w-3 h-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleMoveImage(imgUrl, 'bottom');
+                  }}
+                  className="p-1 text-gray-300 hover:text-white hover:bg-white/15 rounded text-[10px] cursor-pointer transition"
+                  title="ノート末尾へ移動"
+                >
+                  <ArrowDownToLine className="w-3 h-3" />
+                </button>
+              </div>
+
+              <div className="w-px h-3.5 bg-white/20 mx-0.5" />
+
+              {/* Re-crop button */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCropModalInitialImage(imgUrl);
+                  setCropModalInitialAlt(altComment);
+                  setCropModalInitialSize(currentSize);
+                  setIsImageCropModalOpen(true);
+                }}
+                className="px-1.5 py-0.5 bg-sky-600 hover:bg-sky-500 text-white rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer transition active:scale-95 shadow-sm"
+                title="この画像を再トリミング（切り抜き）する"
+              >
+                <Crop className="w-3 h-3" />
+                <span className="hidden sm:inline">トリミング</span>
+              </button>
+
+              {/* Enlarge lightbox button */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPreviewImageModalUrl(imgUrl);
+                }}
+                className="p-1 bg-gray-700 hover:bg-gray-600 text-white rounded text-[10px] cursor-pointer transition"
+                title="画像を拡大表示"
+              >
+                <Maximize2 className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+
+          {/* Caption comment under photo: only displayed if non-empty */}
+          {altComment ? (
+            <div className="text-xs text-[var(--muted)] mt-1.5 text-center font-normal select-text">
+              {altComment}
+            </div>
+          ) : null}
+        </div>
+      );
+      i++;
       continue;
     }
 
@@ -3518,6 +3766,210 @@ const renderMarkdownToElements = (contentStr: string) => {
       console.error(e);
       toast("追記に失敗しました。");
     }
+  };
+
+  const updateActiveNoteContent = (newContent: string) => {
+    const active = getActiveNote();
+    if (!active) return;
+    const updated: Note = {
+      ...active,
+      content: newContent,
+      summary: newContent,
+      updatedAt: Date.now()
+    };
+    let newList: Note[] = [];
+    setNotes(prev => {
+      newList = prev.map(n => n.id === active.id ? updated : n);
+      notesRef.current = newList;
+      triggerLocalSave(newList, active.id);
+      return newList;
+    });
+    scheduleDelayedSave(updated);
+  };
+
+  const getImageInfoFromNote = (imgUrl: string): { comment: string; size: string } => {
+    const active = getActiveNote();
+    if (!active || !active.content) return { comment: "", size: "260px" };
+    const escapedUrl = imgUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`!\\[([^\\]|]*)(?:\\|([^\\]]*))?\\]\\(${escapedUrl}\\)`);
+    const match = active.content.match(regex);
+    if (match) {
+      return {
+        comment: (match[1] || "").trim(),
+        size: (match[2] || "260px").trim()
+      };
+    }
+    return { comment: "", size: "260px" };
+  };
+
+  const handleResizeImage = (imgUrl: string, newSize: string) => {
+    const active = getActiveNote();
+    if (!active || !active.content) return;
+
+    const escapedUrl = imgUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`!\\[([^\\]|]*)(?:\\|([^\\]]*))?\\]\\(${escapedUrl}\\)`);
+    const match = active.content.match(regex);
+
+    let newContent = "";
+    if (match) {
+      const existingComment = (match[1] || "").trim();
+      const replacement = existingComment ? `![${existingComment}|${newSize}](${imgUrl})` : `![|${newSize}](${imgUrl})`;
+      newContent = active.content.replace(match[0], replacement);
+    } else {
+      newContent = active.content.replace(
+        new RegExp(`!\\[[^\\]]*\\]\\(${escapedUrl}\\)`),
+        `![|${newSize}](${imgUrl})`
+      );
+    }
+
+    if (newContent !== active.content) {
+      updateActiveNoteContent(newContent);
+      toast(`画像サイズを ${newSize} に変更しました ✦`);
+    }
+  };
+
+  const handleMoveImage = (imgUrl: string, direction: 'up' | 'down' | 'top' | 'bottom') => {
+    const active = getActiveNote();
+    if (!active || !active.content) return;
+
+    const escapedUrl = imgUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const imgRegex = new RegExp(`!\\[[^\\]]*\\]\\(${escapedUrl}\\)`);
+    const match = active.content.match(imgRegex);
+    if (!match) return toast("画像が見つかりませんでした");
+
+    const fullImgTag = match[0];
+    const rawBlocks = active.content.split(/\n\n+/);
+    const imgBlockIdx = rawBlocks.findIndex(b => b.includes(fullImgTag));
+    if (imgBlockIdx === -1) return toast("画像の配置位置を特定できませんでした");
+
+    let blocks: string[] = [];
+    rawBlocks.forEach((b, idx) => {
+      if (idx === imgBlockIdx) {
+        const trimmed = b.trim();
+        if (trimmed === fullImgTag) {
+          blocks.push(fullImgTag);
+        } else {
+          const parts = b.split(fullImgTag);
+          if (parts[0] && parts[0].trim()) blocks.push(parts[0].trim());
+          blocks.push(fullImgTag);
+          if (parts[1] && parts[1].trim()) blocks.push(parts[1].trim());
+        }
+      } else {
+        if (b.trim()) blocks.push(b.trim());
+      }
+    });
+
+    const currentIndex = blocks.findIndex(b => b === fullImgTag);
+    if (currentIndex === -1) return;
+
+    if (direction === 'top') {
+      const isFirstBlockTitle = /^#\s+/.test(blocks[0]);
+      const targetIdx = isFirstBlockTitle ? 1 : 0;
+      if (currentIndex === targetIdx) {
+        return toast("すでに記事の先頭に配置されています");
+      }
+      const [imgItem] = blocks.splice(currentIndex, 1);
+      blocks.splice(targetIdx, 0, imgItem);
+      toast("画像を記事の先頭に移動しました ⤒✦");
+    } else if (direction === 'bottom') {
+      if (currentIndex === blocks.length - 1) {
+        return toast("すでに記事の末尾に配置されています");
+      }
+      const [imgItem] = blocks.splice(currentIndex, 1);
+      blocks.push(imgItem);
+      toast("画像を記事の末尾に移動しました ⤓✦");
+    } else if (direction === 'up') {
+      if (currentIndex === 0) {
+        return toast("これ以上上には移動できません");
+      }
+      if (currentIndex === 1 && /^#\s+/.test(blocks[0])) {
+        return toast("記事タイトルより上には移動できません");
+      }
+      const temp = blocks[currentIndex - 1];
+      blocks[currentIndex - 1] = blocks[currentIndex];
+      blocks[currentIndex] = temp;
+      toast("画像を1段落上へ移動しました ↑✦");
+    } else if (direction === 'down') {
+      if (currentIndex >= blocks.length - 1) {
+        return toast("これ以上下には移動できません");
+      }
+      const temp = blocks[currentIndex + 1];
+      blocks[currentIndex + 1] = blocks[currentIndex];
+      blocks[currentIndex] = temp;
+      toast("画像を1段落下へ移動しました ↓✦");
+    }
+
+    const newContent = blocks.join("\n\n");
+    updateActiveNoteContent(newContent);
+  };
+
+  const handleInsertCroppedImage = (
+    imageDataUrl: string,
+    comment: string = "",
+    size: string = "260px",
+    position: 'cursor' | 'top' | 'bottom' = "cursor"
+  ) => {
+    const active = getActiveNote();
+    if (!active) return toast("ノートを選択してください");
+
+    const cleanComment = (comment || "").trim();
+    const cleanSize = (size || "260px").trim();
+    const imgTag = cleanComment ? `![${cleanComment}|${cleanSize}](${imageDataUrl})` : `![|${cleanSize}](${imageDataUrl})`;
+    const imgMarkdown = `\n\n${imgTag}\n\n`;
+
+    let nextContent = "";
+    if (cropModalInitialImage && active.content.includes(cropModalInitialImage)) {
+      const escapedOld = cropModalInitialImage.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const oldImgRegex = new RegExp(`!\\[[^\\]]*\\]\\(${escapedOld}\\)`);
+
+      if (position === 'top') {
+        const contentWithoutOld = active.content.replace(oldImgRegex, "").replace(/\n\s*\n\s*\n/g, "\n\n");
+        const titleMatch = contentWithoutOld.match(/^#\s+[^\n]+\n*/);
+        if (titleMatch) {
+          nextContent = titleMatch[0] + "\n" + imgTag + "\n\n" + contentWithoutOld.substring(titleMatch[0].length).trimStart();
+        } else {
+          nextContent = imgTag + "\n\n" + contentWithoutOld.trimStart();
+        }
+        toast("画像をトリミングし、ノート先頭へ移動しました 🖼️✦");
+      } else if (position === 'bottom') {
+        const contentWithoutOld = active.content.replace(oldImgRegex, "").replace(/\n\s*\n\s*\n/g, "\n\n");
+        nextContent = contentWithoutOld.trim() + "\n\n" + imgTag + "\n";
+        toast("画像をトリミングし、ノート末尾へ移動しました 🖼️✦");
+      } else {
+        if (oldImgRegex.test(active.content)) {
+          nextContent = active.content.replace(oldImgRegex, imgTag);
+        } else {
+          nextContent = active.content.replace(cropModalInitialImage, imageDataUrl);
+        }
+        toast("既存の画像をトリミングした画像に差し替えました ✂️✦");
+      }
+    } else if (position === 'top') {
+      const titleMatch = active.content.match(/^#\s+[^\n]+\n*/);
+      if (titleMatch) {
+        nextContent = titleMatch[0] + "\n" + imgTag + "\n\n" + active.content.substring(titleMatch[0].length).trimStart();
+      } else {
+        nextContent = imgTag + "\n\n" + active.content;
+      }
+      toast("画像をノート先頭に挿入しました 🖼️✦");
+    } else if (position === 'bottom') {
+      nextContent = (active.content ? active.content.trim() + "\n\n" : "") + imgTag + "\n";
+      toast("画像をノート末尾に挿入しました 🖼️✦");
+    } else if (mode === "edit" && editorRef.current) {
+      const start = editorRef.current.selectionStart || 0;
+      const end = editorRef.current.selectionEnd || 0;
+      const before = active.content.substring(0, start);
+      const after = active.content.substring(end);
+      nextContent = before + imgMarkdown + after;
+      toast("画像をカーソル位置に挿入しました 🖼️✦");
+    } else {
+      nextContent = (active.content ? active.content.trim() + "\n\n" : "") + imgTag + "\n";
+      toast("画像をノートに挿入しました 🖼️✦");
+    }
+
+    setCropModalInitialImage(null);
+    setCropModalInitialAlt("");
+    setCropModalInitialSize("260px");
+    updateActiveNoteContent(nextContent);
   };
 
   const runVisualExtraction = async () => {
@@ -7174,6 +7626,18 @@ const renderMarkdownToElements = (contentStr: string) => {
                     </button>
 
                     <button
+                      onClick={() => {
+                        setCropModalInitialImage(null);
+                        setIsImageCropModalOpen(true);
+                      }}
+                      className="p-1 px-2 portrait:px-1.5 text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all"
+                      title="画像を選択またはペーストしてトリミング＆記事に挿入"
+                    >
+                      <ImageIcon className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                      <span className="portrait:hidden">画像挿入</span>
+                    </button>
+
+                    <button
                       onClick={runVisualExtraction}
                       disabled={isExtractingStructure}
                       className={`p-1 px-2 portrait:px-1.5 text-xs font-medium rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all ${
@@ -7376,6 +7840,46 @@ const renderMarkdownToElements = (contentStr: string) => {
                     onChange={(e) => handleNoteContentChange(e.target.value)}
                     onBlur={handleEditorBlur}
                     onKeyDown={handleEditorKeyDown}
+                    onPaste={(e) => {
+                      const items = e.clipboardData?.items;
+                      if (items) {
+                        for (let i = 0; i < items.length; i++) {
+                          if (items[i].type.indexOf("image") !== -1) {
+                            const blob = items[i].getAsFile();
+                            if (blob) {
+                              e.preventDefault();
+                              const reader = new FileReader();
+                              reader.onload = (event) => {
+                                setCropModalInitialImage(event.target?.result as string);
+                                setIsImageCropModalOpen(true);
+                              };
+                              reader.readAsDataURL(blob);
+                              break;
+                            }
+                          }
+                        }
+                      }
+                    }}
+                    onDragOver={(e) => {
+                      if (e.dataTransfer.types.includes("Files")) {
+                        e.preventDefault();
+                      }
+                    }}
+                    onDrop={(e) => {
+                      const files = e.dataTransfer.files;
+                      if (files && files.length > 0) {
+                        const file = files[0];
+                        if (file.type.startsWith("image/")) {
+                          e.preventDefault();
+                          const reader = new FileReader();
+                          reader.onload = (event) => {
+                            setCropModalInitialImage(event.target?.result as string);
+                            setIsImageCropModalOpen(true);
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }
+                    }}
                   />
                 ) : (
                   <div 
@@ -7383,6 +7887,26 @@ const renderMarkdownToElements = (contentStr: string) => {
                     id="preview" 
                     onClick={handlePreviewClick}
                     onScroll={handlePreviewScroll}
+                    onDragOver={(e) => {
+                      if (e.dataTransfer.types.includes("Files")) {
+                        e.preventDefault();
+                      }
+                    }}
+                    onDrop={(e) => {
+                      const files = e.dataTransfer.files;
+                      if (files && files.length > 0) {
+                        const file = files[0];
+                        if (file.type.startsWith("image/")) {
+                          e.preventDefault();
+                          const reader = new FileReader();
+                          reader.onload = (event) => {
+                            setCropModalInitialImage(event.target?.result as string);
+                            setIsImageCropModalOpen(true);
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }
+                    }}
                     style={{ ['--article-font-delta' as any]: `${articleFontDelta}pt` }}
                     className={`relative flex-1 p-6 md:p-8 overflow-y-auto block md select-text print:p-0 print:m-0 print:overflow-visible ${
                       isGuideBarOpen ? "pb-28 cursor-pointer" : ""
@@ -8725,6 +9249,153 @@ const renderMarkdownToElements = (contentStr: string) => {
           setIsSettingsOpen(true);
         }}
       />
+
+      {/* Image Crop & Paste Modal */}
+      {/* Image Crop & Paste Modal */}
+      <ImageCropModal
+        isOpen={isImageCropModalOpen}
+        onClose={() => {
+          setIsImageCropModalOpen(false);
+          setCropModalInitialImage(null);
+          setCropModalInitialAlt("");
+          setCropModalInitialSize("260px");
+        }}
+        initialImageData={cropModalInitialImage}
+        initialAltText={cropModalInitialAlt}
+        initialSize={cropModalInitialSize}
+        onInsertImage={handleInsertCroppedImage}
+      />
+
+      {/* Image Zoom / Lightbox Preview Modal */}
+      {previewImageModalUrl && (() => {
+        const info = getImageInfoFromNote(previewImageModalUrl);
+        return (
+          <div
+            className="fixed inset-0 z-[10000] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 select-none animate-[fadeIn_0.15s_ease-out]"
+            onClick={() => setPreviewImageModalUrl(null)}
+          >
+            <div className="relative max-w-5xl max-h-[95vh] flex flex-col items-center" onClick={(e) => e.stopPropagation()}>
+              <div className="w-full flex flex-wrap items-center justify-between gap-2 pb-2 text-white border-b border-white/10 mb-2">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-xs text-gray-300 font-bold">画像プレビュー</span>
+                  {/* Size switcher (Includes 極小 160px and 小 260px) */}
+                  <div className="flex items-center gap-1 bg-white/10 px-1.5 py-0.5 rounded-lg text-xs">
+                    <span className="text-[10px] text-gray-400 mr-0.5">サイズ:</span>
+                    {[
+                      { label: "極小", size: "160px" },
+                      { label: "小", size: "260px" },
+                      { label: "中", size: "460px" },
+                      { label: "大", size: "720px" },
+                      { label: "全幅", size: "100%" },
+                    ].map((s) => (
+                      <button
+                        key={s.size}
+                        type="button"
+                        onClick={() => handleResizeImage(previewImageModalUrl, s.size)}
+                        className={`px-1.5 py-0.5 text-[10px] rounded cursor-pointer transition ${
+                          info.size === s.size
+                            ? "bg-sky-500 text-white font-bold"
+                            : "text-gray-300 hover:text-white hover:bg-white/10"
+                        }`}
+                        title={`記事内サイズを${s.label}(${s.size})に変更`}
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Move position switcher */}
+                  <div className="flex items-center gap-1 bg-white/10 px-1.5 py-0.5 rounded-lg text-xs">
+                    <span className="text-[10px] text-gray-400 mr-0.5">位置:</span>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveImage(previewImageModalUrl, 'up')}
+                      className="px-1.5 py-0.5 text-[10px] text-gray-300 hover:text-white hover:bg-white/15 rounded flex items-center gap-0.5 cursor-pointer"
+                      title="1段落上へ移動"
+                    >
+                      <ArrowUp className="w-3 h-3" />
+                      <span>上へ</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveImage(previewImageModalUrl, 'down')}
+                      className="px-1.5 py-0.5 text-[10px] text-gray-300 hover:text-white hover:bg-white/15 rounded flex items-center gap-0.5 cursor-pointer"
+                      title="1段落下へ移動"
+                    >
+                      <ArrowDown className="w-3 h-3" />
+                      <span>下へ</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveImage(previewImageModalUrl, 'top')}
+                      className="px-1.5 py-0.5 text-[10px] text-gray-300 hover:text-white hover:bg-white/15 rounded flex items-center gap-0.5 cursor-pointer"
+                      title="ノート先頭へ移動"
+                    >
+                      <ArrowUpToLine className="w-3 h-3" />
+                      <span>先頭</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveImage(previewImageModalUrl, 'bottom')}
+                      className="px-1.5 py-0.5 text-[10px] text-gray-300 hover:text-white hover:bg-white/15 rounded flex items-center gap-0.5 cursor-pointer"
+                      title="ノート末尾へ移動"
+                    >
+                      <ArrowDownToLine className="w-3 h-3" />
+                      <span>末尾</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const imgToCrop = previewImageModalUrl;
+                      setPreviewImageModalUrl(null);
+                      setCropModalInitialImage(imgToCrop);
+                      setCropModalInitialAlt(info.comment);
+                      setCropModalInitialSize(info.size);
+                      setIsImageCropModalOpen(true);
+                    }}
+                    className="px-3 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow transition"
+                    title="この画像をトリミング（切り抜き）する"
+                  >
+                    <Crop className="w-3.5 h-3.5" />
+                    <span>トリミング</span>
+                  </button>
+                  <a
+                    href={previewImageModalUrl}
+                    download="article-image"
+                    className="px-3 py-1 bg-[#21262d] hover:bg-[#30363d] text-gray-200 hover:text-white rounded-lg text-xs font-medium flex items-center gap-1.5 cursor-pointer transition border border-[#30363d]"
+                    title="画像を保存"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>保存</span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewImageModalUrl(null)}
+                    className="p-1 text-gray-400 hover:text-white rounded-lg hover:bg-gray-800 transition cursor-pointer"
+                    title="閉じる"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+              <img
+                src={previewImageModalUrl}
+                alt={info.comment || "拡大プレビュー"}
+                className="max-w-full max-h-[80vh] rounded-xl border border-[#30363d] shadow-2xl object-contain bg-[#090d13]"
+              />
+              {info.comment ? (
+                <div className="mt-2 text-xs text-gray-300 bg-black/60 px-3 py-1 rounded-full border border-white/10 text-center font-normal">
+                  {info.comment}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Batch Folder Link progress modal */}
       {bulkProgress && bulkProgress.isOpen && (

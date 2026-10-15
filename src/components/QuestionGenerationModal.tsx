@@ -1292,6 +1292,7 @@ export default function QuestionGenerationModal({
                       type="button"
                       onClick={() => {
                         setQuizFilter("active");
+                        setIsSessionCompleted(false);
                         setCurrentQuizIndex(0);
                         setSelectedQuizChoices([]);
                         setEssayAnswer("");
@@ -1314,6 +1315,7 @@ export default function QuestionGenerationModal({
                       type="button"
                       onClick={() => {
                         setQuizFilter("all");
+                        setIsSessionCompleted(false);
                         setCurrentQuizIndex(0);
                         setSelectedQuizChoices([]);
                         setEssayAnswer("");
@@ -1336,6 +1338,7 @@ export default function QuestionGenerationModal({
                       type="button"
                       onClick={() => {
                         setQuizFilter("mastered");
+                        setIsSessionCompleted(false);
                         setCurrentQuizIndex(0);
                         setSelectedQuizChoices([]);
                         setEssayAnswer("");
@@ -1456,6 +1459,56 @@ export default function QuestionGenerationModal({
                     </button>
                   </div>
                 )
+              ) : isSessionCompleted ? (
+                <div className="bg-[#1c2128] border border-emerald-500/40 rounded-xl p-8 text-center space-y-4 animate-[fadeIn_0.2s_ease-out]">
+                  <div className="w-16 h-16 mx-auto rounded-full bg-emerald-500/20 text-emerald-300 flex items-center justify-center shadow-lg border border-emerald-500/30">
+                    <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-lg font-bold text-white">
+                      🎉 本日の問題が一巡しました！お疲れ様でした
+                    </h4>
+                    <p className="text-xs text-gray-300 max-w-md mx-auto leading-relaxed">
+                      出題対象の全 {filteredQuizQuestions.length} 問の復習・自己評価が完了しました。<br />
+                      各問題の解答結果と自己評価に基づき、最適な次回復習間隔（エビングハウスの忘却曲線・SM-2）が自動設定されました。
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-center gap-3 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsSessionCompleted(false);
+                        setCurrentQuizIndex(0);
+                        setSelectedQuizChoices([]);
+                        setEssayAnswer("");
+                        setIsQuizAnswerRevealed(false);
+                      }}
+                      className="px-4 py-2 rounded-lg text-xs font-semibold bg-[#21262d] hover:bg-[#30363d] text-gray-200 border border-[#30363d] transition cursor-pointer flex items-center gap-1.5"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>もう一度最初から解く</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsSessionCompleted(false);
+                        setActiveTab("approval");
+                      }}
+                      className="px-5 py-2 rounded-lg text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white transition cursor-pointer shadow flex items-center gap-1.5"
+                    >
+                      <ListChecks className="w-3.5 h-3.5" />
+                      <span>問題管理リストに戻る</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="px-4 py-2 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition cursor-pointer shadow"
+                    >
+                      完了して閉じる
+                    </button>
+                  </div>
+                </div>
               ) : (
                 (() => {
                   const currentQ = filteredQuizQuestions[currentQuizIndex] || filteredQuizQuestions[0];

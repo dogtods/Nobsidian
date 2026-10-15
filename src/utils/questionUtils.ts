@@ -48,14 +48,17 @@ export function buildQuestionPrompt(note: Note, config: QuestionGenerationConfig
 2. 【出題根拠（evidence.quote）の必須引用】
    各問題について、正解の直接の裏付けとなるノート本文の文章を、一文字一句違わずそのまま "quote" に引用してください。
 
-3. 【問題形式・明確性の原則】
-   ${formatInstruction}
-   ※問題文(question)は、単なる文章の切り抜きや曖昧な穴埋めではなく、何を問われているのか（背景概念、理由、因果関係、定義など）が初見でも明確に伝わる具体的な文面としてください。
+3. 【問題文の自立性と文脈フレーミング（何を問われているかの明確化）】
+   問題文(question)は、「ノートの内容ありき」で文脈が飛んでいて何を問われているのか分からない状態を厳禁とします。『〇〇における〜〜について』のように前提や概念の文脈を自然に補足し、何についての理解・正誤・選択を求めているのかが初見でも明確に伝わる具体的な文面としてください。単なる文章の切り抜きや曖昧な穴埋めは禁止です。
 
-4. 【難易度】
+4. 【選択肢の正解位置の分散（回答の偏り防止）】
+   ${formatInstruction}
+   ※重要：正解の選択肢（A〜D）が常にAやBに偏らないよう、問題ごとに正解位置（A, B, C, D）を均等にランダムにばらけさせて配置してください。複数回答の場合も（AとC、BとD、AとDなど）多様な組み合わせで出題してください。
+
+5. 【難易度】
    ${difficultyInstruction}
 
-5. 【出力形式（最重要・厳格なJSON出力）】
+6. 【出力形式（最重要・厳格なJSON出力）】
    以下のJSONスキーマに従った「JSON配列 [ ... ] のみ」を出力してください。
    ※前置きや挨拶文、マークダウンのコードブロック以外の余計なテキストは含めないでください。
    ※必ず先頭文字を '[' 、末尾文字を ']' にしてください。
@@ -67,34 +70,34 @@ export function buildQuestionPrompt(note: Note, config: QuestionGenerationConfig
 [
   {
     "type": "single_choice",
-    "question": "問題文をここに具体的に記述してください。",
+    "question": "提供ノートの背景概念を踏まえ、何を問うているか初見でも明確な具体的な問題文を記述してください。",
     "choices": [
       {
         "label": "A",
-        "text": "選択肢Aのテキスト",
-        "isCorrect": true,
-        "explanation": "選択肢Aが正解である理由"
+        "text": "選択肢Aのテキスト（誤答の例）",
+        "isCorrect": false,
+        "explanation": "選択肢Aが誤りである理由"
       },
       {
         "label": "B",
-        "text": "選択肢Bのテキスト",
+        "text": "選択肢Bのテキスト（誤答の例）",
         "isCorrect": false,
         "explanation": "選択肢Bが誤りである理由"
       },
       {
         "label": "C",
-        "text": "選択肢Cのテキスト",
-        "isCorrect": false,
-        "explanation": "選択肢Cが誤りである理由"
+        "text": "選択肢Cのテキスト（正解の例：正解位置はA〜Dへ均等に分散させてください）",
+        "isCorrect": true,
+        "explanation": "選択肢Cが正解である理由"
       },
       {
         "label": "D",
-        "text": "選択肢Dのテキスト",
+        "text": "選択肢Dのテキスト（誤答の例）",
         "isCorrect": false,
         "explanation": "選択肢Dが誤りである理由"
       }
     ],
-    "correctAnswer": "正解のテキスト（選択肢テキストまたは正解記号、○/×、模範解答）",
+    "correctAnswer": "C",
     "explanation": "なぜそれが正解なのか、根拠に基づく詳細で丁寧な解説。",
     "difficulty": "${difficulty}",
     "tags": ["関連キーワード1", "関連キーワード2"],
@@ -322,19 +325,23 @@ export function validateQuestionJson(
     if (itemErrors.length > 0) {
       errors.push(...itemErrors);
     } else {
+      const { choices: finalChoices, correctAnswer: finalAnswer } = choices.length > 0
+        ? shuffleChoicesAndSyncAnswer(choices, correctAnswer, qType)
+        : { choices: undefined, correctAnswer };
+
       validatedQuestions.push({
         id: `q_${now}_${idx}_${Math.floor(Math.random() * 1000)}`,
         noteId: sourceNote ? sourceNote.id : (item.noteId || ""),
         noteTitle: sourceNote ? sourceNote.title : (item.noteTitle || "無題のノート"),
         type: qType,
         question: questionText,
-        correctAnswer: correctAnswer,
+        correctAnswer: finalAnswer,
         explanation: explanation,
         difficulty: (["easy", "medium", "hard"].includes(item.difficulty) ? item.difficulty : "medium") as any,
         tags: Array.isArray(item.tags) ? item.tags : sourceNote?.keywords ? sourceNote.keywords.split(",").map(k => k.trim()) : [],
         source: "external_ai_prompt",
         status: "approved",
-        choices: choices.length > 0 ? shuffleChoices(choices) : undefined,
+        choices: finalChoices,
         evidence: evidenceObj,
         createdAt: now,
         updatedAt: now,
@@ -410,24 +417,40 @@ export function generateQuestionsLocally(note: Note, config: QuestionGenerationC
 
     const clozeQuestion = sentence.replace(keyword, "【　？　】");
 
+    const dummyOptions = ["関連補足データ", "外部参考情報", "一般的な定義"];
+    const allOptions = [
+      { text: keyword, isCorrect: true },
+      { text: dummyOptions[0], isCorrect: false },
+      { text: dummyOptions[1], isCorrect: false },
+      { text: dummyOptions[2], isCorrect: false }
+    ];
+    for (let j = allOptions.length - 1; j > 0; j--) {
+      const k = Math.floor(Math.random() * (j + 1));
+      [allOptions[j], allOptions[k]] = [allOptions[k], allOptions[j]];
+    }
+    const localChoices: QuestionChoice[] = allOptions.map((opt, optIdx) => ({
+      id: `c_${now}_${i}_${optIdx}`,
+      order: optIdx + 1,
+      label: String.fromCharCode(65 + optIdx),
+      text: opt.text,
+      isCorrect: opt.isCorrect
+    }));
+    const correctChoiceItem = localChoices.find(c => c.isCorrect);
+    const correctLabel = correctChoiceItem?.label || "A";
+
     questions.push({
       id: `q_${now}_local_${i}`,
       noteId: note.id,
       noteTitle: title,
       type: "single_choice",
       question: `【空欄補充】以下の文章の空欄【 ？ 】に入る最も適切な語句を選んでください。\n「${clozeQuestion}」`,
-      correctAnswer: keyword,
-      explanation: `元ノート本文より: 「${sentence}」`,
+      correctAnswer: correctLabel,
+      explanation: `元ノート本文より: 「${sentence}」\n正解は選択肢 ${correctLabel}（${keyword}）です。`,
       difficulty: config.difficulty || "medium",
       tags: [keyword],
       source: "manual",
       status: "approved",
-      choices: [
-        { id: `c_${now}_${i}_0`, order: 1, label: "A", text: keyword, isCorrect: true },
-        { id: `c_${now}_${i}_1`, order: 2, label: "B", text: "関連補足データ", isCorrect: false },
-        { id: `c_${now}_${i}_2`, order: 3, label: "C", text: "外部参考情報", isCorrect: false },
-        { id: `c_${now}_${i}_3`, order: 4, label: "D", text: "一般的な定義", isCorrect: false }
-      ],
+      choices: localChoices,
       evidence: {
         id: `ev_${now}_${i}`,
         quote: sentence,
@@ -591,7 +614,7 @@ export function calculateSM2Review(
   };
 }
 
-function shuffleChoices(choices: QuestionChoice[]): QuestionChoice[] {
+export function shuffleChoices(choices: QuestionChoice[]): QuestionChoice[] {
   const shuffled = [...choices];
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -603,4 +626,36 @@ function shuffleChoices(choices: QuestionChoice[]): QuestionChoice[] {
   });
   return shuffled;
 }
+
+export function shuffleChoicesAndSyncAnswer(
+  choices: QuestionChoice[],
+  originalAnswer: string,
+  qType: QuestionType
+): { choices: QuestionChoice[]; correctAnswer: string } {
+  if (!choices || choices.length === 0) {
+    return { choices, correctAnswer: originalAnswer };
+  }
+  const shuffled = [...choices];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  shuffled.forEach((c, idx) => {
+    c.order = idx + 1;
+    c.label = String.fromCharCode(65 + idx);
+  });
+
+  const correctChoices = shuffled.filter(c => c.isCorrect);
+  let newAnswer = originalAnswer;
+  if (correctChoices.length > 0) {
+    if (qType === "multiple_choice" || correctChoices.length > 1) {
+      newAnswer = correctChoices.map(c => c.label).join(", ");
+    } else {
+      newAnswer = correctChoices[0].label;
+    }
+  }
+
+  return { choices: shuffled, correctAnswer: newAnswer };
+}
+
 
