@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 
@@ -114,27 +115,167 @@ async function startServer() {
     }
   });
 
+  // Same-origin PDF.js Worker to guarantee zero-CORS worker loading
+  app.get("/api/pdf.worker.mjs", (req, res) => {
+    try {
+      const workerPath = path.join(process.cwd(), "node_modules/pdfjs-dist/build/pdf.worker.min.mjs");
+      if (fs.existsSync(workerPath)) {
+        res.setHeader("Content-Type", "application/javascript; charset=UTF-8");
+        return res.sendFile(workerPath);
+      }
+      res.status(404).send("Worker not found");
+    } catch (e: any) {
+      res.status(500).send(e.message);
+    }
+  });
+
+  // Binary PDF Proxy with Google Drive confirmation handling, anti-bot bypass, and HTML PDF extractor
   app.get("/api/proxy-pdf", async (req, res) => {
     try {
-      const targetUrl = req.query.url as string;
+      let targetUrl = req.query.url as string;
       if (!targetUrl) return res.status(400).json({ error: "URLパラメータが指定されていません" });
 
-      const fetchRes = await fetch(targetUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Accept": "application/pdf, application/octet-stream, */*"
-        },
+      targetUrl = targetUrl.trim();
+
+      // Convert arXiv abstract or html view to direct PDF
+      if (targetUrl.includes("arxiv.org/abs/") || targetUrl.includes("arxiv.org/html/")) {
+        targetUrl = targetUrl.replace(/arxiv\.org\/(?:abs|html)\//, "arxiv.org/pdf/") + ".pdf";
+      }
+
+      // Format Google Drive URLs
+      const driveMatch = targetUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || targetUrl.match(/id=([a-zA-Z0-9_-]+)/);
+      if (driveMatch && !targetUrl.includes("export=download")) {
+        targetUrl = `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`;
+      }
+
+      const fetchHeaders = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/pdf, application/octet-stream, text/html, */*"
+      };
+
+      let fetchRes = await fetch(targetUrl, {
+        headers: fetchHeaders,
         redirect: "follow"
       });
 
-      if (!fetchRes.ok) {
-        return res.status(fetchRes.status).json({ error: `PDF取得失敗: HTTP ${fetchRes.status}` });
+      // Anti-bot fallback: If 403 Forbidden (e.g. Cloudflare / Akamai), retry with clean curl user-agent
+      if (!fetchRes.ok && (fetchRes.status === 403 || fetchRes.status === 401)) {
+        fetchRes = await fetch(targetUrl, {
+          headers: {
+            "User-Agent": "curl/7.88.1",
+            "Accept": "*/*"
+          },
+          redirect: "follow"
+        });
       }
 
-      const buffer = await fetchRes.arrayBuffer();
-      res.setHeader("Content-Type", fetchRes.headers.get("content-type") || "application/pdf");
-      res.setHeader("Content-Length", buffer.byteLength);
-      res.send(Buffer.from(buffer));
+      if (!fetchRes.ok) {
+        return res.status(fetchRes.status).json({ error: `PDF取得失敗: HTTP ${fetchRes.status} (${fetchRes.statusText})` });
+      }
+
+      let buffer = await fetchRes.arrayBuffer();
+      let nodeBuf = Buffer.from(buffer);
+
+      // Check for Google Drive virus-scan / download-anyway confirmation page
+      if (nodeBuf.subarray(0, 5).toString() !== "%PDF-") {
+        const text = nodeBuf.toString("utf-8");
+        // Look for Google Drive confirmation URL
+        const confirmMatch = text.match(/href="(\/uc\?export=download[^"]+)"/) ||
+                             text.match(/action="(\/uc\?export=download[^"]+)"/) ||
+                             text.match(/href="(https:\/\/[^"]*drive\.usercontent\.google\.com[^"]+)"/);
+
+        if (confirmMatch) {
+          const nextUrl = confirmMatch[1].startsWith("http")
+            ? confirmMatch[1].replace(/&amp;/g, "&")
+            : `https://drive.google.com${confirmMatch[1].replace(/&amp;/g, "&")}`;
+
+          let confirmRes = await fetch(nextUrl, {
+            headers: fetchHeaders,
+            redirect: "follow"
+          });
+
+          if (confirmRes.ok) {
+            buffer = await confirmRes.arrayBuffer();
+            nodeBuf = Buffer.from(buffer);
+          }
+        }
+      }
+
+      // Check if it's a valid PDF (starts with %PDF- or contains %PDF- in header)
+      const isPdf = nodeBuf.subarray(0, 5).toString() === "%PDF-" ||
+                    nodeBuf.subarray(0, 1024).includes(Buffer.from("%PDF-"));
+
+      if (!isPdf) {
+        const htmlText = nodeBuf.toString("utf-8");
+        const detectedPdfLinks: { title: string; url: string }[] = [];
+        const seenUrls = new Set<string>();
+
+        const addCandidate = (rawUrl: string, titleHint?: string) => {
+          if (!rawUrl) return;
+          try {
+            const cleanUrl = rawUrl.trim().replace(/&amp;/g, "&");
+            const absoluteUrl = new URL(cleanUrl, targetUrl).href;
+            if (seenUrls.has(absoluteUrl)) return;
+            seenUrls.add(absoluteUrl);
+
+            let label = (titleHint || "").trim().replace(/<[^>]+>/g, "").replace(/\s+/g, " ");
+            if (!label || label.length < 2) {
+              const filename = absoluteUrl.split("/").pop()?.split("?")[0] || "document.pdf";
+              label = `PDFドキュメント (${filename})`;
+            }
+            if (label.length > 50) label = label.slice(0, 50) + "…";
+            detectedPdfLinks.push({ title: label, url: absoluteUrl });
+          } catch (_) {}
+        };
+
+        // 1. Google Scholar / Highwire / DublinCore meta tags
+        const metaRegex = /<meta\s+[^>]*name=["'](?:citation_pdf_url|dc\.identifier\.pdf|dc\.identifier\.url)["'][^>]*content=["']([^"']+)["']/gi;
+        let m: RegExpExecArray | null;
+        while ((m = metaRegex.exec(htmlText)) !== null) {
+          addCandidate(m[1], "論文・記事 本文PDF (citation)");
+        }
+
+        // 2. Link rel="alternate" type="application/pdf"
+        const linkRelRegex = /<link\s+[^>]*type=["']application\/pdf["'][^>]*href=["']([^"']+)["']/gi;
+        while ((m = linkRelRegex.exec(htmlText)) !== null) {
+          addCandidate(m[1], "公式PDFリンク (alternate)");
+        }
+
+        // 3. Anchor tags pointing to .pdf or download pdf
+        const aRegex = /<a\s+[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+        while ((m = aRegex.exec(htmlText)) !== null) {
+          const href = m[1];
+          const innerText = m[2];
+          const isPdfUrl = /\.pdf(?:[?#]|$)/i.test(href) ||
+                           /\/pdf\//i.test(href) ||
+                           /download.*pdf/i.test(href) ||
+                           /pdf.*download/i.test(href) ||
+                           /export=download/i.test(href);
+          const hasPdfText = /pdf|本文|ダウンロード|全文|論文/i.test(innerText);
+
+          if (isPdfUrl || (hasPdfText && (href.startsWith("http") || href.startsWith("/")))) {
+            addCandidate(href, innerText || "PDFダウンロード");
+          }
+        }
+
+        // 4. iframe / embed / object tags
+        const embedRegex = /<(?:iframe|embed|object)\s+[^>]*(?:src|data)=["']([^"']+\.pdf[^"']*)["']/gi;
+        while ((m = embedRegex.exec(htmlText)) !== null) {
+          addCandidate(m[1], "埋め込みPDFドキュメント");
+        }
+
+        return res.status(400).json({
+          error: "指定されたリンク先はPDF直接リンクではなくWebページ（HTML等）でした。",
+          isHtml: true,
+          targetUrl,
+          detectedPdfLinks: detectedPdfLinks.slice(0, 8)
+        });
+      }
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Length", nodeBuf.length);
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.send(nodeBuf);
     } catch (e: any) {
       res.status(500).json({ error: `PDFプロキシエラー: ${e.message}` });
     }

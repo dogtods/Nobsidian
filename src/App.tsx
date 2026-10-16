@@ -9279,7 +9279,6 @@ const renderMarkdownToElements = (contentStr: string) => {
       />
 
       {/* Image Crop & Paste Modal */}
-      {/* Image Crop & Paste Modal */}
       <ImageCropModal
         isOpen={isImageCropModalOpen}
         onClose={() => {
@@ -9292,6 +9291,8 @@ const renderMarkdownToElements = (contentStr: string) => {
         initialAltText={cropModalInitialAlt}
         initialSize={cropModalInitialSize}
         sourceUrl={getActiveNote()?.sourceUrl}
+        noteContent={getActiveNote()?.content}
+        noteTitle={getActiveNote()?.title}
         onInsertImage={handleInsertCroppedImage}
       />
 
