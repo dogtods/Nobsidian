@@ -118,8 +118,14 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
   const [touchStartDist, setTouchStartDist] = useState<number | null>(null);
   const [touchStartZoom, setTouchStartZoom] = useState<number>(1);
 
+  const lastCentroidRef = useRef<{ x: number; y: number } | null>(null);
+
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 2) {
+      lastCentroidRef.current = {
+        x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+        y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+      };
       const dist = Math.hypot(
         e.touches[0].clientX - e.touches[1].clientX,
         e.touches[0].clientY - e.touches[1].clientY
@@ -138,11 +144,21 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
       const scale = dist / touchStartDist;
       const newZoom = Math.min(4.0, Math.max(0.8, touchStartZoom * scale));
       setZoom(Number(newZoom.toFixed(2)));
+
+      // 2本指のドラッグで作業エリアをスクロール（ズーム時の移動用）
+      const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      if (lastCentroidRef.current && workspaceRef.current) {
+        workspaceRef.current.scrollLeft -= cx - lastCentroidRef.current.x;
+        workspaceRef.current.scrollTop -= cy - lastCentroidRef.current.y;
+      }
+      lastCentroidRef.current = { x: cx, y: cy };
     }
   };
 
   const handleTouchEnd = () => {
     setTouchStartDist(null);
+    lastCentroidRef.current = null;
   };
 
   const [isPanning, setIsPanning] = useState<boolean>(false);
@@ -182,6 +198,8 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
   };
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const [workspaceSize, setWorkspaceSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
   const imageRef = useRef<HTMLImageElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -554,6 +572,22 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
     }
   }, [isOpen, initialImageData, initialAltText, initialSize, sourceUrl, loadPdfFromUrl]);
 
+  // 作業エリアの実寸を監視（画像の表示サイズをpx単位で確定させるため）
+  useEffect(() => {
+    if (!isOpen) return;
+    const el = workspaceRef.current;
+    if (!el) return;
+    const update = () => setWorkspaceSize({ w: el.clientWidth, h: el.clientHeight });
+    update();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", update);
+      return () => window.removeEventListener("resize", update);
+    }
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isOpen]);
+
   // Page navigation
   const goToPage = async (page: number) => {
     if (!pdfDoc) return;
@@ -857,6 +891,19 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
 
   if (!isOpen) return null;
 
+  // ★ 表示サイズをpxで確定（コンテナ = 画像ぴったり。これで枠の%座標と元画像の%座標が一致する）
+  const WORKSPACE_PAD = 24; // p-6
+  const availW = Math.max(100, workspaceSize.w - WORKSPACE_PAD * 2);
+  const availH = Math.max(100, workspaceSize.h - WORKSPACE_PAD * 2);
+  let baseScale = 1;
+  if (imageMeta) {
+    baseScale = viewMode === "fit"
+      ? Math.min(availW / imageMeta.width, availH / imageMeta.height, 1)
+      : availW / imageMeta.width;
+  }
+  const dispW = imageMeta ? Math.max(1, Math.round(imageMeta.width * baseScale * zoom)) : 0;
+  const dispH = imageMeta ? (dispW * imageMeta.height) / imageMeta.width : 0;
+
   // Approximate pixel crop size for real-time display feedback
   const liveCropW = imageMeta ? Math.round(cropBox.width * imageMeta.width) : 0;
   const liveCropH = imageMeta ? (aspectRatio === "1:1" ? liveCropW : Math.round(cropBox.height * imageMeta.height)) : 0;
@@ -1077,7 +1124,8 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
           
           {/* Main Article / PDF Workspace: Maximum Screen Area with Pan & Zoom support */}
           <div
-            className="flex-1 flex flex-col items-center justify-start p-12 sm:p-20 relative overflow-auto h-full cursor-grab active:cursor-grabbing"
+            ref={workspaceRef}
+            className="flex-1 flex flex-col justify-start p-6 relative overflow-auto h-full cursor-grab active:cursor-grabbing"
             onPointerDown={handleWorkspacePointerDown}
             onPointerMove={handleWorkspacePointerMove}
             onPointerUp={handleWorkspacePointerUp}
@@ -1093,8 +1141,11 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
             )}
 
             {imageSrc ? (
-              <div className="w-full h-full flex flex-col items-center justify-start">
-                {/* PDF Page Canvas with White Paper styling */}
+              !imageMeta ? (
+                <div className="mx-auto my-auto text-xs text-gray-400">読み込み中...</div>
+              ) : (
+              <div className="mx-auto shrink-0" style={{ width: dispW, height: dispH }}>
+                {/* PDF Page Canvas: コンテナのサイズ = 画像の表示サイズ（枠なし・transformなし） */}
                 <div
                   ref={containerRef}
                   onPointerDown={handleContainerPointerDown}
@@ -1104,11 +1155,10 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
                   onTouchStart={handleTouchStart}
                   onTouchMove={handleTouchMove}
                   onTouchEnd={handleTouchEnd}
-                  className="relative inline-block select-none cursor-crosshair overflow-hidden rounded shadow-2xl touch-none bg-white border border-gray-400"
+                  className="relative select-none cursor-crosshair shadow-2xl touch-none bg-white ring-1 ring-gray-500"
                   style={{
-                    transform: `scale(${zoom})`,
-                    transformOrigin: "center top",
-                    transition: dragMode ? "none" : "transform 0.15s ease-out",
+                    width: dispW,
+                    height: dispH,
                     touchAction: "none"
                   }}
                 >
@@ -1119,13 +1169,26 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
                     draggable={false}
                     className="block bg-white select-none"
                     style={{
-                      maxHeight: viewMode === "fit" ? "calc(94vh - 65px)" : undefined,
-                      maxWidth: "100%",
+                      width: "100%",
+                      height: "100%",
                       display: "block",
-                      backgroundColor: "#ffffff",
-                      objectFit: "contain"
+                      backgroundColor: "#ffffff"
                     }}
                   />
+
+                  {/* 枠外を暗くするレイヤー（ここだけ overflow-hidden。ハンドルは切れない） */}
+                  <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                    <div
+                      className="absolute"
+                      style={{
+                        left: `${cropBox.x * 100}%`,
+                        top: `${cropBox.y * 100}%`,
+                        width: `${cropBox.width * 100}%`,
+                        height: `${cropBox.height * 100}%`,
+                        boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.55)"
+                      }}
+                    />
+                  </div>
 
                   {/* Interactive Crop Box Overlay with full Finger Drag Support */}
                   <div
@@ -1135,7 +1198,7 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
                       top: `${cropBox.y * 100}%`,
                       width: `${cropBox.width * 100}%`,
                       height: `${cropBox.height * 100}%`,
-                      boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.55), 0 0 12px rgba(56, 189, 248, 0.6)",
+                      boxShadow: "0 0 12px rgba(56, 189, 248, 0.6)",
                       touchAction: "none"
                     }}
                     onPointerDown={(e) => handlePointerDown(e, "move")}
@@ -1208,9 +1271,10 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
                   </div>
                 </div>
               </div>
+              )
             ) : (
               /* Empty State & PDF Selection Area (Clean, minimal text) */
-              <div className="w-full h-full flex flex-col items-center justify-center p-4 text-center my-auto overflow-y-auto max-w-xl">
+              <div className="w-full h-full flex flex-col items-center justify-center p-4 text-center my-auto mx-auto overflow-y-auto max-w-xl">
                 {pdfError && (
                   <div className="mb-4 p-3.5 bg-red-950/80 border border-red-500/60 rounded-xl text-red-200 text-xs w-full text-left space-y-2 animate-[fadeIn_0.1s_ease-out]">
                     <div className="flex items-start justify-between gap-2">

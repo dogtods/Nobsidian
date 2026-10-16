@@ -12,7 +12,7 @@ import {
   Sparkles,
   Menu,
   Download,
-  RefreshCw,
+  RefreshCw,a
   Folder,
   Plus,
   FolderOpen,
@@ -561,6 +561,13 @@ export default function App() {
   const [cropModalInitialAlt, setCropModalInitialAlt] = useState<string>("");
   const [cropModalInitialSize, setCropModalInitialSize] = useState<string>("260px");
   const [previewImageModalUrl, setPreviewImageModalUrl] = useState<string | null>(null);
+  // 画像操作ツールバー（スマホは長押しで表示）／削除確認（window.confirm はiframe等でブロックされるためアプリ内UIに置換）
+  const [activeImgToolbarKey, setActiveImgToolbarKey] = useState<string | null>(null);
+  const [deleteImageTarget, setDeleteImageTarget] = useState<string | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressFiredRef = useRef(false);
+  const suppressImgClickRef = useRef(false);
+  const lastEditorSelRef = useRef<{ start: number; end: number } | null>(null);
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
   const [externalExportTarget, setExternalExportTarget] = useState<{ type: 'single' } | { type: 'folder'; folderName: string } | null>(null);
   const [showSourceMemo, setShowSourceMemo] = useState(false);
@@ -1083,6 +1090,20 @@ export default function App() {
 
   // Refs for element sizing
   const editorRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!activeImgToolbarKey) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && t.closest && t.closest("[data-img-toolbar]")) return;
+      // ツールバーを閉じるタップが、そのまま画像クリック（編集画面へ移動）にならないようにする
+      suppressImgClickRef.current = true;
+      window.setTimeout(() => { suppressImgClickRef.current = false; }, 400);
+      setActiveImgToolbarKey(null);
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, [activeImgToolbarKey]);
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const [folderColumnSource, setFolderColumnSource] = useState<"D" | "N">(() => {
@@ -2976,6 +2997,14 @@ const renderMarkdownToElements = (contentStr: string) => {
       const resolvedWidth = currentSize === "100%" || currentSize === "full"
         ? "100%"
         : (/^\d+$/.test(currentSize) ? `${currentSize}px` : currentSize);
+      const imgKey = `${imgUrl.length}:${imgUrl.slice(-48)}`;
+      const isToolbarOpen = activeImgToolbarKey === imgKey;
+      const clearLongPress = () => {
+        if (longPressTimerRef.current !== null) {
+          window.clearTimeout(longPressTimerRef.current);
+          longPressTimerRef.current = null;
+        }
+      };
 
       elements.push(
         <div
@@ -2983,18 +3012,59 @@ const renderMarkdownToElements = (contentStr: string) => {
           className="my-4 group relative inline-flex flex-col items-center max-w-full"
           style={{ width: resolvedWidth !== "100%" ? resolvedWidth : "100%" }}
         >
-          <div className="relative w-full flex justify-center">
+          <div
+            className="relative w-full flex justify-center"
+            onTouchStart={(e) => {
+              if (e.touches.length !== 1) return;
+              longPressFiredRef.current = false;
+              clearLongPress();
+              longPressTimerRef.current = window.setTimeout(() => {
+                longPressFiredRef.current = true;
+                longPressTimerRef.current = null;
+                setActiveImgToolbarKey(imgKey);
+                try { (navigator as any).vibrate?.(20); } catch (_) {}
+              }, 450);
+            }}
+            onTouchMove={clearLongPress}
+            onTouchEnd={clearLongPress}
+            onTouchCancel={clearLongPress}
+            onContextMenu={(e) => {
+              // スマホの長押しで出る標準メニュー（画像保存など）を抑止
+              if (longPressFiredRef.current) e.preventDefault();
+            }}
+          >
             <img
               src={imgUrl}
               alt={altComment}
-              style={{ width: resolvedWidth !== "100%" ? "100%" : undefined, height: "auto" }}
+              draggable={false}
+              style={{
+                width: resolvedWidth !== "100%" ? "100%" : undefined,
+                height: "auto",
+                WebkitTouchCallout: "none",
+                WebkitUserSelect: "none",
+                userSelect: "none"
+              } as React.CSSProperties}
               className="max-w-full max-h-[600px] rounded-xl border border-[var(--border2)] object-contain shadow-md hover:border-sky-500 transition-colors cursor-pointer bg-black/20"
-              onClick={() => handleImageClick(imgUrl)}
-              title="クリックして編集画面へ"
+              onClick={() => {
+                // 長押し直後・ツールバーを閉じたタップでは編集画面へ飛ばない
+                if (longPressFiredRef.current) { longPressFiredRef.current = false; return; }
+                if (suppressImgClickRef.current) return;
+                handleImageClick(imgUrl);
+              }}
+              title="クリックして編集画面へ（スマホは長押しで操作ボタン）"
             />
 
-            {/* Quick floating toolbar (Shows on hover/focus) */}
-            <div className="absolute top-2 right-2 flex flex-wrap items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity bg-black/85 backdrop-blur-md p-1 rounded-lg border border-white/15 shadow-xl z-10 max-w-[calc(100%-16px)]">
+            {/* Quick floating toolbar: PC=ホバー / スマホ=長押しで表示。書き出し(HTML)・印刷(PDF)には含めない */}
+            <div
+              data-img-toolbar="true"
+              data-export-ignore="true"
+              onTouchStart={(e) => e.stopPropagation()}
+              className={`absolute top-2 right-2 flex flex-wrap items-center gap-1 transition-opacity bg-black/85 backdrop-blur-md p-1 rounded-lg border border-white/15 shadow-xl z-10 max-w-[calc(100%-16px)] print:hidden ${
+                isToolbarOpen
+                  ? "opacity-100"
+                  : "opacity-0 pointer-events-none [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-hover:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto"
+              }`}
+            >
               {/* Size preset pills (Includes 極小 160px and 小 260px) */}
               <div className="flex items-center gap-0.5 px-1 py-0.5 bg-white/10 rounded">
                 {[
@@ -3110,7 +3180,8 @@ const renderMarkdownToElements = (contentStr: string) => {
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleDeleteImage(imgUrl);
+                  setActiveImgToolbarKey(null);
+                  setDeleteImageTarget(imgUrl);
                 }}
                 className="p-1 bg-red-900/70 hover:bg-red-600 text-white rounded text-[10px] cursor-pointer transition shadow-sm"
                 title="この画像をノートから削除"
@@ -3293,6 +3364,28 @@ const renderMarkdownToElements = (contentStr: string) => {
     return Array.from(new Set(matches.map(m => m.slice(2, -2).trim())));
   };
 
+  // 書き出し用: Base64画像データ（data:image/...）を取り除く（MD / JSON 用）
+  const stripEmbeddedImages = (text: string): string => {
+    if (!text) return text;
+    let out = text.replace(
+      /!\[([^\]|]*)(?:\|[^\]]*)?\]\(data:image\/[a-zA-Z0-9+.\/-]+;base64,[^\s)]+\)/g,
+      (_m, alt: string) => (alt && alt.trim() ? `[図: ${alt.trim()}]` : "")
+    );
+    // 万一むき出しで残っているdata URLも除去
+    out = out.replace(/data:image\/[a-zA-Z0-9+.\/-]+;base64,[A-Za-z0-9+\/=]+/g, "");
+    return out.replace(/\n{3,}/g, "\n\n");
+  };
+
+  const sanitizeNoteForExport = (n: any) => {
+    const o: any = { ...n };
+    for (const k of Object.keys(o)) {
+      if (typeof o[k] === "string" && o[k].includes("data:image/")) {
+        o[k] = stripEmbeddedImages(o[k]);
+      }
+    }
+    return o;
+  };
+
   // Downloader
   const downloadBlob = (content: string, filename: string, mime: string) => {
     const blob = new Blob([content], { type: mime });
@@ -3307,18 +3400,18 @@ const renderMarkdownToElements = (contentStr: string) => {
   const downloadSingleMarkdown = () => {
     const active = getActiveNote();
     if (!active) return;
-    downloadBlob(active.content, `${active.title}.md`, "text/markdown");
+    downloadBlob(stripEmbeddedImages(active.content), `${active.title}.md`, "text/markdown");
     toast("ダウンロードしました");
   };
 
   const downloadAllMarkdowns = () => {
-    const assembledStr = notes.map(n => `# ${n.title}\n\n${n.content}\n\n---\n`).join("\n");
+    const assembledStr = notes.map(n => `# ${n.title}\n\n${stripEmbeddedImages(n.content)}\n\n---\n`).join("\n");
     downloadBlob(assembledStr, `connected-notes-${formatDateStr(Date.now())}.md`, "text/markdown");
     toast("全ファイルをマージダウンロードしました");
   };
 
   const downloadBackupJSON = () => {
-    const data = JSON.stringify({ notes, exportedAt: new Date().toISOString() }, null, 2);
+    const data = JSON.stringify({ notes: notes.map(sanitizeNoteForExport), exportedAt: new Date().toISOString() }, null, 2);
     downloadBlob(data, `cn-backup-${formatDateStr(Date.now())}.json`, "application/json");
     toast("JSONバックアップファイルをダウンロードしました");
   };
@@ -3950,7 +4043,7 @@ const renderMarkdownToElements = (contentStr: string) => {
   const handleDeleteImage = (imgUrl: string) => {
     const active = getActiveNote();
     if (!active || !active.content) return;
-    if (!window.confirm("この画像をノートから削除しますか？")) return;
+    // 確認はアプリ内ダイアログ（deleteImageTarget）で実施済み
 
     const escapedUrl = imgUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(`\\s*!\\[[^\\]]*\\]\\(${escapedUrl}\\)\\s*`, 'g');
@@ -4016,8 +4109,10 @@ const renderMarkdownToElements = (contentStr: string) => {
       nextContent = (active.content ? active.content.trim() + "\n\n" : "") + imgTag + "\n";
       toast("画像をノート末尾に挿入しました 🖼️✦ プレビューを表示中");
     } else if (mode === "edit" && editorRef.current) {
-      const start = editorRef.current.selectionStart || 0;
-      const end = editorRef.current.selectionEnd || 0;
+      const len = active.content.length;
+      const sel = lastEditorSelRef.current;
+      const start = Math.min(len, sel ? sel.start : (editorRef.current.selectionStart || 0));
+      const end = Math.min(len, sel ? sel.end : (editorRef.current.selectionEnd || 0));
       const before = active.content.substring(0, start);
       const after = active.content.substring(end);
       nextContent = before + imgMarkdown + after;
@@ -6081,6 +6176,12 @@ const renderMarkdownToElements = (contentStr: string) => {
       color: var(--accent);
       text-decoration: underline;
     }
+    .cn-content img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
     .cn-content svg {
       max-width: 100%;
       height: auto;
@@ -6152,6 +6253,13 @@ const renderMarkdownToElements = (contentStr: string) => {
       // 印刷用一時非表示見出し(h1.hidden.print:block)を削除（HTMLヘッダーで美しく出すため）
       const hiddenH1 = clone.querySelector('h1.hidden');
       if (hiddenH1) hiddenH1.remove();
+      // 画像のトリミング/移動/削除ツールバーなど、編集用UIを除去
+      clone.querySelectorAll('[data-export-ignore], [data-img-toolbar]').forEach(el => el.remove());
+      // 画像クリック用のtitle属性（「クリックして編集画面へ」）も不要
+      clone.querySelectorAll('img').forEach(img => {
+        img.removeAttribute('title');
+        img.removeAttribute('draggable');
+      });
 
       contentHtml = clone.innerHTML;
     }
@@ -6201,8 +6309,8 @@ const renderMarkdownToElements = (contentStr: string) => {
     const dataFromNote = {
       id: activeNote.id,
       title: activeNote.title,
-      content: activeNote.content,
-      summary: activeNote.summary || "",
+      content: stripEmbeddedImages(activeNote.content),
+      summary: stripEmbeddedImages(activeNote.summary || ""),
       keywords: activeNote.keywords || "",
       sourceUrl: activeNote.sourceUrl || "",
       createdAt: activeNote.createdAt,
@@ -7929,7 +8037,13 @@ const renderMarkdownToElements = (contentStr: string) => {
                       placeholder="ここにメモを書きましょう。&#10;[[ノート名]] と書くと自動的につながり（リンク）になります。"
                       value={activeNote.content}
                     onChange={(e) => handleNoteContentChange(e.target.value)}
-                    onBlur={handleEditorBlur}
+                    onBlur={(e) => {
+                      lastEditorSelRef.current = { start: e.currentTarget.selectionStart, end: e.currentTarget.selectionEnd };
+                      handleEditorBlur();
+                    }}
+                    onSelect={(e) => {
+                      lastEditorSelRef.current = { start: e.currentTarget.selectionStart, end: e.currentTarget.selectionEnd };
+                    }}
                     onKeyDown={handleEditorKeyDown}
                     onPaste={(e) => {
                       const items = e.clipboardData?.items;
@@ -9380,6 +9494,48 @@ const renderMarkdownToElements = (contentStr: string) => {
         }}
       />
 
+      {/* 画像削除の確認ダイアログ（window.confirmの代替） */}
+      {deleteImageTarget && (
+        <div
+          className="fixed inset-0 z-[10001] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setDeleteImageTarget(null)}
+        >
+          <div
+            className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 w-full max-w-xs shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-sm font-bold text-white mb-1">この画像を削除しますか？</p>
+            <p className="text-xs text-gray-400 mb-3">ノートからこの画像が取り除かれます。</p>
+            <img
+              src={deleteImageTarget}
+              alt=""
+              className="max-h-32 mx-auto mb-3 rounded border border-[#30363d] object-contain bg-white"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteImageTarget(null)}
+                className="px-3 py-1.5 text-xs rounded-lg bg-[#21262d] hover:bg-[#30363d] text-gray-200 border border-[#30363d] cursor-pointer"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const url = deleteImageTarget;
+                  setDeleteImageTarget(null);
+                  handleDeleteImage(url);
+                }}
+                className="px-3 py-1.5 text-xs rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold flex items-center gap-1 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                削除する
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Image Crop & Paste Modal */}
       <ImageCropModal
         isOpen={isImageCropModalOpen}
@@ -9510,7 +9666,7 @@ const renderMarkdownToElements = (contentStr: string) => {
                     onClick={() => {
                       const urlToDelete = previewImageModalUrl;
                       setPreviewImageModalUrl(null);
-                      handleDeleteImage(urlToDelete);
+                      setDeleteImageTarget(urlToDelete);
                     }}
                     className="px-2.5 py-1 bg-red-900/80 hover:bg-red-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition shadow"
                     title="この画像を削除"
