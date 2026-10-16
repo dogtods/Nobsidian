@@ -142,10 +142,15 @@ async function startServer() {
         targetUrl = targetUrl.replace(/arxiv\.org\/(?:abs|html)\//, "arxiv.org/pdf/") + ".pdf";
       }
 
-      // Format Google Drive URLs
-      const driveMatch = targetUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || targetUrl.match(/id=([a-zA-Z0-9_-]+)/);
-      if (driveMatch && !targetUrl.includes("export=download")) {
-        targetUrl = `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`;
+      // Format Google Drive URLs ONLY when domain is drive.google.com or docs.google.com
+      const isDrive = targetUrl.includes("drive.google.com") || targetUrl.includes("docs.google.com");
+      let driveFileId: string | null = null;
+      if (isDrive) {
+        const driveMatch = targetUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || targetUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+        if (driveMatch) {
+          driveFileId = driveMatch[1];
+          targetUrl = `https://drive.usercontent.google.com/download?id=${driveFileId}&export=download&authuser=0`;
+        }
       }
 
       const fetchHeaders = {
@@ -158,21 +163,45 @@ async function startServer() {
         redirect: "follow"
       });
 
-      // Anti-bot fallback: If 403 Forbidden (e.g. Cloudflare / Akamai), retry with clean curl user-agent
-      if (!fetchRes.ok && (fetchRes.status === 403 || fetchRes.status === 401)) {
-        fetchRes = await fetch(targetUrl, {
-          headers: {
-            "User-Agent": "curl/7.88.1",
-            "Accept": "*/*"
-          },
-          redirect: "follow"
-        });
+      // Anti-bot fallback: If 403 Forbidden / 401 / 404, retry with clean curl user-agent
+      if (!fetchRes.ok && (fetchRes.status === 403 || fetchRes.status === 401 || fetchRes.status === 404)) {
+        try {
+          const curlRes = await fetch(targetUrl, {
+            headers: {
+              "User-Agent": "curl/7.88.1",
+              "Accept": "*/*"
+            },
+            redirect: "follow"
+          });
+          if (curlRes.ok) {
+            fetchRes = curlRes;
+          }
+        } catch (_) {}
+      }
+
+      // Secondary Google Drive fallback if usercontent failed
+      if (!fetchRes.ok && isDrive && driveFileId) {
+        const ucUrl = `https://drive.google.com/uc?export=download&id=${driveFileId}&confirm=t`;
+        try {
+          const ucRes = await fetch(ucUrl, {
+            headers: fetchHeaders,
+            redirect: "follow"
+          });
+          if (ucRes.ok) {
+            fetchRes = ucRes;
+          }
+        } catch (_) {}
       }
 
       if (!fetchRes.ok) {
-        return res.status(fetchRes.status).json({ error: `PDF取得失敗: HTTP ${fetchRes.status} (${fetchRes.statusText})` });
+        return res.status(fetchRes.status).json({
+          error: `PDF取得失敗: HTTP ${fetchRes.status} (${fetchRes.statusText})`,
+          status: fetchRes.status,
+          targetUrl
+        });
       }
 
+      const finalBaseUrl = fetchRes.url || targetUrl;
       let buffer = await fetchRes.arrayBuffer();
       let nodeBuf = Buffer.from(buffer);
 
@@ -214,7 +243,8 @@ async function startServer() {
           if (!rawUrl) return;
           try {
             const cleanUrl = rawUrl.trim().replace(/&amp;/g, "&");
-            const absoluteUrl = new URL(cleanUrl, targetUrl).href;
+            // Resolve relative URLs with the final redirected page URL!
+            const absoluteUrl = new URL(cleanUrl, finalBaseUrl).href;
             if (seenUrls.has(absoluteUrl)) return;
             seenUrls.add(absoluteUrl);
 
@@ -264,11 +294,11 @@ async function startServer() {
           addCandidate(m[1], "埋め込みPDFドキュメント");
         }
 
-        return res.status(400).json({
-          error: "指定されたリンク先はPDF直接リンクではなくWebページ（HTML等）でした。",
+        return res.status(200).json({
           isHtml: true,
-          targetUrl,
-          detectedPdfLinks: detectedPdfLinks.slice(0, 8)
+          targetUrl: finalBaseUrl,
+          detectedPdfLinks: detectedPdfLinks.slice(0, 8),
+          message: "指定されたリンク先はWebページでした。以下の候補リンクからPDFを選択してください。"
         });
       }
 

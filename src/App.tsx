@@ -9333,8 +9333,9 @@ const renderMarkdownToElements = (contentStr: string) => {
         initialAltText={cropModalInitialAlt}
         initialSize={cropModalInitialSize}
         sourceUrl={getActiveNote()?.sourceUrl}
-        noteContent={getActiveNote()?.content}
+        noteContent={[getActiveNote()?.content, getActiveNote()?.rawContent, getActiveNote()?.metaInfo].filter(Boolean).join("\n")}
         noteTitle={getActiveNote()?.title}
+        apiPost={apiPost}
         onInsertImage={handleInsertCroppedImage}
       />
 

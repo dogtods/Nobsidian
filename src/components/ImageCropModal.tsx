@@ -24,7 +24,8 @@ import {
   Sparkles,
   Minimize2,
   Sliders,
-  Settings2
+  Settings2,
+  AlertCircle
 } from "lucide-react";
 
 // Configure PDF.js worker with 3 robust fallbacks: Vite URL -> Local Server -> CDN
@@ -60,6 +61,7 @@ interface ImageCropModalProps {
   sourceUrl?: string; // Current note's source URL
   noteContent?: string; // Current note's markdown content to extract links
   noteTitle?: string; // Current note's title
+  apiPost?: (body: any) => Promise<any>;
 }
 
 type AspectRatio = "free" | "1:1" | "4:3" | "16:9" | "3:2";
@@ -74,7 +76,8 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
   initialSize,
   sourceUrl,
   noteContent,
-  noteTitle
+  noteTitle,
+  apiPost
 }) => {
   const [imageSrc, setImageSrc] = useState<string | null>(initialImageData || null);
   const [imageMeta, setImageMeta] = useState<{ width: number; height: number } | null>(null);
@@ -160,6 +163,35 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
     }
     return list;
   }, [sourceUrl, noteContent]);
+
+  // Combined and deduplicated list of all candidate links (web page detected + note body links)
+  const allCandidateLinks = useMemo(() => {
+    const combined: { title: string; url: string; badge?: string; isDetected?: boolean }[] = [];
+    const seen = new Set<string>();
+
+    for (const item of detectedPdfLinks) {
+      if (!item.url || seen.has(item.url)) continue;
+      seen.add(item.url);
+      combined.push({
+        title: item.title,
+        url: item.url,
+        badge: "記事内PDF",
+        isDetected: true
+      });
+    }
+
+    for (const item of inlineNoteLinks) {
+      if (!item.url || seen.has(item.url)) continue;
+      seen.add(item.url);
+      combined.push({
+        title: item.title,
+        url: item.url,
+        badge: "リンク"
+      });
+    }
+
+    return combined;
+  }, [detectedPdfLinks, inlineNoteLinks]);
 
   // Compute crop box helper given target aspect ratio
   const computeCropBox = useCallback((
@@ -279,6 +311,46 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
     }
   }, [pdfScale, renderPdfPage]);
 
+  // Load PDF or Image from Data URL (e.g. from Google Apps Script fetchDriveFile or Base64)
+  const loadPdfFromDataUrl = useCallback(async (dataUrl: string, fileName = "document.pdf") => {
+    setIsProcessing(true);
+    setProcessingStatus(`「${fileName}」を展開中...`);
+    setPdfError(null);
+    try {
+      if (dataUrl.startsWith("data:image/")) {
+        setImageSrc(dataUrl);
+        setZoom(1);
+        setAltText(fileName.replace(/\.[^.]+$/, ""));
+        return;
+      }
+      const base64Data = dataUrl.includes(",") ? dataUrl.split(",")[1] : dataUrl;
+      const binaryString = atob(base64Data);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const loadingTask = pdfjsLib.getDocument({
+        data: bytes,
+        cMapUrl: "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/cmaps/",
+        cMapPacked: true,
+      });
+      const doc = await loadingTask.promise;
+      setPdfDoc(doc);
+      setPdfFileName(fileName);
+      setTotalPages(doc.numPages);
+      setCurrentPage(1);
+      await renderPdfPage(doc, 1, pdfScale);
+      setIsUrlInputOpen(false);
+    } catch (err: any) {
+      console.error("DataURL load error:", err);
+      setPdfError(`ファイル展開失敗: ${err.message || err}`);
+    } finally {
+      setIsProcessing(false);
+      setProcessingStatus("");
+    }
+  }, [pdfScale, renderPdfPage]);
+
   // Load PDF from URL
   const loadPdfFromUrl = useCallback(async (urlToLoad: string) => {
     if (!urlToLoad) return;
@@ -287,9 +359,20 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
     setPdfError(null);
     try {
       let target = urlToLoad.trim();
-      const driveMatch = target.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || target.match(/id=([a-zA-Z0-9_-]+)/);
-      if (driveMatch && !target.includes("export=download")) {
-        target = `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`;
+
+      // If it's already a Data URL
+      if (target.startsWith("data:")) {
+        return await loadPdfFromDataUrl(target);
+      }
+
+      // Check if it's Google Drive
+      const isDrive = target.includes("drive.google.com") || target.includes("docs.google.com");
+      if (isDrive) {
+        const driveMatch = target.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || target.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+        if (driveMatch) {
+          const fileId = driveMatch[1];
+          target = `https://drive.usercontent.google.com/download?id=${fileId}&export=download&authuser=0`;
+        }
       }
 
       if (target.includes("arxiv.org/abs/") || target.includes("arxiv.org/html/")) {
@@ -298,15 +381,51 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
 
       const proxyUrl = `/api/proxy-pdf?url=${encodeURIComponent(target)}`;
       const res = await fetch(proxyUrl);
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        if (errJson.detectedPdfLinks && errJson.detectedPdfLinks.length > 0) {
-          setDetectedPdfLinks(errJson.detectedPdfLinks);
-          if (errJson.detectedPdfLinks.length === 1) {
-            return await loadPdfFromUrl(errJson.detectedPdfLinks[0].url);
+
+      const contentType = res.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        const json = await res.json().catch(() => ({}));
+        if (json.detectedPdfLinks && json.detectedPdfLinks.length > 0) {
+          setDetectedPdfLinks(json.detectedPdfLinks);
+          // If only 1 candidate and it's different from current target, try loading it
+          if (json.detectedPdfLinks.length === 1 && json.detectedPdfLinks[0].url !== target) {
+            return await loadPdfFromUrl(json.detectedPdfLinks[0].url);
+          }
+          // Do not treat HTML page as a fatal error if links were found!
+          setPdfError(null);
+          return;
+        }
+
+        // If it was a Google Drive URL and failed with 404/403, try GAS fetchDriveFile
+        if (isDrive && apiPost) {
+          setProcessingStatus("Google Drive連携経由で取得中...");
+          try {
+            const gasRes = await apiPost({ action: "fetchDriveFile", url: urlToLoad });
+            if (gasRes && gasRes.success && gasRes.dataUrl) {
+              return await loadPdfFromDataUrl(gasRes.dataUrl, gasRes.name || "google_drive.pdf");
+            }
+          } catch (gasErr) {
+            console.warn("GAS fetchDriveFile fallback failed:", gasErr);
           }
         }
-        throw new Error(errJson.error || `HTTP ${res.status}`);
+
+        throw new Error(json.error || `HTTP ${res.status}`);
+      }
+
+      if (!res.ok) {
+        // If it was a Google Drive URL and failed, try GAS fetchDriveFile
+        if (isDrive && apiPost) {
+          setProcessingStatus("Google Drive連携経由で取得中...");
+          try {
+            const gasRes = await apiPost({ action: "fetchDriveFile", url: urlToLoad });
+            if (gasRes && gasRes.success && gasRes.dataUrl) {
+              return await loadPdfFromDataUrl(gasRes.dataUrl, gasRes.name || "google_drive.pdf");
+            }
+          } catch (gasErr) {
+            console.warn("GAS fetchDriveFile fallback failed:", gasErr);
+          }
+        }
+        throw new Error(`PDF取得失敗: HTTP ${res.status}`);
       }
 
       const arrayBuffer = await res.arrayBuffer();
@@ -336,7 +455,7 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
       setIsProcessing(false);
       setProcessingStatus("");
     }
-  }, [pdfScale, renderPdfPage]);
+  }, [pdfScale, renderPdfPage, loadPdfFromDataUrl, apiPost]);
 
   // Modal open & initial data handling
   useEffect(() => {
@@ -979,47 +1098,58 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
               /* Empty State & PDF Selection Area (Clean, minimal text) */
               <div className="w-full h-full flex flex-col items-center justify-center p-4 text-center my-auto overflow-y-auto max-w-xl">
                 {pdfError && (
-                  <div className="mb-4 p-3 bg-red-950/70 border border-red-500/50 rounded-xl text-red-200 text-xs w-full text-left">
-                    <p className="font-bold mb-1">⚠️ 読み込みエラー</p>
-                    <p>{pdfError}</p>
+                  <div className="mb-4 p-3.5 bg-red-950/80 border border-red-500/60 rounded-xl text-red-200 text-xs w-full text-left space-y-2 animate-[fadeIn_0.1s_ease-out]">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="font-bold flex items-center gap-1.5 text-red-300">
+                        <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                        <span>リンク先PDFを開けませんでした</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPdfError(null)}
+                        className="text-gray-400 hover:text-white text-[11px] px-1.5 py-0.5 rounded border border-gray-600 cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-red-300/90 font-mono break-all">{pdfError}</p>
+                    <div className="p-2 bg-black/40 rounded border border-red-900/50 text-[11px] text-gray-300 space-y-1">
+                      <p className="font-medium text-white">💡 対処のヒント:</p>
+                      <ul className="list-disc list-inside space-y-0.5 text-gray-300 text-[10px]">
+                        <li>元サイトがログイン制やリンク切れの可能性があります。下の「ファイルを選択」から端末内のPDFを直接開けます。</li>
+                        <li>Google Driveの場合は、共有設定が「リンクを知っている全員」になっているかご確認ください。</li>
+                        <li>別のPDFリンクをお持ちの場合は、下の「任意のWeb PDF URLから開く」に入力してください。</li>
+                      </ul>
+                    </div>
                   </div>
                 )}
 
-                {/* Detected PDF links from note / webpage */}
-                {(detectedPdfLinks.length > 0 || inlineNoteLinks.length > 0) && (
+                {/* Candidate PDF links (deduplicated) */}
+                {allCandidateLinks.length > 0 && (
                   <div className="w-full mb-3 bg-[#161b22] border border-blue-500/40 rounded-xl p-3 text-left">
-                    <div className="flex items-center gap-1.5 text-blue-300 font-bold text-xs mb-2">
-                      <Sparkles className="w-3.5 h-3.5 text-blue-400" />
-                      <span>リンク先PDFを開く:</span>
+                    <div className="flex items-center justify-between text-blue-300 font-bold text-xs mb-2">
+                      <span className="flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                        <span>リンク先PDFを選択して開く:</span>
+                      </span>
+                      <span className="text-[10px] text-gray-400 font-normal">クリックで直接読込</span>
                     </div>
 
-                    <div className="flex flex-col gap-1.5">
-                      {detectedPdfLinks.map((item, idx) => (
+                    <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto pr-1">
+                      {allCandidateLinks.map((item, idx) => (
                         <button
-                          key={`detected-${idx}`}
+                          key={`link-${idx}`}
                           type="button"
                           disabled={isProcessing}
                           onClick={() => loadPdfFromUrl(item.url)}
-                          className="w-full text-left p-2 bg-[#0d1117] hover:bg-blue-900/30 border border-blue-500/30 rounded-lg transition flex items-center justify-between gap-2 group cursor-pointer"
+                          className="w-full text-left p-2.5 bg-[#0d1117] hover:bg-blue-950/40 border border-blue-500/30 hover:border-blue-400 rounded-lg transition flex items-center justify-between gap-2 group cursor-pointer"
                         >
-                          <span className="text-xs text-white truncate">{item.title}</span>
-                          <span className="px-2 py-0.5 bg-blue-600 text-white rounded text-[10px] font-bold shrink-0">
-                            開く 📄
+                          <span className="text-xs text-white group-hover:text-blue-200 truncate font-medium flex items-center gap-1.5">
+                            <span className="text-blue-400">📄</span>
+                            <span className="truncate">{item.title}</span>
                           </span>
-                        </button>
-                      ))}
-
-                      {inlineNoteLinks.map((item, idx) => (
-                        <button
-                          key={`inline-${idx}`}
-                          type="button"
-                          disabled={isProcessing}
-                          onClick={() => loadPdfFromUrl(item.url)}
-                          className="w-full text-left p-2 bg-[#0d1117] hover:bg-gray-800 border border-[#30363d] rounded-lg transition flex items-center justify-between gap-2 group cursor-pointer"
-                        >
-                          <span className="text-xs text-gray-200 truncate">{item.title}</span>
-                          <span className="px-2 py-0.5 bg-[#1f242c] group-hover:bg-sky-600 text-gray-300 group-hover:text-white rounded text-[10px] shrink-0">
-                            読込
+                          <span className="px-2.5 py-1 bg-blue-600 group-hover:bg-blue-500 text-white rounded text-[10px] font-bold shrink-0 shadow">
+                            {item.badge || "開く"}
                           </span>
                         </button>
                       ))}
