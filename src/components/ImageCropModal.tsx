@@ -64,7 +64,7 @@ interface ImageCropModalProps {
   apiPost?: (body: any) => Promise<any>;
 }
 
-type AspectRatio = "free" | "1:1" | "4:3" | "16:9" | "3:2";
+type AspectRatio = "free" | "1:1" | "4:3" | "3:4" | "16:9" | "9:16" | "3:2" | "2:3";
 type ViewMode = "fit" | "width";
 
 export const ImageCropModal: React.FC<ImageCropModalProps> = ({
@@ -114,6 +114,36 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
   type DragMode = "move" | "nw" | "ne" | "sw" | "se";
   const [dragMode, setDragMode] = useState<DragMode | null>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number; box: typeof cropBox } | null>(null);
+
+  const [touchStartDist, setTouchStartDist] = useState<number | null>(null);
+  const [touchStartZoom, setTouchStartZoom] = useState<number>(1);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      setTouchStartDist(dist);
+      setTouchStartZoom(zoom);
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && touchStartDist !== null) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const scale = dist / touchStartDist;
+      const newZoom = Math.min(4.0, Math.max(0.8, touchStartZoom * scale));
+      setZoom(Number(newZoom.toFixed(2)));
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setTouchStartDist(null);
+  };
 
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -206,8 +236,11 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
 
     const targetRatio = ratio === "1:1" ? 1.0
       : ratio === "4:3" ? 4 / 3
+      : ratio === "3:4" ? 3 / 4
       : ratio === "16:9" ? 16 / 9
+      : ratio === "9:16" ? 9 / 16
       : ratio === "3:2" ? 3 / 2
+      : ratio === "2:3" ? 2 / 3
       : 1.0;
 
     const imgAspect = imgW / imgH;
@@ -607,8 +640,11 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
     } else {
       const targetRatio = aspectRatio === "1:1" ? 1.0
         : aspectRatio === "4:3" ? 4 / 3
+        : aspectRatio === "3:4" ? 3 / 4
         : aspectRatio === "16:9" ? 16 / 9
+        : aspectRatio === "9:16" ? 9 / 16
         : aspectRatio === "3:2" ? 3 / 2
+        : aspectRatio === "2:3" ? 2 / 3
         : null;
 
       const imgAspect = imageMeta ? imageMeta.width / imageMeta.height : 1;
@@ -715,10 +751,16 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
         cropH = side;
       } else if (aspectRatio === "4:3") {
         cropH = Math.round(cropW * (3 / 4));
+      } else if (aspectRatio === "3:4") {
+        cropH = Math.round(cropW * (4 / 3));
       } else if (aspectRatio === "16:9") {
         cropH = Math.round(cropW * (9 / 16));
+      } else if (aspectRatio === "9:16") {
+        cropH = Math.round(cropW * (16 / 9));
       } else if (aspectRatio === "3:2") {
         cropH = Math.round(cropW * (2 / 3));
+      } else if (aspectRatio === "2:3") {
+        cropH = Math.round(cropW * (3 / 2));
       }
 
       // Clamp within image bounds
@@ -857,21 +899,48 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
               </div>
             )}
 
-            {/* Aspect Ratio Selector (Compact) */}
+            {/* Aspect Ratio Selector (Expanded) */}
             {imageSrc && (
-              <div className="hidden sm:flex items-center bg-[#0d1117] rounded border border-[#30363d] p-0.5">
-                {(["free", "1:1", "4:3", "16:9"] as AspectRatio[]).map((r) => (
+              <div className="hidden md:flex items-center bg-[#0d1117] rounded border border-[#30363d] p-0.5 overflow-x-auto">
+                {(["free", "1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3"] as AspectRatio[]).map((r) => (
                   <button
                     key={r}
                     type="button"
                     onClick={() => handleSetAspectRatio(r)}
-                    className={`px-2 py-0.5 rounded text-[10px] font-medium transition cursor-pointer ${
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-medium transition cursor-pointer ${
                       aspectRatio === r ? "bg-sky-600 text-white font-bold" : "text-gray-400 hover:text-white"
                     }`}
+                    title={`縦横比: ${r}`}
                   >
                     {r === "free" ? "自由" : r}
                   </button>
                 ))}
+              </div>
+            )}
+
+            {/* Zoom Controls */}
+            {imageSrc && (
+              <div className="flex items-center gap-1 bg-[#0d1117] rounded border border-[#30363d] px-1.5 py-0.5">
+                <span className="text-[10px] text-gray-400 hidden lg:inline">ズーム:</span>
+                <button
+                  type="button"
+                  onClick={() => setZoom(prev => Math.max(0.8, Number((prev - 0.25).toFixed(2))))}
+                  className="w-5 h-5 flex items-center justify-center text-gray-300 hover:text-white bg-[#161b22] rounded text-xs cursor-pointer border border-[#30363d]"
+                  title="縮小"
+                >
+                  -
+                </button>
+                <span className="font-mono text-[11px] text-sky-300 px-1 min-w-[36px] text-center">
+                  {Math.round(zoom * 100)}%
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setZoom(prev => Math.min(4.0, Number((prev + 0.25).toFixed(2))))}
+                  className="w-5 h-5 flex items-center justify-center text-gray-300 hover:text-white bg-[#161b22] rounded text-xs cursor-pointer border border-[#30363d]"
+                  title="拡大"
+                >
+                  +
+                </button>
               </div>
             )}
 
@@ -990,6 +1059,9 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
                   onPointerMove={handlePointerMove}
                   onPointerUp={handlePointerUp}
                   onPointerCancel={handlePointerUp}
+                  onTouchStart={handleTouchStart}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={handleTouchEnd}
                   className="relative inline-block select-none cursor-crosshair overflow-hidden rounded shadow-2xl touch-none bg-white border border-gray-400"
                   style={{
                     transform: `scale(${zoom})`,
