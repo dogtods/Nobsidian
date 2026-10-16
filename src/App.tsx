@@ -53,7 +53,8 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpToLine,
-  ArrowDownToLine
+  ArrowDownToLine,
+  Eye
 } from "lucide-react";
 
 import { Note, FolderRelation } from "./types";
@@ -3950,26 +3951,43 @@ const renderMarkdownToElements = (contentStr: string) => {
       } else {
         nextContent = imgTag + "\n\n" + active.content;
       }
-      toast("画像をノート先頭に挿入しました 🖼️✦");
+      toast("画像をノート先頭（タイトル直下）に挿入しました 🖼️✦ プレビューを表示中");
     } else if (position === 'bottom') {
       nextContent = (active.content ? active.content.trim() + "\n\n" : "") + imgTag + "\n";
-      toast("画像をノート末尾に挿入しました 🖼️✦");
+      toast("画像をノート末尾に挿入しました 🖼️✦ プレビューを表示中");
     } else if (mode === "edit" && editorRef.current) {
       const start = editorRef.current.selectionStart || 0;
       const end = editorRef.current.selectionEnd || 0;
       const before = active.content.substring(0, start);
       const after = active.content.substring(end);
       nextContent = before + imgMarkdown + after;
-      toast("画像をカーソル位置に挿入しました 🖼️✦");
+      toast("画像をカーソル位置に挿入しました 🖼️✦ プレビューを表示中");
     } else {
       nextContent = (active.content ? active.content.trim() + "\n\n" : "") + imgTag + "\n";
-      toast("画像をノートに挿入しました 🖼️✦");
+      toast("画像をノートに挿入しました 🖼️✦ プレビューを表示中");
     }
 
     setCropModalInitialImage(null);
     setCropModalInitialAlt("");
     setCropModalInitialSize("260px");
     updateActiveNoteContent(nextContent);
+
+    // ★ プレビューモードに自動切り替えし、挿入された画像へスムーズスクロール＆ハイライト
+    setMode("preview");
+    setTimeout(() => {
+      const previewEl = document.getElementById("preview");
+      if (previewEl) {
+        const images = previewEl.querySelectorAll("img");
+        if (images.length > 0) {
+          const targetImg = position === 'top' ? images[0] : images[images.length - 1];
+          targetImg?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          targetImg?.classList.add("ring-4", "ring-rose-500", "ring-offset-2");
+          setTimeout(() => {
+            targetImg?.classList.remove("ring-4", "ring-rose-500", "ring-offset-2");
+          }, 2500);
+        }
+      }
+    }, 120);
   };
 
   const runVisualExtraction = async () => {
@@ -7845,11 +7863,11 @@ const renderMarkdownToElements = (contentStr: string) => {
                 {mode === "edit" ? (
                   <textarea
                     ref={editorRef}
-                    id="editor"
-                    style={{ fontSize: `calc(14px + ${articleFontDelta}pt)` }}
-                    className={`flex-1 mx-auto ${CONTENT_WIDTH_CONFIG[contentWidthLevel].className} print:w-full print:max-w-none transition-[max-width,width] duration-200 p-6 md:p-8 bg-transparent text-[var(--text)] font-mono text-sm leading-relaxed overflow-y-auto outline-none border-0 resize-none select-text print:hidden break-words [overflow-wrap:anywhere]`}
-                    placeholder="ここにメモを書きましょう。&#10;[[ノート名]] と書くと自動的につながり（リンク）になります。"
-                    value={activeNote.content}
+                      id="editor"
+                      style={{ fontSize: `calc(14px + ${articleFontDelta}pt)` }}
+                      className={`flex-1 mx-auto ${CONTENT_WIDTH_CONFIG[contentWidthLevel].className} print:w-full print:max-w-none transition-[max-width,width] duration-200 p-6 md:p-8 bg-transparent text-[var(--text)] font-mono text-sm leading-relaxed overflow-y-auto outline-none border-0 resize-none select-text print:hidden break-words [overflow-wrap:anywhere]`}
+                      placeholder="ここにメモを書きましょう。&#10;[[ノート名]] と書くと自動的につながり（リンク）になります。"
+                      value={activeNote.content}
                     onChange={(e) => handleNoteContentChange(e.target.value)}
                     onBlur={handleEditorBlur}
                     onKeyDown={handleEditorKeyDown}
@@ -8294,6 +8312,30 @@ const renderMarkdownToElements = (contentStr: string) => {
                       <span>PDF切り抜き</span>
                     </button>
                   </div>
+                )}
+                {activeNote.content && /!\[[^\]]*\]\((?:data:image|https?:)[^\)]+\)/.test(activeNote.content) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode("preview");
+                      setTimeout(() => {
+                        const previewEl = document.getElementById("preview");
+                        const firstImg = previewEl?.querySelector("img");
+                        if (firstImg) {
+                          firstImg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                          firstImg.classList.add("ring-4", "ring-rose-500", "ring-offset-2");
+                          setTimeout(() => {
+                            firstImg.classList.remove("ring-4", "ring-rose-500", "ring-offset-2");
+                          }, 2500);
+                        }
+                      }, 120);
+                    }}
+                    className="text-emerald-300 bg-emerald-950/40 border border-emerald-500/30 px-1.5 py-0.5 rounded flex items-center gap-1 hover:bg-emerald-900/50 transition-colors cursor-pointer text-[10px] md:text-[11px] font-medium"
+                    title="ノート内の切り抜き画像へジャンプしてプレビュー表示"
+                  >
+                    <ImageIcon className="w-3 h-3 text-emerald-400" />
+                    <span>画像へジャンプ</span>
+                  </button>
                 )}
               </div>
               <div className="flex items-center gap-3 ml-auto">
