@@ -54,7 +54,8 @@ import {
   ArrowDown,
   ArrowUpToLine,
   ArrowDownToLine,
-  Eye
+  Eye,
+  Edit3
 } from "lucide-react";
 
 import { Note, FolderRelation } from "./types";
@@ -2539,8 +2540,9 @@ $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$
               src={imgUrl}
               alt={altText}
               style={{ width: resolvedWidth !== "auto" ? "100%" : undefined, height: "auto" }}
-              className="max-w-full max-h-[360px] rounded-lg border border-[var(--border2)] object-contain shadow-sm cursor-zoom-in hover:border-sky-500 transition-colors"
-              onClick={() => setPreviewImageModalUrl(imgUrl)}
+              className="max-w-full max-h-[360px] rounded-lg border border-[var(--border2)] object-contain shadow-sm cursor-pointer hover:border-sky-500 transition-colors"
+              onClick={() => handleImageClick(imgUrl)}
+              title="クリックして編集画面へ"
             />
           </span>
         );
@@ -2986,8 +2988,9 @@ const renderMarkdownToElements = (contentStr: string) => {
               src={imgUrl}
               alt={altComment}
               style={{ width: resolvedWidth !== "100%" ? "100%" : undefined, height: "auto" }}
-              className="max-w-full max-h-[600px] rounded-xl border border-[var(--border2)] object-contain shadow-md hover:border-sky-500 transition-colors cursor-zoom-in bg-black/20"
-              onClick={() => setPreviewImageModalUrl(imgUrl)}
+              className="max-w-full max-h-[600px] rounded-xl border border-[var(--border2)] object-contain shadow-md hover:border-sky-500 transition-colors cursor-pointer bg-black/20"
+              onClick={() => handleImageClick(imgUrl)}
+              title="クリックして編集画面へ"
             />
 
             {/* Quick floating toolbar (Shows on hover/focus) */}
@@ -3801,6 +3804,33 @@ const renderMarkdownToElements = (contentStr: string) => {
       };
     }
     return { comment: "", size: "260px" };
+  };
+
+  const handleImageClick = (imgUrl: string) => {
+    setPreviewImageModalUrl(null);
+    setMode("edit");
+    setTimeout(() => {
+      if (editorRef.current) {
+        const active = getActiveNote();
+        const content = active?.content || "";
+        const idx = content.indexOf(imgUrl);
+        if (idx !== -1) {
+          const before = content.lastIndexOf("![", idx);
+          const targetPos = before !== -1 ? before : idx;
+          editorRef.current.focus();
+          editorRef.current.setSelectionRange(targetPos, targetPos);
+
+          const textUpToTarget = content.substring(0, targetPos);
+          const lineCount = textUpToTarget.split("\n").length;
+          const totalLines = content.split("\n").length;
+          const scrollFraction = lineCount / Math.max(1, totalLines);
+          editorRef.current.scrollTop = scrollFraction * editorRef.current.scrollHeight;
+        } else {
+          editorRef.current.focus();
+        }
+      }
+    }, 80);
+    toast("編集画面に切り替えました ✏️");
   };
 
   const handleResizeImage = (imgUrl: string, newSize: string) => {
