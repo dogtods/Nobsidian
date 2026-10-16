@@ -145,6 +145,42 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
     setTouchStartDist(null);
   };
 
+  const [isPanning, setIsPanning] = useState<boolean>(false);
+  const [panStart, setPanStart] = useState<{ x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null);
+
+  const handleWorkspacePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget || (containerRef.current && !containerRef.current.contains(e.target as Node))) {
+      setIsPanning(true);
+      setPanStart({
+        x: e.clientX,
+        y: e.clientY,
+        scrollLeft: e.currentTarget.scrollLeft,
+        scrollTop: e.currentTarget.scrollTop
+      });
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch (_) {}
+    }
+  };
+
+  const handleWorkspacePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isPanning || !panStart) return;
+    const dx = e.clientX - panStart.x;
+    const dy = e.clientY - panStart.y;
+    e.currentTarget.scrollLeft = panStart.scrollLeft - dx;
+    e.currentTarget.scrollTop = panStart.scrollTop - dy;
+  };
+
+  const handleWorkspacePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isPanning) {
+      setIsPanning(false);
+      setPanStart(null);
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch (_) {}
+    }
+  };
+
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1039,8 +1075,14 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
         {/* Content Area: FULL-HEIGHT WORKSPACE FOR THE ARTICLE! */}
         <div className="flex-1 relative flex overflow-hidden bg-[#0a0d13]">
           
-          {/* Main Article / PDF Workspace: Maximum Screen Area! */}
-          <div className="flex-1 flex flex-col items-center justify-start p-1 sm:p-2 relative overflow-auto h-full">
+          {/* Main Article / PDF Workspace: Maximum Screen Area with Pan & Zoom support */}
+          <div
+            className="flex-1 flex flex-col items-center justify-start p-12 sm:p-20 relative overflow-auto h-full cursor-grab active:cursor-grabbing"
+            onPointerDown={handleWorkspacePointerDown}
+            onPointerMove={handleWorkspacePointerMove}
+            onPointerUp={handleWorkspacePointerUp}
+            onPointerCancel={handleWorkspacePointerUp}
+          >
             {isProcessing && (
               <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center gap-2 select-none">
                 <RefreshCw className="w-8 h-8 animate-spin text-rose-400" />

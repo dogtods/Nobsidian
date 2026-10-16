@@ -15,7 +15,6 @@ import {
   RefreshCw,
   Folder,
   Plus,
-  Trash2,
   FolderOpen,
   CloudLightning,
   ChevronDown,
@@ -55,7 +54,8 @@ import {
   ArrowUpToLine,
   ArrowDownToLine,
   Eye,
-  Edit3
+  Edit3,
+  Trash2
 } from "lucide-react";
 
 import { Note, FolderRelation } from "./types";
@@ -3104,6 +3104,19 @@ const renderMarkdownToElements = (contentStr: string) => {
               >
                 <Maximize2 className="w-3 h-3" />
               </button>
+
+              {/* Delete image button */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteImage(imgUrl);
+                }}
+                className="p-1 bg-red-900/70 hover:bg-red-600 text-white rounded text-[10px] cursor-pointer transition shadow-sm"
+                title="この画像をノートから削除"
+              >
+                <Trash2 className="w-3 h-3 text-red-200" />
+              </button>
             </div>
           </div>
 
@@ -3932,6 +3945,23 @@ const renderMarkdownToElements = (contentStr: string) => {
 
     const newContent = blocks.join("\n\n");
     updateActiveNoteContent(newContent);
+  };
+
+  const handleDeleteImage = (imgUrl: string) => {
+    const active = getActiveNote();
+    if (!active || !active.content) return;
+    if (!window.confirm("この画像をノートから削除しますか？")) return;
+
+    const escapedUrl = imgUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`\\s*!\\[[^\\]]*\\]\\(${escapedUrl}\\)\\s*`, 'g');
+    const newContent = active.content.replace(regex, "\n\n").replace(/\n\s*\n\s*\n/g, "\n\n").trim();
+
+    if (newContent !== active.content) {
+      updateActiveNoteContent(newContent);
+      toast("画像を削除しました 🗑️✦");
+    } else {
+      toast("削除対象の画像が見つかりませんでした");
+    }
   };
 
   const handleInsertCroppedImage = (
@@ -9475,6 +9505,19 @@ const renderMarkdownToElements = (contentStr: string) => {
                     <Download className="w-3.5 h-3.5" />
                     <span>保存</span>
                   </a>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const urlToDelete = previewImageModalUrl;
+                      setPreviewImageModalUrl(null);
+                      handleDeleteImage(urlToDelete);
+                    }}
+                    className="px-2.5 py-1 bg-red-900/80 hover:bg-red-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition shadow"
+                    title="この画像を削除"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">削除</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => setPreviewImageModalUrl(null)}
