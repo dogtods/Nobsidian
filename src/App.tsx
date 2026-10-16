@@ -12,7 +12,7 @@ import {
   Sparkles,
   Menu,
   Download,
-  RefreshCw,a
+  RefreshCw,
   Folder,
   Plus,
   FolderOpen,
