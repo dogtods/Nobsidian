@@ -7638,6 +7638,19 @@ const renderMarkdownToElements = (contentStr: string) => {
                     </button>
 
                     <button
+                      onClick={() => {
+                        setCropModalInitialImage(null);
+                        setCropModalInitialAlt("");
+                        setIsImageCropModalOpen(true);
+                      }}
+                      className="p-1 px-2 portrait:px-1.5 text-rose-300 hover:text-white hover:bg-rose-900/30 font-medium rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all border border-rose-500/30 bg-rose-500/10"
+                      title="元記事PDFを開いて一部を図表・画像として切り抜き挿入（元のPDFは編集されません）"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                      <span className="portrait:hidden">PDF切り抜き</span>
+                    </button>
+
+                    <button
                       onClick={runVisualExtraction}
                       disabled={isExtractingStructure}
                       className={`p-1 px-2 portrait:px-1.5 text-xs font-medium rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all ${
@@ -8257,15 +8270,30 @@ const renderMarkdownToElements = (contentStr: string) => {
                   更新日: {new Date(activeNote.updatedAt).toLocaleDateString("ja-JP")}
                 </span>
                 {activeNote.sourceUrl && (
-                  <a
-                    href={activeNote.sourceUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[var(--blue)] bg-blue-900/30 border border-blue-500/30 px-1.5 py-0.5 rounded flex items-center gap-1 hover:bg-blue-900/50 transition-colors"
-                    title="元記事URLを開く"
-                  >
-                    🔗 元記事
-                  </a>
+                  <div className="flex items-center gap-1.5">
+                    <a
+                      href={activeNote.sourceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[var(--blue)] bg-blue-900/30 border border-blue-500/30 px-1.5 py-0.5 rounded flex items-center gap-1 hover:bg-blue-900/50 transition-colors"
+                      title="元記事URLを開く"
+                    >
+                      🔗 元記事
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCropModalInitialImage(null);
+                        setCropModalInitialAlt("");
+                        setIsImageCropModalOpen(true);
+                      }}
+                      className="text-rose-300 bg-rose-950/40 border border-rose-500/30 px-1.5 py-0.5 rounded flex items-center gap-1 hover:bg-rose-900/50 transition-colors cursor-pointer text-[10px] md:text-[11px] font-medium"
+                      title="元記事のPDFまたはWeb記事を開いて図表を切り抜き挿入（元PDFは編集されません）"
+                    >
+                      <FileText className="w-3 h-3 text-rose-400" />
+                      <span>PDF切り抜き</span>
+                    </button>
+                  </div>
                 )}
               </div>
               <div className="flex items-center gap-3 ml-auto">
@@ -9263,6 +9291,7 @@ const renderMarkdownToElements = (contentStr: string) => {
         initialImageData={cropModalInitialImage}
         initialAltText={cropModalInitialAlt}
         initialSize={cropModalInitialSize}
+        sourceUrl={getActiveNote()?.sourceUrl}
         onInsertImage={handleInsertCroppedImage}
       />
 

@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import * as pdfjsLib from "pdfjs-dist";
 import {
   X,
   Crop,
@@ -19,9 +20,26 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowRight,
-  Maximize2,
-  AlignCenter
+  FileText,
+  ChevronLeft,
+  ChevronRight,
+  ShieldCheck,
+  Layers,
+  Globe,
+  FileSearch
 } from "lucide-react";
+
+// Configure PDF.js worker
+if (typeof window !== "undefined") {
+  try {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+      "pdfjs-dist/build/pdf.worker.min.mjs",
+      import.meta.url
+    ).toString();
+  } catch (_) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
+  }
+}
 
 interface ImageCropModalProps {
   isOpen: boolean;
@@ -35,6 +53,8 @@ interface ImageCropModalProps {
   initialImageData?: string | null;
   initialAltText?: string;
   initialSize?: string;
+  sourceUrl?: string; // Current note's source URL
+  defaultMode?: 'image' | 'pdf';
 }
 
 type AspectRatio = "free" | "1:1" | "4:3" | "16:9" | "3:2";
@@ -45,7 +65,9 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
   onInsertImage,
   initialImageData,
   initialAltText,
-  initialSize
+  initialSize,
+  sourceUrl,
+  defaultMode
 }) => {
   const [imageSrc, setImageSrc] = useState<string | null>(initialImageData || null);
   const [imageMeta, setImageMeta] = useState<{ width: number; height: number } | null>(null);
@@ -56,6 +78,16 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
   const [imageSize, setImageSize] = useState<string>(initialSize || "260px");
   const [insertPosition, setInsertPosition] = useState<'cursor' | 'top' | 'bottom'>("cursor");
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+
+  // PDF-specific states (Strict read-only in memory)
+  const [pdfDoc, setPdfDoc] = useState<any | null>(null);
+  const [pdfFileName, setPdfFileName] = useState<string>("");
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [totalPages, setTotalPages] = useState<number>(1);
+  const [pdfScale, setPdfScale] = useState<number>(1.75); // 1.75x produces sharp, crisp text and figures
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [urlInput, setUrlInput] = useState<string>("");
+  const [isUrlInputOpen, setIsUrlInputOpen] = useState<boolean>(false);
 
   // Crop box in percentage (0.0 to 1.0)
   const [cropBox, setCropBox] = useState<{ x: number; y: number; width: number; height: number }>({
@@ -142,23 +174,140 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
       setZoom(1);
       setAltText(initialAltText || "");
       setImageSize(initialSize || "260px");
+      setPdfDoc(null);
+      setPdfFileName("");
     } else {
       setImageSrc(null);
       setAltText("");
       setImageSize(initialSize || "260px");
       setInsertPosition("cursor");
+      setPdfDoc(null);
+      setPdfFileName("");
+      setPdfError(null);
     }
   }, [initialImageData, initialAltText, initialSize, isOpen]);
 
-  // Handle local file selection
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Render a specific page of PDF strictly to an in-memory canvas (Read-Only)
+  const renderPdfPage = useCallback(async (doc: any, pageNum: number, scale = pdfScale) => {
+    if (!doc) return;
+    setIsProcessing(true);
+    setPdfError(null);
+    try {
+      const page = await doc.getPage(pageNum);
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(viewport.width);
+      canvas.height = Math.round(viewport.height);
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) throw new Error("Canvas context could not be created");
+
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      const pageDataUrl = canvas.toDataURL("image/png");
+      setImageSrc(pageDataUrl);
+      setZoom(1);
+      // Auto-suggest caption if empty or previous page caption
+      setAltText(prev => (!prev || /^P\.\d+/.test(prev)) ? `P.${pageNum}` : prev);
+    } catch (err: any) {
+      console.error("PDF page render error:", err);
+      setPdfError(`ページのレンダリングに失敗しました: ${err.message || err}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [pdfScale]);
+
+  // Load PDF from File (Strictly Read-Only in memory)
+  const loadPdfFromFile = async (file: File) => {
+    setIsProcessing(true);
+    setPdfError(null);
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const loadingTask = pdfjsLib.getDocument({
+        data: new Uint8Array(arrayBuffer),
+        cMapUrl: "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/cmaps/",
+        cMapPacked: true,
+      });
+      const doc = await loadingTask.promise;
+      setPdfDoc(doc);
+      setPdfFileName(file.name);
+      setTotalPages(doc.numPages);
+      setCurrentPage(1);
+      await renderPdfPage(doc, 1, pdfScale);
+    } catch (err: any) {
+      console.error("PDF loading error:", err);
+      setPdfError(`PDFの読み込みに失敗しました: ${err.message || err}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Load PDF from URL (e.g. sourceUrl or web URL)
+  const loadPdfFromUrl = async (urlToLoad: string) => {
+    if (!urlToLoad) return;
+    setIsProcessing(true);
+    setPdfError(null);
+    try {
+      let target = urlToLoad.trim();
+      const driveMatch = target.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+      if (driveMatch) {
+        target = `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`;
+      }
+
+      // Fetch through backend binary proxy to prevent CORS issues
+      const proxyUrl = `/api/proxy-pdf?url=${encodeURIComponent(target)}`;
+      const res = await fetch(proxyUrl);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
+      const arrayBuffer = await res.arrayBuffer();
+      const loadingTask = pdfjsLib.getDocument({
+        data: new Uint8Array(arrayBuffer),
+        cMapUrl: "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/cmaps/",
+        cMapPacked: true,
+      });
+      const doc = await loadingTask.promise;
+      setPdfDoc(doc);
+      const urlFileName = target.split('/').pop()?.split('?')[0] || "document.pdf";
+      setPdfFileName(urlFileName.endsWith('.pdf') ? urlFileName : `${urlFileName}.pdf`);
+      setTotalPages(doc.numPages);
+      setCurrentPage(1);
+      await renderPdfPage(doc, 1, pdfScale);
+      setIsUrlInputOpen(false);
+    } catch (err: any) {
+      console.error("PDF URL load error:", err);
+      setPdfError(`URLからのPDF取得に失敗しました: ${err.message || err}。ローカルのPDFファイルを開くか、別のURLをお試しください。`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Page navigation
+  const goToPage = async (page: number) => {
+    if (!pdfDoc) return;
+    const targetPage = Math.max(1, Math.min(totalPages, page));
+    setCurrentPage(targetPage);
+    await renderPdfPage(pdfDoc, targetPage, pdfScale);
+  };
+
+  // Handle local file selection (Images OR PDFs)
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      alert("画像ファイル（PNG, JPEG, WebP等）を選択してください。");
+
+    if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+      await loadPdfFromFile(file);
       return;
     }
 
+    if (!file.type.startsWith("image/")) {
+      alert("画像ファイル（PNG, JPEG, WebP等）またはPDFファイルを選択してください。");
+      return;
+    }
+
+    // Standard Image file
+    setPdfDoc(null);
+    setPdfFileName("");
+    setPdfError(null);
     const reader = new FileReader();
     reader.onload = (event) => {
       const result = event.target?.result as string;
@@ -170,6 +319,8 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
 
   // Handle clipboard paste inside modal & window level
   const processImageBlob = useCallback((blob: Blob) => {
+    setPdfDoc(null);
+    setPdfFileName("");
     const reader = new FileReader();
     reader.onload = (event) => {
       setImageSrc(event.target?.result as string);
@@ -294,9 +445,7 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
     e.stopPropagation();
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
-    } catch (_) {
-      // Ignore if pointer capture is unsupported
-    }
+    } catch (_) {}
 
     isDraggingRef.current = false;
     setDragMode(mode);
@@ -361,7 +510,7 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
       next.x = Math.max(0, Math.min(1 - b.width, b.x + deltaX));
       next.y = Math.max(0, Math.min(1 - b.height, b.y + deltaY));
     } else {
-      // Corner resizing
+      // Corner resizing with aspect ratio constraint
       const targetRatio = aspectRatio === "1:1" ? 1.0
         : aspectRatio === "4:3" ? 4 / 3
         : aspectRatio === "16:9" ? 16 / 9
@@ -375,7 +524,6 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
         let newH = Math.max(0.08, Math.min(1 - b.y, b.height + deltaY));
 
         if (targetRatio !== null) {
-          // Strictly lock aspect ratio: newH = newW * (imgAspect / targetRatio)
           newH = newW * (imgAspect / targetRatio);
           if (b.y + newH > 1) {
             newH = 1 - b.y;
@@ -547,26 +695,29 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 select-none animate-[fadeIn_0.15s_ease-out]"
+      className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 select-none animate-[fadeIn_0.15s_ease-out]"
       onPaste={handlePaste}
       tabIndex={0}
     >
-      <div className="bg-[#161b22] border border-[#30363d] rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+      <div className="bg-[#161b22] border border-[#30363d] rounded-2xl w-full max-w-5xl max-h-[94vh] flex flex-col shadow-2xl overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#30363d] bg-[#0d1117]/80">
+        <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-[#30363d] bg-[#0d1117]/85">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center">
-              <Crop className="w-4 h-4" />
+            <div className="w-8 h-8 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0">
+              {pdfDoc ? <FileText className="w-4 h-4 text-rose-400" /> : <Crop className="w-4 h-4" />}
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <span>画像切り抜き (トリミング) & 挿入</span>
-                <span className="text-[10px] font-normal px-2 py-0.5 rounded bg-sky-950/60 text-sky-300 border border-sky-500/30">
-                  Ctrl+V で直接ペースト可
+              <h3 className="text-sm font-bold text-white flex items-center gap-2 flex-wrap">
+                <span>{pdfDoc ? "元記事PDF 閲覧 & 切り抜き挿入" : "画像 & PDF 切り抜き (トリミング) 挿入"}</span>
+                <span className="text-[10px] font-normal px-2 py-0.5 rounded bg-emerald-950/70 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                  <span>元PDFは編集されません（完全読み取り専用）</span>
                 </span>
               </h3>
               <p className="text-[11px] text-gray-400">
-                指やマウスで枠を動かして位置を調整し、アスペクト比通りのサイズで切り抜きます
+                {pdfDoc
+                  ? "元PDFのページを開いて図表やグラフを指で切り抜き、ノートに画像として貼り付けます"
+                  : "画像または元記事PDFを開き、必要な部分だけを切り抜いてノートに挿入します"}
               </p>
             </div>
           </div>
@@ -579,10 +730,120 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
           </button>
         </div>
 
+        {/* PDF Navigation Bar (Shows when a PDF is open) */}
+        {pdfDoc && (
+          <div className="px-4 py-2 bg-gradient-to-r from-rose-950/40 via-[#1c2128] to-[#0d1117] border-b border-[#30363d] flex flex-wrap items-center justify-between gap-2.5 text-xs">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="flex items-center gap-1.5 px-2.5 py-1 bg-rose-500/20 text-rose-300 rounded-lg border border-rose-500/30 font-semibold text-[11px]">
+                <FileText className="w-3.5 h-3.5 text-rose-400" />
+                <span className="max-w-[180px] sm:max-w-[260px] truncate" title={pdfFileName}>
+                  {pdfFileName || "PDFドキュメント"}
+                </span>
+                <span className="opacity-80">({totalPages} ページ)</span>
+              </span>
+
+              {/* Page Switcher */}
+              <div className="flex items-center gap-1 bg-[#0d1117] border border-[#30363d] rounded-lg p-0.5">
+                <button
+                  type="button"
+                  disabled={currentPage <= 1 || isProcessing}
+                  onClick={() => goToPage(currentPage - 1)}
+                  className="px-2 py-1 text-gray-300 hover:text-white hover:bg-gray-800 disabled:opacity-30 disabled:hover:bg-transparent rounded flex items-center gap-0.5 cursor-pointer text-xs"
+                  title="前のページへ"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">前へ</span>
+                </button>
+
+                <div className="flex items-center gap-1 px-1.5 font-mono text-xs">
+                  <span className="text-sky-400 font-bold">{currentPage}</span>
+                  <span className="text-gray-500">/</span>
+                  <span className="text-gray-400">{totalPages}</span>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={currentPage >= totalPages || isProcessing}
+                  onClick={() => goToPage(currentPage + 1)}
+                  className="px-2 py-1 text-gray-300 hover:text-white hover:bg-gray-800 disabled:opacity-30 disabled:hover:bg-transparent rounded flex items-center gap-0.5 cursor-pointer text-xs"
+                  title="次のページへ"
+                >
+                  <span className="hidden sm:inline">次へ</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Page quick slider/jump */}
+              {totalPages > 3 && (
+                <div className="hidden md:flex items-center gap-1.5 text-[11px] text-gray-400 pl-1">
+                  <span>移動:</span>
+                  <input
+                    type="range"
+                    min={1}
+                    max={totalPages}
+                    value={currentPage}
+                    onChange={(e) => goToPage(Number(e.target.value))}
+                    className="w-24 accent-rose-500 cursor-pointer"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Sharpness / Resolution toggle */}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 bg-[#0d1117] border border-[#30363d] px-1.5 py-0.5 rounded-lg text-[10px]">
+                <span className="text-gray-400">鮮明度:</span>
+                {[
+                  { scale: 1.5, label: "標準" },
+                  { scale: 2.0, label: "高精細" },
+                  { scale: 2.5, label: "最高" }
+                ].map(opt => (
+                  <button
+                    key={opt.scale}
+                    type="button"
+                    onClick={() => {
+                      setPdfScale(opt.scale);
+                      renderPdfPage(pdfDoc, currentPage, opt.scale);
+                    }}
+                    className={`px-1.5 py-0.5 rounded transition cursor-pointer ${
+                      pdfScale === opt.scale
+                        ? "bg-rose-500/30 text-rose-300 font-bold border border-rose-500/40"
+                        : "text-gray-400 hover:text-white"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setPdfDoc(null);
+                  setPdfFileName("");
+                  setImageSrc(null);
+                }}
+                className="px-2 py-1 text-[11px] text-gray-400 hover:text-rose-300 hover:bg-rose-950/30 border border-transparent hover:border-rose-500/30 rounded transition cursor-pointer"
+                title="別のファイルを選択"
+              >
+                ✕ PDFを閉じる
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-4 flex flex-col md:flex-row gap-4 bg-[#0d1117]/40 min-h-[360px]">
-          {/* Left / Center: Image Canvas Workspace */}
-          <div className="flex-1 flex flex-col items-center justify-center bg-[#090d13] border border-[#30363d] rounded-xl p-3 relative overflow-hidden min-h-[320px]">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 flex flex-col md:flex-row gap-4 bg-[#0d1117]/40 min-h-[360px]">
+          {/* Left / Center: Image / PDF Canvas Workspace */}
+          <div className="flex-1 flex flex-col items-center justify-center bg-[#090d13] border border-[#30363d] rounded-xl p-3 relative overflow-hidden min-h-[340px]">
+            {isProcessing && (
+              <div className="absolute inset-0 z-50 bg-black/75 backdrop-blur-sm flex flex-col items-center justify-center gap-2 select-none">
+                <RefreshCw className="w-6 h-6 animate-spin text-rose-400" />
+                <span className="text-xs font-semibold text-gray-200">PDFページを高精細レンダリング中...</span>
+                <span className="text-[10px] text-gray-400">（元PDFは編集されず安全に保持されます）</span>
+              </div>
+            )}
+
             {imageSrc ? (
               <>
                 <div
@@ -650,13 +911,13 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
 
                     {/* Center Helper Badge (Touch drag indicator) */}
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none">
-                      <div className="px-2 py-0.5 bg-black/70 backdrop-blur-sm rounded-full text-white/95 text-[10px] font-medium flex items-center gap-1 shadow border border-sky-400/40">
+                      <div className="px-2 py-0.5 bg-black/75 backdrop-blur-sm rounded-full text-white/95 text-[10px] font-medium flex items-center gap-1 shadow border border-sky-400/40">
                         <Move className="w-3 h-3 text-sky-400" />
-                        <span>指でドラッグして移動</span>
+                        <span>指でドラッグして切り抜き位置を移動</span>
                       </div>
                     </div>
 
-                    {/* 4 Corner Resizing Handles (Large 40px touch hit area for comfortable finger manipulation) */}
+                    {/* 4 Corner Resizing Handles */}
                     <div
                       className="absolute -top-4 -left-4 w-10 h-10 flex items-center justify-center cursor-nwse-resize touch-none z-30"
                       style={{ touchAction: "none" }}
@@ -706,11 +967,11 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
                   <div className="flex items-center justify-between gap-2 px-1">
                     <div className="flex items-center gap-1.5 text-[11px] text-gray-300">
                       <Move className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                      <span>枠を指でドラッグ、または画像タップで枠を移動</span>
+                      <span>枠を指でドラッグ、またはタップで移動</span>
                     </div>
                     {imageMeta && (
                       <div className="text-[11px] font-mono text-sky-400 bg-sky-950/60 px-2 py-0.5 rounded border border-sky-500/30 font-semibold shrink-0">
-                        {aspectRatio === "1:1" ? "1:1" : aspectRatio} : {liveCropW} × {liveCropH} px
+                        {aspectRatio === "1:1" ? "1:1 正方形" : aspectRatio} : {liveCropW} × {liveCropH} px
                       </div>
                     )}
                   </div>
@@ -764,7 +1025,7 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
                         type="button"
                         onClick={() => alignCrop("full")}
                         className="px-2 py-1 bg-[#0d1117] hover:bg-gray-800 active:bg-sky-500/20 text-gray-300 hover:text-white rounded border border-[#30363d] text-[10px] font-semibold transition cursor-pointer"
-                        title="最大サイズ"
+                        title="全体サイズ"
                       >
                         全体
                       </button>
@@ -810,30 +1071,116 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
                 </div>
               </>
             ) : (
-              /* Empty / Upload drop zone */
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full h-full min-h-[280px] border-2 border-dashed border-[#30363d] hover:border-sky-500 rounded-xl flex flex-col items-center justify-center p-6 text-center cursor-pointer transition-colors bg-[#0d1117]/50 group"
-              >
-                <div className="w-14 h-14 rounded-2xl bg-[#1c2128] text-gray-400 group-hover:text-sky-400 group-hover:bg-sky-500/10 flex items-center justify-center mb-3 transition">
-                  <Upload className="w-7 h-7" />
+              /* Empty / File Selection / Drop Zone with PDF support */
+              <div className="w-full h-full min-h-[300px] flex flex-col items-center justify-center p-4 text-center">
+                {pdfError && (
+                  <div className="mb-4 p-3 bg-red-950/60 border border-red-500/40 rounded-xl text-red-200 text-xs max-w-md text-left">
+                    <p className="font-bold mb-1">⚠️ 読み込みエラー</p>
+                    <p>{pdfError}</p>
+                  </div>
+                )}
+
+                <div className="w-full max-w-md border-2 border-dashed border-[#30363d] hover:border-sky-500 rounded-2xl p-6 bg-[#0d1117]/60 flex flex-col items-center transition group">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-12 h-12 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center shadow">
+                      <FileText className="w-6 h-6" />
+                    </div>
+                    <div className="w-12 h-12 rounded-xl bg-sky-500/10 text-sky-400 flex items-center justify-center shadow">
+                      <ImageIcon className="w-6 h-6" />
+                    </div>
+                  </div>
+
+                  <h4 className="text-sm font-bold text-white mb-1">
+                    元記事のPDF または 画像ファイルを開く
+                  </h4>
+                  <p className="text-xs text-gray-400 max-w-sm mb-4 leading-relaxed">
+                    PDFの図表・グラフや、PNG/JPEG画像を読み込み、必要な部分を切り抜いてノートに挿入できます。
+                  </p>
+
+                  <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full justify-center">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full sm:w-auto px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold transition shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <FileText className="w-4 h-4" />
+                      <span>PDF または 画像ファイルを開く</span>
+                    </button>
+                  </div>
+
+                  <p className="text-[10px] text-emerald-400/90 mt-3 flex items-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                    <span>元のPDFファイルは一切編集・変更されません（完全安全・読み取り専用）</span>
+                  </p>
                 </div>
-                <h4 className="text-sm font-bold text-white mb-1">
-                  画像ファイルを選択、またはクリップボードからペースト
-                </h4>
-                <p className="text-xs text-gray-400 max-w-sm mb-4 leading-relaxed">
-                  クリックしてPCから画像を選択するか、スクリーンショットをコピーしてこの画面上で <kbd className="px-1.5 py-0.5 bg-gray-800 border border-gray-600 rounded text-[11px] text-gray-300 font-mono">Ctrl + V</kbd> （Macは <kbd className="px-1.5 py-0.5 bg-gray-800 border border-gray-600 rounded text-[11px] text-gray-300 font-mono">Cmd + V</kbd>）を押してください。
-                </p>
-                <span className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-bold transition shadow-md">
-                  画像ファイルを開く
-                </span>
+
+                {/* Source URL Quick Loader */}
+                {sourceUrl && (
+                  <div className="mt-3 w-full max-w-md bg-[#161b22] border border-blue-500/30 rounded-xl p-3 flex items-center justify-between gap-3 text-left">
+                    <div className="flex items-center gap-2 overflow-hidden">
+                      <Globe className="w-4 h-4 text-blue-400 shrink-0" />
+                      <div className="overflow-hidden">
+                        <span className="text-[10px] text-gray-400 block font-semibold">現在のノートの元記事リンク:</span>
+                        <span className="text-xs text-blue-300 truncate block font-mono">
+                          {sourceUrl}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => loadPdfFromUrl(sourceUrl)}
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold shrink-0 transition cursor-pointer flex items-center gap-1"
+                    >
+                      <FileSearch className="w-3.5 h-3.5" />
+                      <span>読み込む</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Optional Web URL Input */}
+                <div className="mt-2 w-full max-w-md">
+                  {!isUrlInputOpen ? (
+                    <button
+                      type="button"
+                      onClick={() => setIsUrlInputOpen(true)}
+                      className="text-[11px] text-gray-400 hover:text-sky-300 underline cursor-pointer"
+                    >
+                      🔗 任意のWeb上のPDF / Google DriveのURLから開く
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-1.5 bg-[#161b22] border border-[#30363d] p-1.5 rounded-lg">
+                      <input
+                        type="url"
+                        value={urlInput}
+                        onChange={(e) => setUrlInput(e.target.value)}
+                        placeholder="https://example.com/paper.pdf"
+                        className="flex-1 px-2 py-1 bg-[#0d1117] border border-[#30363d] rounded text-xs text-white outline-none focus:border-sky-500 font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => loadPdfFromUrl(urlInput)}
+                        disabled={!urlInput.trim()}
+                        className="px-3 py-1 bg-sky-600 hover:bg-sky-500 disabled:opacity-40 text-white rounded text-xs font-bold transition cursor-pointer"
+                      >
+                        開く
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsUrlInputOpen(false)}
+                        className="p-1 text-gray-400 hover:text-white"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/*,.pdf,application/pdf"
               className="hidden"
               onChange={handleFileChange}
             />
@@ -844,7 +1191,7 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
             {/* Alt text / Caption input (Default empty) */}
             <div className="space-y-1.5">
               <label className="text-[11px] font-bold text-gray-300 block">
-                写真の下のコメント（未記入なら非表示）
+                写真・図表の下のコメント（未記入なら非表示）
               </label>
               <input
                 type="text"
@@ -902,7 +1249,7 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
               </div>
             </div>
 
-            {/* Aspect Ratio Selector (Strict 1:1, 4:3, 16:9, 3:2, Free) */}
+            {/* Aspect Ratio Selector */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-[11px] font-bold text-gray-300 block">
@@ -1019,14 +1366,14 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
                 className="w-full py-1.5 px-3 bg-[#0d1117] hover:bg-gray-800 border border-[#30363d] rounded-lg text-xs text-gray-300 flex items-center justify-center gap-1.5 cursor-pointer transition"
               >
                 <Upload className="w-3.5 h-3.5 text-gray-400" />
-                <span>別の画像を選択</span>
+                <span>別のファイルを開く</span>
               </button>
             </div>
           </div>
         </div>
 
         {/* Footer Actions */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-t border-[#30363d] bg-[#0d1117]/90">
+        <div className="flex items-center justify-between px-4 sm:px-5 py-3.5 border-t border-[#30363d] bg-[#0d1117]/90">
           <button
             type="button"
             onClick={onClose}
@@ -1036,7 +1383,7 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
           </button>
 
           <div className="flex items-center gap-2">
-            {imageSrc && (
+            {imageSrc && !pdfDoc && (
               <button
                 type="button"
                 onClick={() => {
@@ -1059,7 +1406,7 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
               }`}
             >
               <Check className="w-4 h-4" />
-              <span>{isProcessing ? "処理中..." : "✂️ トリミングして記事に挿入"}</span>
+              <span>{isProcessing ? "処理中..." : "✂️ 切り抜いて記事に挿入"}</span>
             </button>
           </div>
         </div>

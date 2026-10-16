@@ -114,6 +114,32 @@ async function startServer() {
     }
   });
 
+  app.get("/api/proxy-pdf", async (req, res) => {
+    try {
+      const targetUrl = req.query.url as string;
+      if (!targetUrl) return res.status(400).json({ error: "URLパラメータが指定されていません" });
+
+      const fetchRes = await fetch(targetUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "application/pdf, application/octet-stream, */*"
+        },
+        redirect: "follow"
+      });
+
+      if (!fetchRes.ok) {
+        return res.status(fetchRes.status).json({ error: `PDF取得失敗: HTTP ${fetchRes.status}` });
+      }
+
+      const buffer = await fetchRes.arrayBuffer();
+      res.setHeader("Content-Type", fetchRes.headers.get("content-type") || "application/pdf");
+      res.setHeader("Content-Length", buffer.byteLength);
+      res.send(Buffer.from(buffer));
+    } catch (e: any) {
+      res.status(500).json({ error: `PDFプロキシエラー: ${e.message}` });
+    }
+  });
+
   // API routes FIRST
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
