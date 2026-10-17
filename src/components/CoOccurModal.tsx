@@ -207,6 +207,22 @@ export default function CoOccurModal({
     });
   }, [activeSelectedNode, allCorrelationsList, metricMode]);
 
+  // Export co-occurrence matrix as CSV
+  const handleDownloadCsv = () => {
+    let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+    csvContent += "Source,Target,CoOccurCount,JaccardCorrelation\r\n";
+    allCorrelationsList.forEach(e => {
+      csvContent += `"${e.source}","${e.target}",${e.weight},${e.jaccard}\r\n`;
+    });
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `co-occurrence-analysis-${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // 7. Graph rendering via D3 Force Simulation
   useEffect(() => {
     if (!isOpen || !svgRef.current || !containerRef.current) return;
@@ -497,12 +513,21 @@ export default function CoOccurModal({
           <div className="text-sm md:text-base font-bold text-[var(--bright)] flex items-center gap-2">
             <span>🌐</span> キーワード相関・共起ネットワーク (潜在的つながりの抽出)
           </div>
-          <div
-            className="cursor-pointer text-xl text-[var(--muted)] hover:text-[var(--red)] transition-colors select-none"
-            onClick={onClose}
-            title="閉じる"
-          >
-            ✕
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleDownloadCsv}
+              className="px-3 py-1 bg-[#238636] hover:bg-[#2ea043] text-white font-bold text-[11px] rounded-md transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
+              title="共起ペアと相関度の計算結果をCSVでダウンロード"
+            >
+              📥 CSVダウンロード
+            </button>
+            <div
+              className="cursor-pointer text-xl text-[var(--muted)] hover:text-[var(--red)] transition-colors select-none"
+              onClick={onClose}
+              title="閉じる"
+            >
+              ✕
+            </div>
           </div>
         </div>
 

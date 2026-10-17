@@ -1190,17 +1190,38 @@ function isShortArticle(text, threshold) {
 }
 
 // 保存先シート取得/自動生成
+// URLまたはID（25文字以上の英数字）を含む最初の値を選ぶ。空欄や不正な値（短い文字列など）は飛ばす
+function pickSpreadsheetRef(candidates) {
+  for (let i = 0; i < candidates.length; i++) {
+    const v = candidates[i] ? String(candidates[i]).trim() : "";
+    if (v && /[-\w]{25,}/.test(v)) return v;
+  }
+  return "";
+}
+
+// 設定の確認用（エディタで実行 → 実行ログを確認）。キー類は文字数のみ表示
+function checkWeeklySettings() {
+  const names = ['SPREADSHEET_URL','SHEET_ID','TARGET_SHEET_NAME','SYNC_SPREADSHEET_URL','SYNC_SHEET_NAME','MY_EMAIL','GEMINI_MODEL','GEMINI_API_KEY','RAINDROP_TOKEN'];
+  names.forEach(n => {
+    const v = props.getProperty(n);
+    if (v === null || v === "") { console.log(n + ": （未設定）"); return; }
+    const secret = (n === 'GEMINI_API_KEY' || n === 'RAINDROP_TOKEN');
+    console.log(n + ": " + (secret ? "設定あり（" + v.length + "文字）" : "「" + v.slice(0, 80) + "」（" + v.length + "文字）"));
+  });
+  console.log("実行ユーザー: " + Session.getEffectiveUser().getEmail());
+}
+
 function getSheet(targetSheetName, targetSsUrl) {
   let ss = null;
   if (targetSsUrl && String(targetSsUrl).trim() !== "") {
     try {
       ss = SpreadsheetApp.openByUrl(String(targetSsUrl).trim());
     } catch(e) {
-      const match = String(targetSsUrl).match(/[-w]{25,}/);
+      const match = String(targetSsUrl).match(/[-\w]{25,}/);
       if (match) {
         ss = SpreadsheetApp.openById(match[0]);
       } else {
-        throw new Error("指定されたスプレッドシートを開けません。URLを確認してください。");
+        throw new Error("指定されたスプレッドシートを開けません。URLを確認してください。（受け取った値: " + String(targetSsUrl).trim().slice(0, 60) + "）");
       }
     }
   } else {
@@ -1832,6 +1853,10 @@ function processApiRequest(e) {
   const targetSsUrl = postData.targetSsUrl || (e.parameter ? e.parameter.targetSsUrl : "");
   const learningSsUrl = postData.learningSpreadsheetUrl || (e.parameter ? e.parameter.learningSpreadsheetUrl : "");
 
+  // アプリ（ブラウザ）で設定済みの保存先をスクリプトプロパティへ記憶し、
+  // トリガー実行（weeklyReport等）でも同じ設定を流用できるようにする
+  persistAppSettings(action, postData, targetSheet, targetSsUrl);
+
   if (!action) {
     return createJsonResponse({
       status: "ok",
@@ -1891,6 +1916,35 @@ function processApiRequest(e) {
   }
 
   return createJsonResponse(result);
+}
+
+/**
+ * アプリから届いた設定をスクリプトプロパティに記憶する（トリガー実行用）
+ * - ノート操作（getNotes/saveNote/deleteNote/saveAll）: 保存先 → SPREADSHEET_URL / TARGET_SHEET_NAME
+ * - 外部取り込み（syncExternalSources）: 取り込み先 → SYNC_SPREADSHEET_URL / SYNC_SHEET_NAME、
+ *   併せて Gemini APIキー / Raindropトークン / 週次レポート用プロンプトが送られていれば保存
+ * ※ importRawRowsToApp 等の sheetName は「取込元」の意味なので、記憶対象にしない
+ */
+function persistAppSettings(action, postData, targetSheet, targetSsUrl) {
+  try {
+    const url = targetSsUrl ? String(targetSsUrl).trim() : "";
+    const sheetName = targetSheet ? String(targetSheet).trim() : "";
+    const noteActions = ["getNotes", "saveNote", "deleteNote", "saveAll"];
+
+    if (noteActions.indexOf(action) !== -1) {
+      if (url) props.setProperty('SPREADSHEET_URL', url);
+      if (sheetName) props.setProperty('TARGET_SHEET_NAME', sheetName);
+    } else if (action === "syncExternalSources" || action === "syncAllExternalSources") {
+      if (url) props.setProperty('SYNC_SPREADSHEET_URL', url);
+      if (sheetName) props.setProperty('SYNC_SHEET_NAME', sheetName);
+      const o = (postData && postData.options) || {};
+      if (o.geminiApiKey && String(o.geminiApiKey).trim()) props.setProperty('GEMINI_API_KEY', String(o.geminiApiKey).trim());
+      if (o.raindropToken && String(o.raindropToken).trim()) props.setProperty('RAINDROP_TOKEN', String(o.raindropToken).trim());
+      if (o.weeklyReportPrompt && String(o.weeklyReportPrompt).trim()) props.setProperty('WEEKLY_REPORT_PROMPT', String(o.weeklyReportPrompt).trim());
+    }
+  } catch (err) {
+    console.warn("persistAppSettings skipped: " + err.message);
+  }
 }
 
 function doGet(e) {
@@ -3465,13 +3519,18 @@ function weeklyReport() {
     // 1. 外部ソースの同期（設定されている場合）
     try {
       console.log("外部ソース（Raindrop / Googleドライブ等）の同期を確認中...");
-      syncExternalSources({ raindrop: true, drive: true });
+      const syncSsUrl = pickSpreadsheetRef([props.getProperty('SYNC_SPREADSHEET_URL'), props.getProperty('SPREADSHEET_URL'), props.getProperty('SHEET_ID')]);
+      const syncSheetName = props.getProperty('SYNC_SHEET_NAME') || props.getProperty('TARGET_SHEET_NAME') || "Notes";
+      const syncRes = syncExternalSources({ raindrop: true, drive: true }, syncSheetName, syncSsUrl);
+      if (syncRes && syncRes.success === false) {
+        console.warn("外部同期が完了しませんでした: " + (syncRes.message || syncRes.error || ""));
+      }
     } catch (syncErr) {
       console.warn("外部同期スキップ/待機: " + syncErr.message);
     }
 
     // 2. スプレッドシート及び対象シートの取得
-    const targetSsUrl = props.getProperty('SPREADSHEET_URL') || props.getProperty('SHEET_ID') || "";
+    const targetSsUrl = pickSpreadsheetRef([props.getProperty('SPREADSHEET_URL'), props.getProperty('SHEET_ID')]);
     const targetSheetName = props.getProperty('TARGET_SHEET_NAME') || "Notes";
     const sheet = getSheet(targetSheetName, targetSsUrl);
     const data = sheet.getDataRange().getValues();
@@ -3502,7 +3561,7 @@ function weeklyReport() {
       }
     }
 
-    const recipientEmail = getConfig('MY_EMAIL') || props.getProperty('MY_EMAIL') || Session.getActiveUser().getEmail();
+    const recipientEmail = getConfig('MY_EMAIL') || props.getProperty('MY_EMAIL') || Session.getEffectiveUser().getEmail();
 
     // 4. 未処理記事が0件の場合のハンドリング
     if (unprocessedItems.length === 0) {
@@ -3529,7 +3588,11 @@ function weeklyReport() {
 
     // 7. メール送信
     console.log("レポートメールを送信中...");
-    sendReportEmail(reportText, unprocessedItems.length, dateRange, recipientEmail);
+    const mailSent = sendReportEmail(reportText, unprocessedItems.length, dateRange, recipientEmail);
+    if (!mailSent) {
+      // メール未送信のまま処理済みにすると次回以降のレポートから漏れるため、ここで中断する
+      throw new Error("レポートメールを送信できなかったため、処理済みフラグは更新していません。");
+    }
 
     // 8. 処理済みフラグの更新（G列を 'true' にセット）
     unprocessedIndices.forEach(rowIdx => {
@@ -3567,7 +3630,8 @@ function analyzeWeeklyReportWithGemini(articles) {
   const candidateModels = getCandidateModels(model);
 
   // トークン節約のため各記事の内容を適切に調整
-  const maxCharsPerItem = 800;
+  // 1記事あたりの最大文字数（スクリプトプロパティ WEEKLY_MAX_CHARS_PER_ITEM で変更可。未設定は800、上限は10000）
+  const maxCharsPerItem = Math.min(10000, Math.max(200, getNumConfig('WEEKLY_MAX_CHARS_PER_ITEM') || 800));
   const formattedArticles = articles.map((a, idx) => {
     let content = String(a.highlights || a.summary || "").trim();
     if (content.length > maxCharsPerItem) {
@@ -3644,10 +3708,10 @@ function generateFallbackWeeklyReport(articles) {
  * レポートメール送信関数
  */
 function sendReportEmail(reportText, articleCount, dateRange, recipientEmail) {
-  const targetEmail = recipientEmail || getConfig('MY_EMAIL') || props.getProperty('MY_EMAIL') || Session.getActiveUser().getEmail();
+  const targetEmail = recipientEmail || getConfig('MY_EMAIL') || props.getProperty('MY_EMAIL') || Session.getEffectiveUser().getEmail();
   if (!targetEmail) {
     console.warn("宛先メールアドレス（MY_EMAIL）が設定されていないため、メール送信をスキップしました。");
-    return;
+    return false;
   }
 
   const subject = `📚 週次ナレッジレポート｜${dateRange}（${articleCount}本）`;
@@ -3665,7 +3729,25 @@ ${reportText}
   try {
     GmailApp.sendEmail(targetEmail, subject, plainBody);
     console.log(`週次レポートメールを送信しました: ${targetEmail}`);
+    return true;
   } catch (e) {
     console.error(`メール送信エラー: ${e.message}`);
+    return false;
   }
+}
+
+/**
+ * 週次トリガー登録（エディタで1回だけ実行。初回は権限の承認画面が出ます）
+ * 毎週月曜 7時台に weeklyReport を実行します。
+ */
+function setupWeeklyTrigger() {
+  ScriptApp.getProjectTriggers()
+    .filter(t => t.getHandlerFunction() === 'weeklyReport')
+    .forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('weeklyReport')
+    .timeBased()
+    .onWeekDay(ScriptApp.WeekDay.MONDAY)
+    .atHour(7)
+    .create();
+  console.log("週次トリガー（月曜7時台）を登録しました。");
 }

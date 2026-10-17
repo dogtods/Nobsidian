@@ -68,6 +68,7 @@ import {
   getFolderFromColumnN,
   formatDateStr,
   extractWikiLinks,
+  extractKeywordsSectionLinks,
   parseHeatmapData,
   parseCoOccurData,
   parseStreamData,
@@ -91,6 +92,8 @@ import {
 // Import charts and config modals
 import HeatmapModal from "./components/HeatmapModal";
 import CoOccurModal from "./components/CoOccurModal";
+import PairHeatmapModal from "./components/PairHeatmapModal";
+import CausalDiffModal from "./components/CausalDiffModal";
 import StreamModal from "./components/StreamModal";
 import BubbleModal from "./components/BubbleModal";
 import KnowledgeGraphModal from "./components/KnowledgeGraphModal";
@@ -545,6 +548,8 @@ export default function App() {
   // Modals state flags
   const [isHeatmapOpen, setIsHeatmapOpen] = useState(false);
   const [isCoOccurOpen, setIsCoOccurOpen] = useState(false);
+  const [isPairHeatmapOpen, setIsPairHeatmapOpen] = useState(false);
+  const [isCausalModalOpen, setIsCausalModalOpen] = useState(false);
   const [isStreamOpen, setIsStreamOpen] = useState(false);
   const [isBubbleOpen, setIsBubbleOpen] = useState(false);
   const [isGraphOpen, setIsGraphOpen] = useState(false);
@@ -3414,6 +3419,91 @@ const renderMarkdownToElements = (contentStr: string) => {
     const data = JSON.stringify({ notes: notes.map(sanitizeNoteForExport), exportedAt: new Date().toISOString() }, null, 2);
     downloadBlob(data, `cn-backup-${formatDateStr(Date.now())}.json`, "application/json");
     toast("JSONバックアップファイルをダウンロードしました");
+  };
+
+  const downloadOverallCoOccurCSV = () => {
+    const filteredNotes = getFilteredNotes(notes, filterStartDate || "", filterEndDate || "");
+    const rawData = parseCoOccurData(notes, filterStartDate || "", filterEndDate || "", 500, excludedKeywords);
+    
+    const pairArticles: { [pairKey: string]: { titles: Set<string>; dates: Set<string>; folders: Set<string> } } = {};
+    
+    filteredNotes.forEach(note => {
+      const folder = getFolder(note);
+      const dateStr = note.dateStr || getNoteDisplayDate(note) || "";
+      const links = Array.from(new Set(extractKeywordsSectionLinks(note.summary || note.content || "")));
+      
+      for (let i = 0; i < links.length; i++) {
+        for (let j = i + 1; j < links.length; j++) {
+          const a = links[i], b = links[j];
+          const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+          if (!pairArticles[key]) {
+            pairArticles[key] = { titles: new Set(), dates: new Set(), folders: new Set() };
+          }
+          if (note.title) pairArticles[key].titles.add(note.title);
+          if (dateStr) pairArticles[key].dates.add(dateStr);
+          if (folder) pairArticles[key].folders.add(folder);
+        }
+      }
+    });
+
+    const nodeMap = new Map<string, number>();
+    rawData.nodes.forEach(n => nodeMap.set(n.id, n.count));
+
+    let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+    csvContent += "Source,Target,CoOccurCount,JaccardCorrelation,Folders,Dates,ArticleTitles\r\n";
+
+    rawData.edges.forEach(e => {
+      const srcId = typeof e.source === "string" ? e.source : (e.source as any).id;
+      const tgtId = typeof e.target === "string" ? e.target : (e.target as any).id;
+      const countA = nodeMap.get(srcId) || 1;
+      const countB = nodeMap.get(tgtId) || 1;
+      const unionCount = countA + countB - e.weight;
+      const jaccard = unionCount > 0 ? Number((e.weight / unionCount).toFixed(3)) : 0;
+
+      const key = srcId < tgtId ? `${srcId}|${tgtId}` : `${tgtId}|${srcId}`;
+      const info = pairArticles[key] || { titles: new Set(), dates: new Set(), folders: new Set() };
+      
+      const foldersStr = Array.from(info.folders).join("; ").replace(/"/g, '""');
+      const datesStr = Array.from(info.dates).join("; ").replace(/"/g, '""');
+      const titlesStr = Array.from(info.titles).join("; ").replace(/"/g, '""');
+
+      csvContent += `"${srcId}","${tgtId}",${e.weight},${jaccard},"${foldersStr}","${datesStr}","${titlesStr}"\r\n`;
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `overall-co-occurrence-with-articles-${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast("記事情報（日付・フォルダ名）付きの全体共起データをCSVでダウンロードしました");
+  };
+
+  const downloadArticleListCSV = () => {
+    const filteredNotes = getFilteredNotes(notes, filterStartDate || "", filterEndDate || "");
+    
+    let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+    csvContent += "Title,Date,Folder,KeywordsTag,ExtractedWikiLinks\r\n";
+
+    filteredNotes.forEach(note => {
+      const title = (note.title || "").replace(/"/g, '""');
+      const date = (note.dateStr || getNoteDisplayDate(note) || "").replace(/"/g, '""');
+      const folder = (getFolder(note) || "").replace(/"/g, '""');
+      const keywordsTag = (note.keywords || "").replace(/"/g, '""');
+      const wikiLinks = Array.from(new Set(extractWikiLinks(note.content || note.summary || ""))).join("; ").replace(/"/g, '""');
+
+      csvContent += `"${title}","${date}","${folder}","${keywordsTag}","${wikiLinks}"\r\n`;
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `articles-keyword-list-${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast("記事別の日付・フォルダ・キーワード一覧をCSVでダウンロードしました");
   };
 
   // Gemini AI Operations
@@ -7299,6 +7389,20 @@ const renderMarkdownToElements = (contentStr: string) => {
               >
                 <Download className="w-3 h-3 text-[var(--green)]" /> バックアップ (.json)
               </button>
+              <button
+                onClick={downloadOverallCoOccurCSV}
+                className="w-full text-left p-1.5 bg-transparent hover:bg-[var(--border)] border border-[var(--border)] rounded text-[var(--subtle)] hover:text-white hover:border-[var(--border2)] text-[11px] cursor-pointer transition-all flex items-center gap-1.5"
+                title="全ノートのキーワード共起・相関データをCSVでダウンロード"
+              >
+                <Download className="w-3 h-3 text-cyan-400" /> 全体共起データ (.csv)
+              </button>
+              <button
+                onClick={downloadArticleListCSV}
+                className="w-full text-left p-1.5 bg-transparent hover:bg-[var(--border)] border border-[var(--border)] rounded text-[var(--subtle)] hover:text-white hover:border-[var(--border2)] text-[11px] cursor-pointer transition-all flex items-center gap-1.5"
+                title="全記事ごとの日付・フォルダ・キーワード配列一覧をCSVでダウンロード"
+              >
+                <Download className="w-3 h-3 text-purple-400" /> 記事別キーワード一覧 (.csv)
+              </button>
             </div>
           )}
         </div>
@@ -7940,6 +8044,24 @@ const renderMarkdownToElements = (contentStr: string) => {
                     >
                       <Globe className="w-3.5 h-3.5 text-blue-400 shrink-0" />
                       <span className="portrait:hidden hidden xl:inline">共起</span>
+                    </button>
+
+                    <button
+                      onClick={() => setIsPairHeatmapOpen(true)}
+                      className="p-1 px-1.5 text-xs text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded cursor-pointer flex items-center gap-0.5 portrait:gap-0 transition-all"
+                      title="ペア時系列ヒートマップ表示（新興・急増トレンド検出）"
+                    >
+                      <Calendar className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span className="portrait:hidden">ペア時系列</span>
+                    </button>
+
+                    <button
+                      onClick={() => setIsCausalModalOpen(true)}
+                      className="p-1 px-1.5 text-xs text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded cursor-pointer flex items-center gap-0.5 portrait:gap-0 transition-all"
+                      title="因果リンクの週次差分表示（AI因果関係抽出）"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span className="portrait:hidden">因果差分</span>
                     </button>
 
                     <button
@@ -9237,6 +9359,21 @@ const renderMarkdownToElements = (contentStr: string) => {
           onExcludeKeyword={handleExcludeKeyword}
           onIncludeKeyword={handleIncludeKeyword}
           focusNote={activeNote}
+        />
+      )}
+
+      {isPairHeatmapOpen && (
+        <PairHeatmapModal
+          isOpen={isPairHeatmapOpen}
+          onClose={() => setIsPairHeatmapOpen(false)}
+        />
+      )}
+
+      {isCausalModalOpen && (
+        <CausalDiffModal
+          isOpen={isCausalModalOpen}
+          onClose={() => setIsCausalModalOpen(false)}
+          notes={notes}
         />
       )}
 
