@@ -3897,17 +3897,40 @@ const renderMarkdownToElements = (contentStr: string) => {
     scheduleDelayedSave(updated);
   };
 
+  // ★ 画像タグの検索は文字列検索で行う。
+  // Base64（数百KB〜数MB）を new RegExp に埋め込むと実行時に「Regular expression too large」で例外になり、
+  // 削除・サイズ変更・移動・再トリミングの各ボタンが全て無反応になるため、正規表現は使わない。
+  const findImageTag = (
+    content: string,
+    imgUrl: string
+  ): { start: number; end: number; alt: string; size: string; tag: string } | null => {
+    if (!content || !imgUrl) return null;
+    const needle = `](${imgUrl})`;
+    let from = 0;
+    while (true) {
+      const idx = content.indexOf(needle, from);
+      if (idx === -1) return null;
+      const bs = content.lastIndexOf("![", idx);
+      if (bs !== -1) {
+        const inner = content.slice(bs + 2, idx);
+        if (!inner.includes("]") && !inner.includes("\n")) {
+          const pipe = inner.indexOf("|");
+          const alt = (pipe === -1 ? inner : inner.slice(0, pipe)).trim();
+          const size = (pipe === -1 ? "" : inner.slice(pipe + 1)).trim();
+          const end = idx + needle.length;
+          return { start: bs, end, alt, size, tag: content.slice(bs, end) };
+        }
+      }
+      from = idx + needle.length;
+    }
+  };
+
   const getImageInfoFromNote = (imgUrl: string): { comment: string; size: string } => {
     const active = getActiveNote();
     if (!active || !active.content) return { comment: "", size: "260px" };
-    const escapedUrl = imgUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`!\\[([^\\]|]*)(?:\\|([^\\]]*))?\\]\\(${escapedUrl}\\)`);
-    const match = active.content.match(regex);
-    if (match) {
-      return {
-        comment: (match[1] || "").trim(),
-        size: (match[2] || "260px").trim()
-      };
+    const f = findImageTag(active.content, imgUrl);
+    if (f) {
+      return { comment: f.alt, size: f.size || "260px" };
     }
     return { comment: "", size: "260px" };
   };
@@ -3943,21 +3966,10 @@ const renderMarkdownToElements = (contentStr: string) => {
     const active = getActiveNote();
     if (!active || !active.content) return;
 
-    const escapedUrl = imgUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`!\\[([^\\]|]*)(?:\\|([^\\]]*))?\\]\\(${escapedUrl}\\)`);
-    const match = active.content.match(regex);
-
-    let newContent = "";
-    if (match) {
-      const existingComment = (match[1] || "").trim();
-      const replacement = existingComment ? `![${existingComment}|${newSize}](${imgUrl})` : `![|${newSize}](${imgUrl})`;
-      newContent = active.content.replace(match[0], replacement);
-    } else {
-      newContent = active.content.replace(
-        new RegExp(`!\\[[^\\]]*\\]\\(${escapedUrl}\\)`),
-        `![|${newSize}](${imgUrl})`
-      );
-    }
+    const f = findImageTag(active.content, imgUrl);
+    if (!f) return toast("画像が見つかりませんでした");
+    const replacement = f.alt ? `![${f.alt}|${newSize}](${imgUrl})` : `![|${newSize}](${imgUrl})`;
+    const newContent = active.content.slice(0, f.start) + replacement + active.content.slice(f.end);
 
     if (newContent !== active.content) {
       updateActiveNoteContent(newContent);
@@ -3969,12 +3981,10 @@ const renderMarkdownToElements = (contentStr: string) => {
     const active = getActiveNote();
     if (!active || !active.content) return;
 
-    const escapedUrl = imgUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const imgRegex = new RegExp(`!\\[[^\\]]*\\]\\(${escapedUrl}\\)`);
-    const match = active.content.match(imgRegex);
-    if (!match) return toast("画像が見つかりませんでした");
+    const found = findImageTag(active.content, imgUrl);
+    if (!found) return toast("画像が見つかりませんでした");
 
-    const fullImgTag = match[0];
+    const fullImgTag = found.tag;
     const rawBlocks = active.content.split(/\n\n+/);
     const imgBlockIdx = rawBlocks.findIndex(b => b.includes(fullImgTag));
     if (imgBlockIdx === -1) return toast("画像の配置位置を特定できませんでした");
@@ -4045,9 +4055,17 @@ const renderMarkdownToElements = (contentStr: string) => {
     if (!active || !active.content) return;
     // 確認はアプリ内ダイアログ（deleteImageTarget）で実施済み
 
-    const escapedUrl = imgUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`\\s*!\\[[^\\]]*\\]\\(${escapedUrl}\\)\\s*`, 'g');
-    const newContent = active.content.replace(regex, "\n\n").replace(/\n\s*\n\s*\n/g, "\n\n").trim();
+    let work = active.content;
+    let f = findImageTag(work, imgUrl);
+    while (f) {
+      let s0 = f.start;
+      while (s0 > 0 && /\s/.test(work[s0 - 1])) s0--;
+      let e0 = f.end;
+      while (e0 < work.length && /\s/.test(work[e0])) e0++;
+      work = work.slice(0, s0) + "\n\n" + work.slice(e0);
+      f = findImageTag(work, imgUrl);
+    }
+    const newContent = work.replace(/\n\s*\n\s*\n/g, "\n\n").trim();
 
     if (newContent !== active.content) {
       updateActiveNoteContent(newContent);
@@ -4073,11 +4091,14 @@ const renderMarkdownToElements = (contentStr: string) => {
 
     let nextContent = "";
     if (cropModalInitialImage && active.content.includes(cropModalInitialImage)) {
-      const escapedOld = cropModalInitialImage.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const oldImgRegex = new RegExp(`!\\[[^\\]]*\\]\\(${escapedOld}\\)`);
+      const oldFound = findImageTag(active.content, cropModalInitialImage);
+      const removeOld = (c: string): string => {
+        const ff = findImageTag(c, cropModalInitialImage);
+        return ff ? c.slice(0, ff.start) + c.slice(ff.end) : c;
+      };
 
       if (position === 'top') {
-        const contentWithoutOld = active.content.replace(oldImgRegex, "").replace(/\n\s*\n\s*\n/g, "\n\n");
+        const contentWithoutOld = removeOld(active.content).replace(/\n\s*\n\s*\n/g, "\n\n");
         const titleMatch = contentWithoutOld.match(/^#\s+[^\n]+\n*/);
         if (titleMatch) {
           nextContent = titleMatch[0] + "\n" + imgTag + "\n\n" + contentWithoutOld.substring(titleMatch[0].length).trimStart();
@@ -4086,14 +4107,15 @@ const renderMarkdownToElements = (contentStr: string) => {
         }
         toast("画像をトリミングし、ノート先頭へ移動しました 🖼️✦");
       } else if (position === 'bottom') {
-        const contentWithoutOld = active.content.replace(oldImgRegex, "").replace(/\n\s*\n\s*\n/g, "\n\n");
+        const contentWithoutOld = removeOld(active.content).replace(/\n\s*\n\s*\n/g, "\n\n");
         nextContent = contentWithoutOld.trim() + "\n\n" + imgTag + "\n";
         toast("画像をトリミングし、ノート末尾へ移動しました 🖼️✦");
       } else {
-        if (oldImgRegex.test(active.content)) {
-          nextContent = active.content.replace(oldImgRegex, imgTag);
+        if (oldFound) {
+          nextContent = active.content.slice(0, oldFound.start) + imgTag + active.content.slice(oldFound.end);
         } else {
-          nextContent = active.content.replace(cropModalInitialImage, imageDataUrl);
+          const at = active.content.indexOf(cropModalInitialImage);
+          nextContent = active.content.slice(0, at) + imageDataUrl + active.content.slice(at + cropModalInitialImage.length);
         }
         toast("既存の画像をトリミングした画像に差し替えました ✂️✦");
       }
@@ -8292,7 +8314,7 @@ const renderMarkdownToElements = (contentStr: string) => {
 
             {/* AI DRAWER BOTTOM PANE */}
             <div
-              className={`border-t border-[var(--border)] bg-[#0d1117] transition-all duration-300 overflow-hidden relative ${
+              className={`print:hidden border-t border-[var(--border)] bg-[#0d1117] transition-all duration-300 overflow-hidden relative ${
                 aiPanelOpen ? "max-h-[380px] overflow-y-auto border-t-[3px] border-t-[var(--purple)]/35 shadow-2xl" : "max-h-0"
               }`}
             >
@@ -8462,7 +8484,7 @@ const renderMarkdownToElements = (contentStr: string) => {
                   更新日: {new Date(activeNote.updatedAt).toLocaleDateString("ja-JP")}
                 </span>
                 {activeNote.sourceUrl && (
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 print:hidden">
                     <a
                       href={activeNote.sourceUrl}
                       target="_blank"
@@ -8504,7 +8526,7 @@ const renderMarkdownToElements = (contentStr: string) => {
                         }
                       }, 120);
                     }}
-                    className="text-emerald-300 bg-emerald-950/40 border border-emerald-500/30 px-1.5 py-0.5 rounded flex items-center gap-1 hover:bg-emerald-900/50 transition-colors cursor-pointer text-[10px] md:text-[11px] font-medium"
+                    className="print:hidden text-emerald-300 bg-emerald-950/40 border border-emerald-500/30 px-1.5 py-0.5 rounded flex items-center gap-1 hover:bg-emerald-900/50 transition-colors cursor-pointer text-[10px] md:text-[11px] font-medium"
                     title="ノート内の切り抜き画像へジャンプしてプレビュー表示"
                   >
                     <ImageIcon className="w-3 h-3 text-emerald-400" />
@@ -9934,7 +9956,7 @@ const renderMarkdownToElements = (contentStr: string) => {
 
       {/* TTS Debug Console Panel (persistent, scrollable) */}
       {showTtsDebugLog && ttsLogs.length > 0 && (
-        <div className="fixed bottom-24 right-4 z-[9998] w-96 max-w-[92vw] bg-[#0d1117] border border-[var(--purple)] rounded-lg shadow-2xl overflow-hidden flex flex-col font-mono text-[11px]">
+        <div className="print:hidden fixed bottom-24 right-4 z-[9998] w-96 max-w-[92vw] bg-[#0d1117] border border-[var(--purple)] rounded-lg shadow-2xl overflow-hidden flex flex-col font-mono text-[11px]">
           <div className="bg-[#161b22] p-2 px-3 border-b border-[#30363d] flex items-center justify-between">
             <span className="font-bold text-purple-400 flex items-center gap-1.5">
               <span>🔊 端末音声デバッグログ ({ttsLogs.length})</span>
@@ -9987,7 +10009,7 @@ const renderMarkdownToElements = (contentStr: string) => {
 
       {/* Central Notification Toast element */}
       {toastMessage && (
-        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 p-2.5 px-5 rounded-lg bg-[var(--surface)] text-[var(--bright)] text-xs font-semibold border border-[var(--border2)] shadow-2xl z-[9999] pointer-events-none transition-all duration-300 whitespace-pre-line text-left max-w-[92vw] leading-relaxed">
+        <div className="print:hidden fixed bottom-20 left-1/2 -translate-x-1/2 p-2.5 px-5 rounded-lg bg-[var(--surface)] text-[var(--bright)] text-xs font-semibold border border-[var(--border2)] shadow-2xl z-[9999] pointer-events-none transition-all duration-300 whitespace-pre-line text-left max-w-[92vw] leading-relaxed">
           {toastMessage}
         </div>
       )}
