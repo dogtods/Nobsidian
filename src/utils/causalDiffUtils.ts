@@ -4,6 +4,7 @@
  */
 
 import { Note } from "../types";
+import { getNoteYMD } from "./graphDataParser";
 
 export type CausalOrigin = "sample" | "gemini" | "external" | "manual";
 
@@ -133,16 +134,18 @@ export function migrateLinks(links: CausalLink[]): CausalLink[] {
   });
 }
 
-/** ノートの日付 (dateStr 優先 → createdAt → 現在) をタイムスタンプ化 */
+/**
+ * ノートの日付をタイムスタンプ化。アプリ共通の getNoteYMD を使う
+ * (令和表記・年月日・スラッシュ・ミリ秒・createdAt/updatedAt フォールバックに対応)。
+ * 日付が全く取れない場合のみ現在時刻。
+ */
 export function getNoteTimestamp(note: Note): number {
-  const s = String((note as any).dateStr || "").trim();
-  const m = s.match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
-  if (m) {
-    const t = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12).getTime();
+  const ymd = getNoteYMD(note);
+  if (ymd) {
+    const [y, m, d] = ymd.split("-").map(Number);
+    const t = new Date(y, m - 1, d, 12).getTime();
     if (!isNaN(t)) return t;
   }
-  const c = (note as any).createdAt;
-  if (typeof c === "number" && !isNaN(c)) return c;
   return Date.now();
 }
 
@@ -229,11 +232,11 @@ export interface PromptOptions {
   maxEdgesTotal: number;
 }
 
-/** 日付の新しい順に、本文のあるノートを count 件選ぶ */
+/** 日付の新しい順に、本文のあるノートを count 件選ぶ (日付不明は最後) */
 export function selectRecentNotes(notes: Note[], count: number): Note[] {
   return [...notes]
     .filter(n => String((n as any).summary || (n as any).content || "").trim().length > 0)
-    .sort((a, b) => getNoteTimestamp(b) - getNoteTimestamp(a))
+    .sort((a, b) => (getNoteYMD(b) || "0000-00-00").localeCompare(getNoteYMD(a) || "0000-00-00"))
     .slice(0, Math.max(1, count));
 }
 
