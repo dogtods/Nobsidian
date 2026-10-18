@@ -23,6 +23,7 @@ import {
   selectRecentNotes
 } from "../utils/causalDiffUtils";
 import CausalLagPanel from "./CausalLagPanel";
+import { getFolderFromKeywords, getFolderFromColumnN } from "../utils/graphDataParser";
 import { ArrowRight, Sparkles, Download, Search, Plus, Trash2, Calendar, RefreshCw, Copy, ClipboardPaste, Check } from "lucide-react";
 
 async function copyText(text: string): Promise<boolean> {
@@ -77,6 +78,14 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
 
   // 外部AI連携
   const [promptCount, setPromptCount] = useState(20);
+  const [selectedFolder, setSelectedFolder] = useState<string>("all");
+  const [folderColumnSource, setFolderColumnSource] = useState<"D" | "N">(() => {
+    try {
+      return localStorage.getItem("cn_folder_column_source") === "N" ? "N" : "D";
+    } catch {
+      return "D";
+    }
+  });
   const [promptMaxChars, setPromptMaxChars] = useState(500);
   const [includeTerms, setIncludeTerms] = useState(true);
   const [pasteText, setPasteText] = useState("");
@@ -94,6 +103,15 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
       localStorage.setItem("cn_causal_links_cache", JSON.stringify(links));
     } catch {}
   }, [links]);
+
+  const availableFolders = useMemo(() => {
+    const set = new Set<string>();
+    notes.forEach(n => {
+      const f = folderColumnSource === "N" ? getFolderFromColumnN(n) : getFolderFromKeywords(n.keywords);
+      if (f) set.add(f);
+    });
+    return Array.from(set).sort();
+  }, [notes, folderColumnSource]);
 
   const weeklyGroups = useMemo(() => {
     return computeWeeklyCausalDiffs(links);
@@ -113,7 +131,7 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
 
   const existingTerms = useMemo(() => collectExistingTerms(links), [links]);
 
-  const selectedNotes = useMemo(() => selectRecentNotes(notes, promptCount), [notes, promptCount]);
+  const selectedNotes = useMemo(() => selectRecentNotes(notes, promptCount, selectedFolder, folderColumnSource), [notes, promptCount, selectedFolder, folderColumnSource]);
 
   const externalPrompt = useMemo(
     () =>
@@ -241,7 +259,7 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
       return;
     }
 
-    const targetNotes = selectRecentNotes(notes, 15);
+    const targetNotes = selectRecentNotes(notes, promptCount, selectedFolder, folderColumnSource);
     if (targetNotes.length === 0) {
       alert("分析対象のノートがありません");
       return;
@@ -616,16 +634,49 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
                 <h3 className="text-sm font-bold text-[var(--bright)]">外部AI向けプロンプトを作る</h3>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div className="flex flex-wrap items-center gap-2 pb-2 border-b border-[var(--border2)]">
+                <span className="text-xs font-semibold text-[var(--bright)]">📁 フォルダ基準:</span>
+                <button
+                  type="button"
+                  onClick={() => { setFolderColumnSource("D"); setSelectedFolder("all"); try { localStorage.setItem("cn_folder_column_source", "D"); } catch {} }}
+                  className={`px-2.5 py-1 rounded text-xs font-bold transition-colors cursor-pointer ${folderColumnSource === "D" ? "bg-blue-600 text-white" : "bg-[#161b22] text-[var(--muted)] border border-[var(--border2)]"}`}
+                >
+                  D列（カテゴリ・タグ）
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setFolderColumnSource("N"); setSelectedFolder("all"); try { localStorage.setItem("cn_folder_column_source", "N"); } catch {} }}
+                  className={`px-2.5 py-1 rounded text-xs font-bold transition-colors cursor-pointer ${folderColumnSource === "N" ? "bg-blue-600 text-white" : "bg-[#161b22] text-[var(--muted)] border border-[var(--border2)]"}`}
+                >
+                  N列（14列目）
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
                 <label className="space-y-1">
-                  <span className="block font-semibold text-[var(--bright)]">対象ノート数（新しい順）</span>
+                  <span className="block font-semibold text-[var(--bright)]">フォルダ選択 ({folderColumnSource === "N" ? "N列基準" : "D列基準"})</span>
                   <select
-                    value={promptCount}
-                    onChange={e => setPromptCount(Number(e.target.value))}
+                    value={selectedFolder}
+                    onChange={e => setSelectedFolder(e.target.value)}
                     className="w-full bg-[#161b22] border border-[var(--border2)] rounded px-2 py-1.5 text-[var(--bright)]"
                   >
-                    {[10, 20, 30, 50].map(n => <option key={n} value={n}>{n}件</option>)}
+                    <option value="all">すべて（全フォルダ）</option>
+                    {availableFolders.map(f => <option key={f} value={f}>{f}</option>)}
                   </select>
+                </label>
+                <label className="space-y-1">
+                  <span className="block font-semibold text-[var(--bright)]">対象ノート数（新しい順）</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="500"
+                    value={promptCount}
+                    onChange={e => {
+                      const v = parseInt(e.target.value, 10);
+                      setPromptCount(isNaN(v) ? 1 : Math.max(1, Math.min(500, v)));
+                    }}
+                    className="w-full bg-[#161b22] border border-[var(--border2)] rounded px-2 py-1.5 text-[var(--bright)]"
+                  />
                 </label>
                 <label className="space-y-1">
                   <span className="block font-semibold text-[var(--bright)]">1件あたり本文の最大文字数</span>
@@ -634,7 +685,7 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
                     onChange={e => setPromptMaxChars(Number(e.target.value))}
                     className="w-full bg-[#161b22] border border-[var(--border2)] rounded px-2 py-1.5 text-[var(--bright)]"
                   >
-                    {[300, 500, 800, 1200].map(n => <option key={n} value={n}>{n}字</option>)}
+                    {[300, 500, 800, 1200, 2000].map(n => <option key={n} value={n}>{n}字</option>)}
                   </select>
                 </label>
                 <label className="flex items-end gap-2 pb-1.5 cursor-pointer">
