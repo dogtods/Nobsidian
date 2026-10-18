@@ -124,7 +124,7 @@ export function getNoteYMD(note: Note): string {
     const raw = note.dateStr.trim();
     if (raw) {
       // 1-a. Reiwa format: 令和8年8月24日 or R8/8/24
-      const reiwaMatch = raw.match(/(?:令和|R)\s*(\d{1,2})\s*年?\s*[\/\-\.月]\s*(\d{1,2})\s*[\/\-\.月日]?\s*(\d{1,2})?/i);
+      const reiwaMatch = raw.match(/(?:令和|R)\s*(\d{1,2})\s*(?:年|[\/\-\.])\s*(\d{1,2})\s*(?:月|[\/\-\.])?\s*(\d{1,2})?\s*日?/i);
       if (reiwaMatch) {
         const y = 2018 + parseInt(reiwaMatch[1], 10);
         const m = reiwaMatch[2].padStart(2, "0");
