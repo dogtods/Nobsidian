@@ -1820,6 +1820,340 @@ function handleGetLearningReviewData(learningSpreadsheetUrl) {
   };
 }
 
+// ==== 深掘り判断・分析・振り返りスプレッドシート管理 ====
+const DEEP_DIVE_HEADERS = {
+  DeepDiveDecisions: [
+    "analysisId", "articleId", "記事タイトル", "記事URL", "掲載日", "登録日", "既存の要約", "主要キーワード", "市場動向の要点",
+    "記事の主要な主張", "記事の種類", "技術・市場などの現在の段階", "重要性の評価", "現時点の実現可能性", "深掘り優先度",
+    "深掘りする意味がある理由", "深掘りしない場合の理由", "不足している情報", "推奨する調査論点", "再評価すべき条件",
+    "AIの判定", "ユーザーの最終判断", "判断日時", "ステータス"
+  ],
+  DeepDiveAnalysis: [
+    "analysisId", "articleId", "論点ID", "記事タイトル", "論点名", "調査目的", "確認できた事実", "根拠と出典URL",
+    "出典の公開日", "推定・仮説", "不明点", "実現を妨げる要因", "分析結果", "結論の確度とその理由", "今後の確認事項",
+    "分析日時", "ユーザーのコメント"
+  ],
+  DeepDiveReview: [
+    "articleId", "analysisId", "当初の予測", "予測対象", "予測対象日", "予測の前提条件", "予測時点の判断",
+    "実際に起きたこと", "当初の判断との一致・不一致", "判断が外れた理由、または一致した理由", "学んだこと", "再評価日"
+  ]
+};
+
+let _deepDiveSsCache = null;
+let _deepDiveSsCacheKey = "";
+
+function openDeepDiveSpreadsheet(deepDiveSpreadsheetUrl) {
+  const rawKey = String(deepDiveSpreadsheetUrl || "").trim();
+  if (_deepDiveSsCache && _deepDiveSsCacheKey === rawKey) {
+    return _deepDiveSsCache;
+  }
+  let ss = null;
+  if (rawKey !== "") {
+    try {
+      ss = SpreadsheetApp.openByUrl(rawKey);
+    } catch(e) {
+      const match = rawKey.match(/[a-zA-Z0-9-_]{25,}/);
+      if (match) {
+        ss = SpreadsheetApp.openById(match[0]);
+      } else {
+        throw new Error("指定された深掘り用スプレッドシートを開けません。URLまたはIDを確認してください: " + rawKey);
+      }
+    }
+  } else {
+    ss = SpreadsheetApp.getActiveSpreadsheet();
+  }
+  if (!ss) {
+    throw new Error("深掘り用スプレッドシートが見つかりません。");
+  }
+  _deepDiveSsCache = ss;
+  _deepDiveSsCacheKey = rawKey;
+  return ss;
+}
+
+function getDeepDiveSheet(tabName, deepDiveSpreadsheetUrl) {
+  const ss = openDeepDiveSpreadsheet(deepDiveSpreadsheetUrl);
+  let sheet = ss.getSheetByName(tabName);
+  const headers = DEEP_DIVE_HEADERS[tabName] || [];
+
+  if (!sheet) {
+    sheet = ss.insertSheet(tabName);
+    if (headers.length > 0) {
+      sheet.appendRow(headers);
+      try {
+        const headerRange = sheet.getRange(1, 1, 1, headers.length);
+        headerRange.setBackground("#0f172a");
+        headerRange.setFontColor("#38bdf8");
+        headerRange.setFontWeight("bold");
+        sheet.setFrozenRows(1);
+      } catch(e) {}
+    }
+  } else {
+    const lastCol = sheet.getLastColumn();
+    const lastRow = sheet.getLastRow();
+    if (lastCol === 0 || lastRow === 0) {
+      if (headers.length > 0) {
+        sheet.appendRow(headers);
+        try {
+          const headerRange = sheet.getRange(1, 1, 1, headers.length);
+          headerRange.setBackground("#0f172a");
+          headerRange.setFontColor("#38bdf8");
+          headerRange.setFontWeight("bold");
+          sheet.setFrozenRows(1);
+        } catch(e) {}
+      }
+    }
+  }
+  return sheet;
+}
+
+function initializeDeepDiveSheets(deepDiveSpreadsheetUrl) {
+  const targetTabs = ["DeepDiveDecisions", "DeepDiveAnalysis", "DeepDiveReview"];
+  const initializedTabs = [];
+  targetTabs.forEach(function(tab) {
+    getDeepDiveSheet(tab, deepDiveSpreadsheetUrl);
+    initializedTabs.push(tab);
+  });
+  return {
+    success: true,
+    message: "深掘り用スプレッドシートの3タブを確認・初期化しました。",
+    tabs: initializedTabs
+  };
+}
+
+function handleSaveDeepDiveDecision(decision, deepDiveSpreadsheetUrl) {
+  if (!decision || !decision.analysisId) {
+    throw new Error("無効な判断データです（analysisIdが必要です）");
+  }
+  const sheet = getDeepDiveSheet("DeepDiveDecisions", deepDiveSpreadsheetUrl);
+  const rowData = [
+    decision.analysisId || "",
+    decision.articleId || "",
+    decision.articleTitle || "",
+    decision.articleUrl || "",
+    decision.publishedDate || "",
+    decision.registeredDate || "",
+    decision.existingSummary || "",
+    decision.keywords || "",
+    decision.marketTrendSummary || "",
+    decision.coreClaim || "",
+    decision.articleType || "",
+    decision.currentStage || "",
+    decision.importanceEval || "",
+    decision.currentFeasibility || "",
+    decision.priority || "medium",
+    decision.reasonForDeepDive || "",
+    decision.reasonForSkipping || "",
+    decision.missingInformation || "",
+    Array.isArray(decision.recommendedIssues) ? decision.recommendedIssues.join("\n") : (decision.recommendedIssues || ""),
+    decision.reassessmentConditions || "",
+    decision.aiVerdict || "",
+    decision.userFinalDecision || "",
+    decision.decisionDate || new Date().toISOString(),
+    decision.status || "decided"
+  ];
+
+  const lastRow = sheet.getLastRow();
+  let updatedRowIndex = -1;
+  if (lastRow > 1) {
+    const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (let i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]).trim() === String(decision.analysisId).trim()) {
+        updatedRowIndex = i + 2;
+        break;
+      }
+    }
+  }
+
+  if (updatedRowIndex > 0) {
+    sheet.getRange(updatedRowIndex, 1, 1, rowData.length).setValues([rowData]);
+    return { success: true, updated: true, rowIndex: updatedRowIndex, analysisId: decision.analysisId };
+  } else {
+    sheet.appendRow(rowData);
+    return { success: true, updated: false, rowIndex: sheet.getLastRow(), analysisId: decision.analysisId };
+  }
+}
+
+function handleSaveDeepDiveAnalysis(analyses, deepDiveSpreadsheetUrl) {
+  if (!analyses) throw new Error("保存する分析データがありません");
+  const list = Array.isArray(analyses) ? analyses : [analyses];
+  if (list.length === 0) return { success: true, savedCount: 0 };
+
+  const sheet = getDeepDiveSheet("DeepDiveAnalysis", deepDiveSpreadsheetUrl);
+  const lastRow = sheet.getLastRow();
+  const existingMap = {};
+  if (lastRow > 1) {
+    const existing = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
+    for (let i = 0; i < existing.length; i++) {
+      const aId = String(existing[i][0]).trim();
+      const issId = String(existing[i][2]).trim();
+      if (aId && issId) {
+        existingMap[aId + "___" + issId] = i + 2;
+      }
+    }
+  }
+
+  let savedCount = 0;
+  list.forEach(function(item) {
+    const rowData = [
+      item.analysisId || "",
+      item.articleId || "",
+      item.issueId || "",
+      item.articleTitle || "",
+      item.issueTitle || "",
+      item.researchGoal || "",
+      item.verifiedFacts || "",
+      item.sourceUrlAndEvidence || "",
+      item.sourcePublishedDate || "",
+      item.estimatesAndHypotheses || "",
+      item.unknownsAndGaps || "",
+      item.hinderingFactors || "",
+      item.analysisConclusion || "",
+      item.confidenceScoreAndReason || "",
+      item.futureCheckpoints || "",
+      item.analyzedDate || new Date().toISOString(),
+      item.userComment || ""
+    ];
+
+    const key = (item.analysisId || "") + "___" + (item.issueId || "");
+    const existingRow = existingMap[key];
+    if (existingRow) {
+      sheet.getRange(existingRow, 1, 1, rowData.length).setValues([rowData]);
+    } else {
+      sheet.appendRow(rowData);
+      existingMap[key] = sheet.getLastRow();
+    }
+    savedCount++;
+  });
+
+  return { success: true, savedCount: savedCount };
+}
+
+function handleSaveDeepDiveReview(review, deepDiveSpreadsheetUrl) {
+  if (!review) throw new Error("無効な振り返りデータです");
+  const sheet = getDeepDiveSheet("DeepDiveReview", deepDiveSpreadsheetUrl);
+  const rowData = [
+    review.articleId || "",
+    review.analysisId || "",
+    review.originalForecast || "",
+    review.forecastTarget || "",
+    review.forecastTargetDate || "",
+    review.forecastAssumptions || "",
+    review.verdictAtForecast || "",
+    review.actualOutcome || "",
+    review.alignment || "",
+    review.reasonForOutcome || "",
+    review.learnings || "",
+    review.reviewDate || new Date().toISOString()
+  ];
+  sheet.appendRow(rowData);
+  return { success: true, rowIndex: sheet.getLastRow() };
+}
+
+function handleGetDeepDiveHistory(articleId, deepDiveSpreadsheetUrl) {
+  const dSheet = getDeepDiveSheet("DeepDiveDecisions", deepDiveSpreadsheetUrl);
+  const aSheet = getDeepDiveSheet("DeepDiveAnalysis", deepDiveSpreadsheetUrl);
+  const rSheet = getDeepDiveSheet("DeepDiveReview", deepDiveSpreadsheetUrl);
+
+  const decisions = [];
+  const dLast = dSheet.getLastRow();
+  if (dLast > 1) {
+    const dVals = dSheet.getRange(2, 1, dLast - 1, 24).getValues();
+    for (let i = 0; i < dVals.length; i++) {
+      const r = dVals[i];
+      if (!articleId || String(r[1]) === String(articleId)) {
+        decisions.push({
+          analysisId: String(r[0]),
+          articleId: String(r[1]),
+          articleTitle: String(r[2]),
+          articleUrl: String(r[3]),
+          publishedDate: String(r[4]),
+          registeredDate: String(r[5]),
+          existingSummary: String(r[6]),
+          keywords: String(r[7]),
+          marketTrendSummary: String(r[8]),
+          coreClaim: String(r[9]),
+          articleType: String(r[10]),
+          currentStage: String(r[11]),
+          importanceEval: String(r[12]),
+          currentFeasibility: String(r[13]),
+          priority: String(r[14]),
+          reasonForDeepDive: String(r[15]),
+          reasonForSkipping: String(r[16]),
+          missingInformation: String(r[17]),
+          recommendedIssues: String(r[18]).split("\n").filter(Boolean),
+          reassessmentConditions: String(r[19]),
+          aiVerdict: String(r[20]),
+          userFinalDecision: String(r[21]),
+          decisionDate: String(r[22]),
+          status: String(r[23])
+        });
+      }
+    }
+  }
+
+  const analyses = [];
+  const aLast = aSheet.getLastRow();
+  if (aLast > 1) {
+    const aVals = aSheet.getRange(2, 1, aLast - 1, 17).getValues();
+    for (let i = 0; i < aVals.length; i++) {
+      const r = aVals[i];
+      if (!articleId || String(r[1]) === String(articleId)) {
+        analyses.push({
+          analysisId: String(r[0]),
+          articleId: String(r[1]),
+          issueId: String(r[2]),
+          articleTitle: String(r[3]),
+          issueTitle: String(r[4]),
+          researchGoal: String(r[5]),
+          verifiedFacts: String(r[6]),
+          sourceUrlAndEvidence: String(r[7]),
+          sourcePublishedDate: String(r[8]),
+          estimatesAndHypotheses: String(r[9]),
+          unknownsAndGaps: String(r[10]),
+          hinderingFactors: String(r[11]),
+          analysisConclusion: String(r[12]),
+          confidenceScoreAndReason: String(r[13]),
+          futureCheckpoints: String(r[14]),
+          analyzedDate: String(r[15]),
+          userComment: String(r[16])
+        });
+      }
+    }
+  }
+
+  const reviews = [];
+  const rLast = rSheet.getLastRow();
+  if (rLast > 1) {
+    const rVals = rSheet.getRange(2, 1, rLast - 1, 12).getValues();
+    for (let i = 0; i < rVals.length; i++) {
+      const r = rVals[i];
+      if (!articleId || String(r[0]) === String(articleId)) {
+        reviews.push({
+          articleId: String(r[0]),
+          analysisId: String(r[1]),
+          originalForecast: String(r[2]),
+          forecastTarget: String(r[3]),
+          forecastTargetDate: String(r[4]),
+          forecastAssumptions: String(r[5]),
+          verdictAtForecast: String(r[6]),
+          actualOutcome: String(r[7]),
+          alignment: String(r[8]),
+          reasonForOutcome: String(r[9]),
+          learnings: String(r[10]),
+          reviewDate: String(r[11])
+        });
+      }
+    }
+  }
+
+  return {
+    success: true,
+    decisions: decisions,
+    analyses: analyses,
+    reviews: reviews
+  };
+}
+
 // ==== 統合リクエスト処理関数 ====
 function processApiRequest(e) {
   if (!e) {
@@ -1852,6 +2186,7 @@ function processApiRequest(e) {
   const targetSheet = postData.sheetName || (e.parameter ? e.parameter.sheetName : "");
   const targetSsUrl = postData.targetSsUrl || (e.parameter ? e.parameter.targetSsUrl : "");
   const learningSsUrl = postData.learningSpreadsheetUrl || (e.parameter ? e.parameter.learningSpreadsheetUrl : "");
+  const deepDiveSsUrl = postData.deepDiveSpreadsheetUrl || (e.parameter ? e.parameter.deepDiveSpreadsheetUrl : "");
 
   // アプリ（ブラウザ）で設定済みの保存先をスクリプトプロパティへ記憶し、
   // トリガー実行（weeklyReport等）でも同じ設定を流用できるようにする
@@ -1893,6 +2228,20 @@ function processApiRequest(e) {
       const qId = postData.questionId || (e.parameter ? e.parameter.questionId : "");
       const newStatus = postData.status || (e.parameter ? e.parameter.status : "");
       result = handleUpdateQuestionStatus(qId, newStatus, learningSsUrl);
+    } else if (action === "initDeepDiveSheets") {
+      result = initializeDeepDiveSheets(deepDiveSsUrl);
+    } else if (action === "saveDeepDiveDecision") {
+      const decision = typeof postData.decision === "string" ? JSON.parse(postData.decision) : postData.decision;
+      result = handleSaveDeepDiveDecision(decision, deepDiveSsUrl);
+    } else if (action === "saveDeepDiveAnalysis") {
+      const analyses = typeof postData.analyses === "string" ? JSON.parse(postData.analyses) : postData.analyses;
+      result = handleSaveDeepDiveAnalysis(analyses, deepDiveSsUrl);
+    } else if (action === "saveDeepDiveReview") {
+      const review = typeof postData.review === "string" ? JSON.parse(postData.review) : postData.review;
+      result = handleSaveDeepDiveReview(review, deepDiveSsUrl);
+    } else if (action === "getDeepDiveHistory") {
+      const articleId = postData.articleId || (e.parameter ? e.parameter.articleId : "");
+      result = handleGetDeepDiveHistory(articleId, deepDiveSsUrl);
     } else if (action === "syncExternalSources" || action === "syncAllExternalSources") {
       const options = postData.options || { raindrop: true, drive: true };
       result = syncExternalSources(options, targetSheet, targetSsUrl);

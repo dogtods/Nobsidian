@@ -49,6 +49,7 @@ interface ImportModalProps {
   onSaveToast: (msg: string) => void;
   apiPost: (body: any) => Promise<any>;
   learningApiPost?: (body: any) => Promise<any>;
+  deepDiveApiPost?: (body: any) => Promise<any>;
   onNotesUpdateBatch: (newNotes: Note[], overwrite?: boolean) => void;
   onSyncExternalSources?: (options: { 
     raindrop: boolean; 
@@ -75,6 +76,7 @@ export default function ImportModal({
   onSaveToast, 
   apiPost, 
   learningApiPost,
+  deepDiveApiPost,
   onNotesUpdateBatch,
   onSyncExternalSources,
   onSyncFromServer,
@@ -133,6 +135,8 @@ export default function ImportModal({
   const [targetSsUrl, setTargetSsUrl] = useState(() => localStorage.getItem("cn_target_ss_url") || "");
   const [gasSheetName, setGasSheetName] = useState(() => localStorage.getItem("cn_gas_sheet_name") || "Notes");
   const [learningSpreadsheetUrl, setLearningSpreadsheetUrl] = useState(() => localStorage.getItem("cn_learning_spreadsheet_url") || "");
+  const [deepDiveSpreadsheetUrl, setDeepDiveSpreadsheetUrl] = useState(() => localStorage.getItem("cn_deep_dive_spreadsheet_url") || "");
+  const [isInitializingDeepDive, setIsInitializingDeepDive] = useState(false);
   const [showExtractHelp, setShowExtractHelp] = useState(false);
   const [pendingSheetItems, setPendingSheetItems] = useState<any[]>([]);
   const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
@@ -230,6 +234,12 @@ export default function ImportModal({
       localStorage.removeItem("cn_learning_spreadsheet_url");
     }
     localStorage.removeItem("cn_learning_spreadsheet_sheet_name");
+
+    if (deepDiveSpreadsheetUrl.trim()) {
+      localStorage.setItem("cn_deep_dive_spreadsheet_url", deepDiveSpreadsheetUrl.trim());
+    } else {
+      localStorage.removeItem("cn_deep_dive_spreadsheet_url");
+    }
   };
 
   // Test GAS Connection
@@ -1744,6 +1754,122 @@ export default function ImportModal({
                     </button>
                   </div>
                 )}
+              </div>
+            </div>
+
+            {/* Visual Arrow */}
+            <div className="flex justify-center -my-2 relative z-10">
+              <div className="bg-[#0d1117] border border-[#30363d] p-1.5 rounded-full text-gray-400">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+              </div>
+            </div>
+
+            {/* Deep Dive Spreadsheet Settings (深掘り判断・分析・振り返り専用スプレッドシート設定) */}
+            <div className="bg-[#161b22] border border-emerald-500/30 rounded-xl p-4 flex flex-col gap-3 relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500/50"></div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-gray-200 flex items-center gap-1.5">
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+                    深掘り調査・分析・振り返り専用スプレッドシート設定
+                  </h4>
+                  <p className="text-[10px] text-gray-400">
+                    記事詳細の「🔍 深掘り判断」で評価した判断、重要論点分析、予測振り返りを蓄積・比較する独立したスプレッドシートです。
+                  </p>
+                </div>
+                {deepDiveSpreadsheetUrl.trim() && (
+                  <a
+                    href={deepDiveSpreadsheetUrl.startsWith("http") ? deepDiveSpreadsheetUrl : `https://docs.google.com/spreadsheets/d/${deepDiveSpreadsheetUrl}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[10.5px] text-emerald-400 hover:text-emerald-300 hover:underline flex items-center gap-1 font-medium px-2 py-1 bg-emerald-500/10 rounded border border-emerald-500/30 transition"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    <span>シートを開く</span>
+                  </a>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-gray-300">深掘り蓄積用スプレッドシート URL (または ID)</label>
+                    <span className="text-[9.5px] text-gray-400">※未入力時はGAS紐づきシートに保存</span>
+                  </div>
+                  <input
+                    type="text"
+                    className="w-full font-mono text-[11px] p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-gray-100 outline-none focus:border-emerald-500 transition-all"
+                    value={deepDiveSpreadsheetUrl}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setDeepDiveSpreadsheetUrl(val);
+                      if (val.trim()) {
+                        localStorage.setItem("cn_deep_dive_spreadsheet_url", val.trim());
+                      } else {
+                        localStorage.removeItem("cn_deep_dive_spreadsheet_url");
+                      }
+                    }}
+                    placeholder="https://docs.google.com/spreadsheets/d/... (別の新規シートURLまたはID)"
+                  />
+                  
+                  <div className="flex flex-col gap-1.5 text-[10px] text-emerald-300/90 bg-emerald-950/30 px-3 py-2.5 rounded-lg border border-emerald-500/20">
+                    <div className="flex items-center gap-1.5 font-bold text-emerald-200">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>自動作成・蓄積される3つの専用タブ（独立記録）:</span>
+                    </div>
+                    <ul className="list-disc list-inside space-y-1 text-gray-300 pl-1 text-[9.5px]">
+                      <li><strong className="text-sky-300">シート1: DeepDiveDecisions</strong> - 1記事1行の深掘り判断一覧（主要主張・実現性・優先度・理由など24列）</li>
+                      <li><strong className="text-emerald-300">シート2: DeepDiveAnalysis</strong> - 1論点1行の詳細分析結果（事実・出典URL・仮説・障壁・確度など17列）</li>
+                      <li><strong className="text-purple-300">シート3: DeepDiveReview</strong> - 予測と実績の振り返り（当初予測・実際動向・一致/不一致・学びなど12列）</li>
+                    </ul>
+                    <div className="text-gray-400 text-[9px] pt-1 border-t border-emerald-500/20 flex items-center justify-between">
+                      <span>💡 既存のノート用スプレッドシートとは独立したURLを指定することで、安全に専用蓄積できます。</span>
+                      <span className="text-emerald-400/90">（記事詳細の「🔍 深掘り判断」モーダル内でも連動）</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-[#30363d]/80">
+                  <span className="text-[10px] text-gray-400">
+                    3タブ (DeepDiveDecisions, DeepDiveAnalysis, DeepDiveReview)
+                  </span>
+                  <button
+                    type="button"
+                    disabled={isInitializingDeepDive}
+                    onClick={async () => {
+                      const postFn = deepDiveApiPost || apiPost;
+                      if (!postFn) {
+                        onSaveToast("API接続機能が利用できません。GAS URLをご確認ください。");
+                        return;
+                      }
+                      try {
+                        setIsInitializingDeepDive(true);
+                        onSaveToast("深掘り専用スプレッドシートの3タブを初期化・検証中...");
+                        const res = await postFn({ 
+                          action: "initDeepDiveSheets",
+                          deepDiveSpreadsheetUrl: deepDiveSpreadsheetUrl.trim()
+                        });
+                        if (res && (res.success || !res.error)) {
+                          onSaveToast("✓ 深掘り専用スプレッドシートの3タブを正常に初期化・確認しました！");
+                        } else {
+                          throw new Error(res?.error || "初期化に失敗しました");
+                        }
+                      } catch (e: any) {
+                        onSaveToast(`初期化失敗: ${e.message}`);
+                      } finally {
+                        setIsInitializingDeepDive(false);
+                      }
+                    }}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white transition cursor-pointer flex items-center gap-1 shadow-sm"
+                  >
+                    {isInitializingDeepDive ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-3 h-3" />
+                    )}
+                    <span>{isInitializingDeepDive ? "初期化中..." : "🚀 3タブ初期化・検証"}</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>

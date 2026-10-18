@@ -47,6 +47,7 @@ import {
   Pin,
   Moon,
   Bookmark,
+  Search,
   Crop,
   Image as ImageIcon,
   ArrowUp,
@@ -105,6 +106,7 @@ import ConfirmModal from "./components/ConfirmModal";
 import ExternalAiExportModal from "./components/ExternalAiExportModal";
 import SyncManagerModal from "./components/SyncManagerModal";
 import QuestionGenerationModal from "./components/QuestionGenerationModal";
+import DeepDiveModal from "./components/DeepDiveModal";
 import { MermaidViewer } from "./components/MermaidViewer";
 
 const DEFAULT_API_URL = "";
@@ -561,6 +563,7 @@ export default function App() {
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isSyncManagerOpen, setIsSyncManagerOpen] = useState(false);
   const [isQuestionModalOpen, setIsQuestionModalOpen] = useState(false);
+  const [isDeepDiveModalOpen, setIsDeepDiveModalOpen] = useState(false);
   const [isImageCropModalOpen, setIsImageCropModalOpen] = useState(false);
   const [cropModalInitialImage, setCropModalInitialImage] = useState<string | null>(null);
   const [cropModalInitialAlt, setCropModalInitialAlt] = useState<string>("");
@@ -1274,6 +1277,18 @@ export default function App() {
     }
     // ノート用の cn_gas_sheet_name や cn_gas_target_ss_url は混同防止のため付与しない
 
+    return await fetchGasPost(url, body);
+  };
+
+  // 深掘り判断・分析・振り返り専用API呼び出し関数
+  const deepDiveApiPost = async (body: any) => {
+    const rawUrl = getApiUrl();
+    const url = sanitizeGasUrl(rawUrl);
+    if (!url || url.includes("YOUR_")) throw new Error("GAS WebアプリURLが設定されていません。設定画面 ⚙ からURLを入力してください。");
+    const ssUrl = localStorage.getItem("cn_deep_dive_spreadsheet_url");
+    if (ssUrl && ssUrl.trim() !== "" && !body.deepDiveSpreadsheetUrl) {
+      body.deepDiveSpreadsheetUrl = ssUrl.trim();
+    }
     return await fetchGasPost(url, body);
   };
 
@@ -7632,6 +7647,14 @@ const renderMarkdownToElements = (contentStr: string) => {
                       <BookOpen className="w-3 h-3 shrink-0 text-indigo-400" />
                       <span className="portrait:hidden">🎓 問題生成</span>
                     </button>
+                    <button
+                      onClick={() => setIsDeepDiveModalOpen(true)}
+                      className="p-1 px-2 portrait:px-1.5 text-sky-300 hover:bg-sky-500/20 font-semibold text-xs rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all border-l border-[#30363d]"
+                      title="この記事をさらに深掘りする意味があるか判定・重要論点分析・スプレッドシート蓄積"
+                    >
+                      <Search className="w-3 h-3 shrink-0 text-sky-400" />
+                      <span className="portrait:hidden">🔍 深掘り判断</span>
+                    </button>
                   </div>
 
                   {/* 2. 閲覧支援グループ */}
@@ -9609,6 +9632,7 @@ const renderMarkdownToElements = (contentStr: string) => {
         onSaveToast={toast}
         apiPost={apiPost}
         learningApiPost={learningApiPost}
+        deepDiveApiPost={deepDiveApiPost}
         onNotesUpdateBatch={handleBatchUpgradeNotes}
         onSyncExternalSources={handleSyncExternalSources}
         onSyncFromServer={syncFromServer}
@@ -9652,6 +9676,16 @@ const renderMarkdownToElements = (contentStr: string) => {
           setIsSettingsOpen(true);
         }}
       />
+
+      {isDeepDiveModalOpen && activeNote && (
+        <DeepDiveModal
+          isOpen={isDeepDiveModalOpen}
+          onClose={() => setIsDeepDiveModalOpen(false)}
+          note={activeNote}
+          apiPost={deepDiveApiPost}
+          onToast={toast}
+        />
+      )}
 
       {/* 画像削除の確認ダイアログ（window.confirmの代替） */}
       {deleteImageTarget && (

@@ -181,3 +181,82 @@ export interface QuestionGenerationConfig {
   mode: "external_prompt" | "api";
 }
 
+// ==== 深掘り判断・分析・スプレッドシート蓄積用 型定義 ====
+export type DeepDivePriority = "high" | "medium" | "low";
+
+export interface DeepDiveDecision {
+  analysisId: string;
+  articleId: string;
+  articleTitle: string;
+  articleUrl: string;
+  publishedDate: string;
+  registeredDate: string;
+  existingSummary: string;
+  keywords: string;
+  marketTrendSummary: string;
+  coreClaim: string;
+  articleType: string;
+  currentStage: string;
+  importanceEval: string;
+  currentFeasibility: string;
+  priority: DeepDivePriority;
+  reasonForDeepDive: string;
+  reasonForSkipping: string;
+  missingInformation: string;
+  recommendedIssues: string[];
+  reassessmentConditions: string;
+  aiVerdict: string;
+  userFinalDecision: string;
+  decisionDate: string;
+  status: "decided" | "analyzing" | "completed" | "skipped";
+  promptVersion?: string;
+}
+
+export interface DeepDiveIssue {
+  issueId: string; // e.g. "iss-1"
+  title: string; // 論点名
+  importanceReason: string; // なぜ重要なのか
+  knownFacts: string; // 現時点で分かっていること
+  unknownPoints: string; // まだ分かっていないこと
+  investigationMethod: string; // 何を調べれば判断できるか
+  sourcesToVerify: string; // どの資料や情報源を確認すべきか
+  conditionsToChangeVerdict: string; // 判断が変わる条件
+  selectedForAnalysis: boolean;
+}
+
+export interface DeepDiveAnalysisResult {
+  analysisId: string;
+  articleId: string;
+  issueId: string;
+  articleTitle: string;
+  issueTitle: string;
+  researchGoal: string;
+  verifiedFacts: string;
+  sourceUrlAndEvidence: string;
+  sourcePublishedDate: string;
+  estimatesAndHypotheses: string;
+  unknownsAndGaps: string;
+  hinderingFactors: string;
+  analysisConclusion: string;
+  confidenceScoreAndReason: string;
+  futureCheckpoints: string;
+  analyzedDate: string;
+  userComment: string;
+}
+
+export interface DeepDiveReview {
+  reviewId: string;
+  articleId: string;
+  analysisId: string;
+  originalForecast: string;
+  forecastTarget: string;
+  forecastTargetDate: string;
+  forecastAssumptions: string;
+  verdictAtForecast: string;
+  actualOutcome: string;
+  alignment: "matched" | "partially_matched" | "diverged" | "unknown";
+  reasonForOutcome: string;
+  learnings: string;
+  reviewDate: string;
+}
+
