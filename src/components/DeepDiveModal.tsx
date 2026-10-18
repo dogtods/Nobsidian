@@ -51,6 +51,7 @@ import {
   buildDeepDiveDecisionPrompt,
   buildDeepDiveIssuesPrompt,
   buildDeepDiveAnalysisPrompt,
+  buildDeepDiveBatchAnalysisPrompt,
   buildDeepDiveReviewPrompt,
   extractJsonFromText,
   getStoredDecisions,
@@ -155,6 +156,9 @@ export default function DeepDiveModal({
   const [externalPromptText, setExternalPromptText] = useState("");
   const [externalJsonInput, setExternalJsonInput] = useState("");
   const [showExternalAiModal, setShowExternalAiModal] = useState(false);
+  const [externalTargetTab, setExternalTargetTab] = useState<"decision" | "issues" | "analysis" | "review">("decision");
+  const [externalAnalysisIssueId, setExternalAnalysisIssueId] = useState<string>("all");
+  const [isCopiedExternalPrompt, setIsCopiedExternalPrompt] = useState(false);
 
   // Synchronize when note changes
   useEffect(() => {
@@ -202,6 +206,63 @@ export default function DeepDiveModal({
   if (!isOpen) return null;
 
   /* ================================================================== */
+  /* 外部AIプロンプト生成ヘルパー（全STEP 1〜4 対応）                        */
+  /* ================================================================== */
+
+  const getAnalysisPromptForTarget = (targetIssueId: string) => {
+    if (targetIssueId === "all") {
+      const targets = issues.filter(iss => iss.selectedForAnalysis);
+      const listToUse = targets.length > 0 ? targets : issues;
+      if (listToUse.length === 0) {
+        const tempIssue: DeepDiveIssue = {
+          issueId: "iss-default",
+          title: decision.coreClaim || note.title || "主要論点の検証",
+          importanceReason: decision.importanceEval || "新技術・市場への影響評価",
+          knownFacts: note.summary || "",
+          unknownPoints: decision.missingInformation || "実用化コストと普及障壁",
+          investigationMethod: "追加公開情報の調査",
+          sourcesToVerify: "企業IR・論文・専門統計",
+          conditionsToChangeVerdict: "前提条件の乖離",
+          selectedForAnalysis: true
+        };
+        return buildDeepDiveAnalysisPrompt(note, tempIssue, prompts.ANALYSIS);
+      } else if (listToUse.length === 1) {
+        return buildDeepDiveAnalysisPrompt(note, listToUse[0], prompts.ANALYSIS);
+      } else {
+        return buildDeepDiveBatchAnalysisPrompt(note, listToUse);
+      }
+    } else {
+      const targetIss = issues.find(i => i.issueId === targetIssueId) || issues[0];
+      if (targetIss) {
+        return buildDeepDiveAnalysisPrompt(note, targetIss, prompts.ANALYSIS);
+      }
+      return "";
+    }
+  };
+
+  const openExternalAiModal = (
+    targetTab: "decision" | "issues" | "analysis" | "review",
+    issueId?: string
+  ) => {
+    setExternalTargetTab(targetTab);
+    setExternalJsonInput("");
+    setIsCopiedExternalPrompt(false);
+    if (targetTab === "decision") {
+      setExternalPromptText(buildDeepDiveDecisionPrompt(note, prompts.DECISION));
+    } else if (targetTab === "issues") {
+      setExternalPromptText(buildDeepDiveIssuesPrompt(note, decision, prompts.ISSUES));
+    } else if (targetTab === "analysis") {
+      const selId = issueId || "all";
+      setExternalAnalysisIssueId(selId);
+      setExternalPromptText(getAnalysisPromptForTarget(selId));
+    } else if (targetTab === "review") {
+      const outcome = newReviewOutcome.trim() || "（後日判明した事実・実際の動向をここに入力するか、プロンプト内で修正してください）";
+      setExternalPromptText(buildDeepDiveReviewPrompt(note, decision, outcome, prompts.REVIEW));
+    }
+    setShowExternalAiModal(true);
+  };
+
+  /* ================================================================== */
   /* STEP 1 & 2: 深掘り判断実行                                           */
   /* ================================================================== */
 
@@ -210,8 +271,7 @@ export default function DeepDiveModal({
     const prompt = buildDeepDiveDecisionPrompt(note, prompts.DECISION);
 
     if (!apiKey) {
-      setExternalPromptText(prompt);
-      setShowExternalAiModal(true);
+      openExternalAiModal("decision");
       return;
     }
 
@@ -279,8 +339,7 @@ export default function DeepDiveModal({
     const prompt = buildDeepDiveIssuesPrompt(note, decision, prompts.ISSUES);
 
     if (!apiKey) {
-      setExternalPromptText(prompt);
-      setShowExternalAiModal(true);
+      openExternalAiModal("issues");
       return;
     }
 
@@ -321,8 +380,7 @@ export default function DeepDiveModal({
     const prompt = buildDeepDiveAnalysisPrompt(note, issue, prompts.ANALYSIS);
 
     if (!apiKey) {
-      setExternalPromptText(prompt);
-      setShowExternalAiModal(true);
+      openExternalAiModal("analysis", issue.issueId);
       return;
     }
 
@@ -394,8 +452,7 @@ export default function DeepDiveModal({
     const prompt = buildDeepDiveReviewPrompt(note, decision, newReviewOutcome, prompts.REVIEW);
 
     if (!apiKey) {
-      setExternalPromptText(prompt);
-      setShowExternalAiModal(true);
+      openExternalAiModal("review");
       return;
     }
 
@@ -510,29 +567,42 @@ export default function DeepDiveModal({
   const handleApplyExternalJson = () => {
     try {
       const parsed = extractJsonFromText(externalJsonInput);
-      if (activeTab === "decision") {
-        setDecision(prev => ({
-          ...prev,
-          coreClaim: parsed.coreClaim || prev.coreClaim,
-          articleType: parsed.articleType || prev.articleType,
-          currentStage: parsed.currentStage || prev.currentStage,
-          importanceEval: parsed.importanceEval || prev.importanceEval,
-          currentFeasibility: parsed.currentFeasibility || prev.currentFeasibility,
+
+      if (externalTargetTab === "decision") {
+        const updatedDecision: DeepDiveDecision = {
+          ...decision,
+          coreClaim: parsed.coreClaim || decision.coreClaim,
+          articleType: parsed.articleType || decision.articleType,
+          currentStage: parsed.currentStage || decision.currentStage,
+          importanceEval: parsed.importanceEval || decision.importanceEval,
+          currentFeasibility: parsed.currentFeasibility || decision.currentFeasibility,
           priority: (parsed.priority === "high" || parsed.priority === "low") ? parsed.priority : "medium",
-          reasonForDeepDive: parsed.reasonForDeepDive || prev.reasonForDeepDive,
-          reasonForSkipping: parsed.reasonForSkipping || prev.reasonForSkipping,
-          missingInformation: parsed.missingInformation || prev.missingInformation,
-          recommendedIssues: Array.isArray(parsed.recommendedIssues) ? parsed.recommendedIssues : prev.recommendedIssues,
-          reassessmentConditions: parsed.reassessmentConditions || prev.reassessmentConditions,
-          aiVerdict: parsed.aiVerdict || prev.aiVerdict
-        }));
-        onToast("外部AIの深掘り判断を適用しました ✦");
-      } else if (activeTab === "issues") {
+          reasonForDeepDive: parsed.reasonForDeepDive || decision.reasonForDeepDive,
+          reasonForSkipping: parsed.reasonForSkipping || decision.reasonForSkipping,
+          missingInformation: parsed.missingInformation || decision.missingInformation,
+          recommendedIssues: Array.isArray(parsed.recommendedIssues) ? parsed.recommendedIssues : decision.recommendedIssues,
+          reassessmentConditions: parsed.reassessmentConditions || decision.reassessmentConditions,
+          aiVerdict: parsed.aiVerdict || decision.aiVerdict,
+          userFinalDecision: parsed.priority === "high" ? "深掘り推奨" : parsed.priority === "medium" ? "条件付き深掘り" : "深掘り見送り"
+        };
+        setDecision(updatedDecision);
+        saveStoredDecision(updatedDecision);
+        onToast("外部AIの深掘り判断（Step 1）を適用・保存しました ✦");
+      } else if (externalTargetTab === "issues") {
+        let items: any[] = [];
         if (Array.isArray(parsed)) {
-          const newIssues: DeepDiveIssue[] = parsed.map((item: any, idx: number) => ({
+          items = parsed;
+        } else if (parsed && Array.isArray(parsed.issues)) {
+          items = parsed.issues;
+        } else if (parsed && typeof parsed === "object") {
+          items = [parsed];
+        }
+
+        if (items.length > 0) {
+          const newIssues: DeepDiveIssue[] = items.map((item: any, idx: number) => ({
             issueId: `iss-ext-${Date.now()}-${idx + 1}`,
-            title: item.title || `論点 ${idx + 1}`,
-            importanceReason: item.importanceReason || "",
+            title: item.title || item.issueTitle || `論点 ${idx + 1}`,
+            importanceReason: item.importanceReason || item.reason || "",
             knownFacts: item.knownFacts || "",
             unknownPoints: item.unknownPoints || "",
             investigationMethod: item.investigationMethod || "",
@@ -541,13 +611,96 @@ export default function DeepDiveModal({
             selectedForAnalysis: true
           }));
           setIssues(newIssues);
-          onToast("外部AIの論点提案を適用しました ✦");
+          onToast(`外部AIの調査論点提案（Step 2: ${newIssues.length}件）を適用しました ✦`);
+        } else {
+          throw new Error("有効な論点リストが見つかりませんでした。");
         }
+      } else if (externalTargetTab === "analysis") {
+        let items: any[] = [];
+        if (Array.isArray(parsed)) {
+          items = parsed;
+        } else if (parsed && Array.isArray(parsed.analyses)) {
+          items = parsed.analyses;
+        } else if (parsed && typeof parsed === "object") {
+          items = [parsed];
+        }
+
+        if (items.length === 0) {
+          throw new Error("有効な分析結果JSONが見つかりませんでした。");
+        }
+
+        const newResults: DeepDiveAnalysisResult[] = [];
+        items.forEach((item: any, idx: number) => {
+          const matchingIssue =
+            issues.find(iss => iss.issueId === item.issueId || iss.title === item.issueTitle || (item.issueTitle && iss.title.includes(item.issueTitle))) ||
+            (externalAnalysisIssueId !== "all" ? issues.find(iss => iss.issueId === externalAnalysisIssueId) : null) ||
+            issues[idx] || {
+              issueId: `iss-ext-${Date.now()}-${idx + 1}`,
+              title: item.issueTitle || `論点 #${idx + 1}`,
+              importanceReason: ""
+            };
+
+          newResults.push({
+            analysisId: decision.analysisId,
+            articleId: note.id,
+            issueId: matchingIssue.issueId,
+            articleTitle: note.title || "",
+            issueTitle: item.issueTitle || matchingIssue.title,
+            researchGoal: item.researchGoal || matchingIssue.importanceReason || "",
+            verifiedFacts: item.verifiedFacts || "",
+            sourceUrlAndEvidence: item.sourceUrlAndEvidence || "",
+            sourcePublishedDate: item.sourcePublishedDate || "",
+            estimatesAndHypotheses: item.estimatesAndHypotheses || "",
+            unknownsAndGaps: item.unknownsAndGaps || "",
+            hinderingFactors: item.hinderingFactors || "",
+            analysisConclusion: item.analysisConclusion || "",
+            confidenceScoreAndReason: item.confidenceScoreAndReason || "",
+            futureCheckpoints: item.futureCheckpoints || "",
+            analyzedDate: new Date().toISOString(),
+            userComment: ""
+          });
+        });
+
+        setAnalysisResults(prev => {
+          const next = [...prev];
+          newResults.forEach(res => {
+            const existingIdx = next.findIndex(r => r.issueId === res.issueId);
+            if (existingIdx >= 0) {
+              next[existingIdx] = res;
+            } else {
+              next.push(res);
+            }
+          });
+          saveStoredAnalyses(next);
+          return next;
+        });
+
+        onToast(`外部AIによる深掘り分析結果（Step 3: ${newResults.length}件）を適用・保存しました ✦`);
+      } else if (externalTargetTab === "review") {
+        const rev: DeepDiveReview = {
+          reviewId: `rev-ext-${Date.now()}`,
+          articleId: note.id,
+          analysisId: decision.analysisId,
+          originalForecast: decision.coreClaim || decision.importanceEval,
+          forecastTarget: decision.articleTitle || note.title,
+          forecastTargetDate: decision.publishedDate,
+          forecastAssumptions: decision.currentFeasibility,
+          verdictAtForecast: decision.aiVerdict || decision.userFinalDecision,
+          actualOutcome: newReviewOutcome.trim() || parsed.actualOutcome || "外部入力による実績動向",
+          alignment: parsed.alignment || "matched",
+          reasonForOutcome: parsed.reasonForOutcome || "",
+          learnings: parsed.learnings || "",
+          reviewDate: new Date().toISOString()
+        };
+        setReviews(prev => [rev, ...prev]);
+        saveStoredReview(rev);
+        setNewReviewOutcome("");
+        onToast("外部AIによる予測振り返り（Step 4）を適用・記録しました ✦");
       }
       setShowExternalAiModal(false);
       setExternalJsonInput("");
     } catch (e: any) {
-      alert("JSONパースエラー: " + e.message);
+      alert("JSONパース・適用エラー: " + e.message);
     }
   };
 
@@ -751,12 +904,9 @@ export default function DeepDiveModal({
                     <span>{isEvaluating ? "深掘り判断中..." : "深掘りする意味を判定"}</span>
                   </button>
                   <button
-                    onClick={() => {
-                      setExternalPromptText(buildDeepDiveDecisionPrompt(note, prompts.DECISION));
-                      setShowExternalAiModal(true);
-                    }}
-                    className="px-3 py-2 bg-[#21262d] hover:bg-[#30363d] text-[var(--bright)] font-semibold text-xs rounded-lg border border-[var(--border2)] transition-colors flex items-center gap-1.5 cursor-pointer"
-                    title="外部AI（ChatGPT等）用のプロンプトを表示してコピー"
+                    onClick={() => openExternalAiModal("decision")}
+                    className="px-3 py-2 bg-[#21262d] hover:bg-[#30363d] text-[var(--bright)] font-semibold text-xs rounded-lg border border-[var(--border2)] transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    title="外部AI（ChatGPT等）用の深掘り判断プロンプトを表示してコピー"
                   >
                     <Download className="w-3.5 h-3.5 text-amber-400" />
                     <span>外部AI用プロンプト</span>
@@ -926,6 +1076,14 @@ export default function DeepDiveModal({
                     <span>AIに論点を再提案させる</span>
                   </button>
                   <button
+                    onClick={() => openExternalAiModal("issues")}
+                    className="px-3 py-2 bg-[#21262d] hover:bg-[#30363d] text-[var(--bright)] font-semibold text-xs rounded-lg border border-[var(--border2)] transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    title="外部AI（ChatGPT等）用の調査論点提案プロンプトを表示してコピー"
+                  >
+                    <Download className="w-3.5 h-3.5 text-amber-400" />
+                    <span>外部AI用プロンプト</span>
+                  </button>
+                  <button
                     onClick={() => {
                       const newIss: DeepDiveIssue = {
                         issueId: `iss-manual-${Date.now()}`,
@@ -952,14 +1110,23 @@ export default function DeepDiveModal({
                   <div className="text-3xl">📋</div>
                   <h4 className="text-sm font-bold text-[var(--bright)]">論点がまだ設定されていません</h4>
                   <p className="text-xs text-[var(--muted)] max-w-md mx-auto">
-                    「AIに論点を再提案させる」を押すか、論点を手動で追加して調査を進めてください。
+                    「AIに論点を再提案させる」を押すか、外部AIプロンプトを利用して調査を進めてください。
                   </p>
-                  <button
-                    onClick={handleGenerateIssues}
-                    className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-md cursor-pointer"
-                  >
-                    論点をAI提案させる
-                  </button>
+                  <div className="flex items-center justify-center gap-2">
+                    <button
+                      onClick={handleGenerateIssues}
+                      className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-md cursor-pointer shadow-sm"
+                    >
+                      論点をAI提案させる
+                    </button>
+                    <button
+                      onClick={() => openExternalAiModal("issues")}
+                      className="px-3.5 py-2 bg-[#21262d] hover:bg-[#30363d] text-[var(--bright)] font-semibold text-xs rounded-md border border-[var(--border2)] transition-colors flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5 text-amber-400" />
+                      <span>外部AI用プロンプト</span>
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -1073,7 +1240,15 @@ export default function DeepDiveModal({
                         </div>
                       </div>
 
-                      <div className="pt-1 flex justify-end">
+                      <div className="pt-1 flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => openExternalAiModal("analysis", iss.issueId)}
+                          className="px-2.5 py-1 bg-[#21262d] hover:bg-[#30363d] text-[var(--bright)] border border-[var(--border2)] font-semibold rounded text-xs transition-colors flex items-center gap-1 cursor-pointer"
+                          title="この論点単体の外部AI分析プロンプト"
+                        >
+                          <Download className="w-3 h-3 text-amber-400" />
+                          <span>外部AIプロンプト</span>
+                        </button>
                         <button
                           onClick={() => {
                             setActiveTab("analysis");
@@ -1088,20 +1263,30 @@ export default function DeepDiveModal({
                     </div>
                   ))}
 
-                  <div className="p-4 bg-[#161b22] border border-[var(--border2)] rounded-xl flex items-center justify-between">
+                  <div className="p-4 bg-[#161b22] border border-[var(--border2)] rounded-xl flex flex-wrap items-center justify-between gap-3">
                     <span className="text-xs text-[var(--muted)]">
                       選択中: {issues.filter(i => i.selectedForAnalysis).length} / {issues.length} 件
                     </span>
-                    <button
-                      onClick={() => {
-                        setActiveTab("analysis");
-                        handleRunAllSelectedAnalyses();
-                      }}
-                      className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-md"
-                    >
-                      <Zap className="w-4 h-4" />
-                      <span>選択した論点を順番に深掘り分析する</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => openExternalAiModal("analysis", "all")}
+                        className="px-3.5 py-2 bg-[#21262d] hover:bg-[#30363d] text-[var(--bright)] font-semibold text-xs rounded-lg border border-[var(--border2)] transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+                        title="選択したすべての論点を一括分析するプロンプト"
+                      >
+                        <Download className="w-3.5 h-3.5 text-amber-400" />
+                        <span>外部AI用プロンプト（一括）</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setActiveTab("analysis");
+                          handleRunAllSelectedAnalyses();
+                        }}
+                        className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-md"
+                      >
+                        <Zap className="w-4 h-4" />
+                        <span>選択した論点を順番に深掘り分析する</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1127,6 +1312,14 @@ export default function DeepDiveModal({
                 </div>
                 <div className="flex items-center gap-2">
                   <button
+                    onClick={() => openExternalAiModal("analysis", "all")}
+                    className="px-3.5 py-2 bg-[#21262d] hover:bg-[#30363d] text-[var(--bright)] font-semibold text-xs rounded-lg border border-[var(--border2)] transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    title="外部AI（ChatGPT等）用の深掘り分析プロンプトを表示してコピー"
+                  >
+                    <Download className="w-3.5 h-3.5 text-amber-400" />
+                    <span>外部AI用プロンプト</span>
+                  </button>
+                  <button
                     onClick={handleRunAllSelectedAnalyses}
                     disabled={analyzingIssueIndex !== null}
                     className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
@@ -1142,14 +1335,23 @@ export default function DeepDiveModal({
                   <div className="text-3xl">🔍</div>
                   <h4 className="text-sm font-bold text-[var(--bright)]">まだ深掘り分析が実行されていません</h4>
                   <p className="text-xs text-[var(--muted)] max-w-md mx-auto">
-                    「2. 調査論点の設定」タブで論点を選択し、「深掘り分析する」を実行してください。
+                    「2. 調査論点の設定」タブで論点を選択し、「深掘り分析する」を実行するか、外部AIプロンプトを利用してください。
                   </p>
-                  <button
-                    onClick={() => setActiveTab("issues")}
-                    className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-md cursor-pointer"
-                  >
-                    論点一覧を開く
-                  </button>
+                  <div className="flex items-center justify-center gap-2">
+                    <button
+                      onClick={() => setActiveTab("issues")}
+                      className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-md cursor-pointer shadow-sm"
+                    >
+                      論点一覧を開く
+                    </button>
+                    <button
+                      onClick={() => openExternalAiModal("analysis", "all")}
+                      className="px-3.5 py-2 bg-[#21262d] hover:bg-[#30363d] text-[var(--bright)] font-semibold text-xs rounded-md border border-[var(--border2)] transition-colors flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5 text-amber-400" />
+                      <span>外部AI用プロンプト（一括）</span>
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-6">
@@ -1158,16 +1360,26 @@ export default function DeepDiveModal({
                       key={res.issueId}
                       className="p-5 bg-[#161b22] border border-[var(--border2)] rounded-xl space-y-4 shadow-sm"
                     >
-                      <div className="flex items-center justify-between border-b border-[var(--border2)] pb-2.5">
-                        <div className="flex items-center gap-2">
-                          <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold text-[10px]">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border2)] pb-2.5">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold text-[10px] shrink-0">
                             論点 #{idx + 1}
                           </span>
-                          <h4 className="font-bold text-sm text-[var(--bright)]">{res.issueTitle}</h4>
+                          <h4 className="font-bold text-sm text-[var(--bright)] truncate">{res.issueTitle}</h4>
                         </div>
-                        <span className="text-[10px] text-[var(--muted)]">
-                          分析日時: {new Date(res.analyzedDate).toLocaleString("ja-JP")}
-                        </span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            onClick={() => openExternalAiModal("analysis", res.issueId)}
+                            className="px-2 py-1 bg-[#0d1117] hover:bg-[#21262d] text-amber-300 border border-amber-500/30 rounded text-[10.5px] font-semibold transition flex items-center gap-1 cursor-pointer"
+                            title="この論点単体の外部AI分析プロンプト"
+                          >
+                            <Download className="w-3 h-3 text-amber-400" />
+                            <span>外部AIプロンプト</span>
+                          </button>
+                          <span className="text-[10px] text-[var(--muted)]">
+                            分析日時: {new Date(res.analyzedDate).toLocaleString("ja-JP")}
+                          </span>
+                        </div>
                       </div>
 
                       {/* Main Analysis Conclusion */}
@@ -1282,7 +1494,15 @@ export default function DeepDiveModal({
                   />
                 </div>
 
-                <div className="flex justify-end gap-2">
+                <div className="flex justify-end items-center gap-2">
+                  <button
+                    onClick={() => openExternalAiModal("review")}
+                    className="px-3.5 py-2 bg-[#21262d] hover:bg-[#30363d] text-[var(--bright)] font-semibold text-xs rounded-lg border border-[var(--border2)] transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    title="外部AI（ChatGPT等）用の予測振り返りプロンプトを表示してコピー"
+                  >
+                    <Download className="w-3.5 h-3.5 text-amber-400" />
+                    <span>外部AI用プロンプト</span>
+                  </button>
                   <button
                     onClick={handleGenerateReview}
                     disabled={isGeneratingReview || !newReviewOutcome.trim()}
@@ -1516,66 +1736,190 @@ export default function DeepDiveModal({
       {/* External AI Modal (Prompt export & Result Paste) */}
       {showExternalAiModal && (
         <div className="fixed inset-0 z-[1300] bg-black/80 flex items-center justify-center p-3 animate-[fadeIn_0.1s_ease-out]">
-          <div className="bg-[#161b22] border border-[var(--border)] rounded-xl w-full max-w-2xl p-5 space-y-4 shadow-2xl">
+          <div className="bg-[#161b22] border border-[var(--border)] rounded-xl w-full max-w-2xl max-h-[92vh] flex flex-col p-5 space-y-3.5 shadow-2xl overflow-y-auto">
+            
+            {/* Header */}
             <div className="flex items-center justify-between border-b border-[var(--border)] pb-2.5">
-              <h3 className="text-sm font-bold text-[var(--bright)] flex items-center gap-2">
+              <div className="flex items-center gap-2">
                 <Download className="w-4 h-4 text-amber-400" />
-                <span>外部AI（ChatGPT / Claude等）連携</span>
-              </h3>
-              <button onClick={() => setShowExternalAiModal(false)} className="text-[var(--muted)] hover:text-white">✕</button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-semibold text-[var(--bright)]">外部AIに渡すプロンプト:</span>
-                  <button
-                    onClick={async () => {
-                      try {
-                        await navigator.clipboard.writeText(externalPromptText);
-                        onToast("プロンプトをクリップボードにコピーしました 📋");
-                      } catch {}
-                    }}
-                    className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded text-[11px] flex items-center gap-1 cursor-pointer"
-                  >
-                    <Copy className="w-3 h-3" />
-                    <span>コピー</span>
-                  </button>
-                </div>
-                <textarea
-                  readOnly
-                  value={externalPromptText}
-                  onFocus={e => e.currentTarget.select()}
-                  className="w-full h-36 bg-[#0d1117] border border-[var(--border2)] rounded p-2.5 text-[11px] font-mono text-[var(--bright)] resize-y"
-                />
+                <h3 className="text-sm font-bold text-[var(--bright)]">外部AI（ChatGPT / Claude等）連携</h3>
               </div>
-
-              <div>
-                <span className="font-semibold text-[var(--bright)] block mb-1">外部AIからの返答JSONを貼り付け:</span>
-                <textarea
-                  value={externalJsonInput}
-                  onChange={e => setExternalJsonInput(e.target.value)}
-                  placeholder={'外部AIの返答（```json ... ``` も可）をここに貼り付けてください...'}
-                  className="w-full h-32 bg-[#0d1117] border border-[var(--border2)] rounded p-2.5 text-[11px] font-mono text-[var(--bright)] resize-y"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-[var(--border)]">
               <button
                 onClick={() => setShowExternalAiModal(false)}
-                className="px-3 py-1.5 bg-[#21262d] text-[var(--subtle)] rounded text-xs cursor-pointer"
+                className="text-[var(--muted)] hover:text-white px-2 py-0.5 rounded text-xs"
               >
-                キャンセル
-              </button>
-              <button
-                onClick={handleApplyExternalJson}
-                disabled={!externalJsonInput.trim()}
-                className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold rounded text-xs cursor-pointer"
-              >
-                JSONを解析して適用
+                ✕
               </button>
             </div>
+
+            {/* Step Selector Tabs (1〜4 All Supported) */}
+            <div className="flex flex-wrap items-center gap-1.5 p-1 bg-[#0d1117] rounded-lg border border-[var(--border2)] text-xs">
+              <button
+                type="button"
+                onClick={() => openExternalAiModal("decision")}
+                className={`px-2.5 py-1 rounded font-semibold transition cursor-pointer flex items-center gap-1 ${
+                  externalTargetTab === "decision"
+                    ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                    : "text-[var(--muted)] hover:text-[var(--bright)]"
+                }`}
+              >
+                <span>1. 深掘り判断</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => openExternalAiModal("issues")}
+                className={`px-2.5 py-1 rounded font-semibold transition cursor-pointer flex items-center gap-1 ${
+                  externalTargetTab === "issues"
+                    ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                    : "text-[var(--muted)] hover:text-[var(--bright)]"
+                }`}
+              >
+                <span>2. 調査論点の設定</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => openExternalAiModal("analysis", "all")}
+                className={`px-2.5 py-1 rounded font-semibold transition cursor-pointer flex items-center gap-1 ${
+                  externalTargetTab === "analysis"
+                    ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                    : "text-[var(--muted)] hover:text-[var(--bright)]"
+                }`}
+              >
+                <span>3. 深掘り分析結果</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => openExternalAiModal("review")}
+                className={`px-2.5 py-1 rounded font-semibold transition cursor-pointer flex items-center gap-1 ${
+                  externalTargetTab === "review"
+                    ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                    : "text-[var(--muted)] hover:text-[var(--bright)]"
+                }`}
+              >
+                <span>4. 予測振り返り</span>
+              </button>
+            </div>
+
+            {/* Analysis Issue Selector (Only shown when target is analysis) */}
+            {externalTargetTab === "analysis" && issues.length > 0 && (
+              <div className="flex items-center gap-2 bg-[#0d1117] p-2 rounded-lg border border-[var(--border2)] text-xs">
+                <span className="font-semibold text-amber-300 text-[11px] whitespace-nowrap">対象論点:</span>
+                <select
+                  value={externalAnalysisIssueId}
+                  onChange={(e) => {
+                    const selId = e.target.value;
+                    setExternalAnalysisIssueId(selId);
+                    setExternalPromptText(getAnalysisPromptForTarget(selId));
+                  }}
+                  className="flex-1 bg-[#161b22] border border-[var(--border2)] rounded px-2 py-1 text-xs text-[var(--bright)] focus:outline-none focus:border-amber-500"
+                >
+                  <option value="all">【全論点一括】選択中のすべての論点（{issues.filter(i => i.selectedForAnalysis).length}件）</option>
+                  {issues.map((iss, i) => (
+                    <option key={iss.issueId} value={iss.issueId}>
+                      論点 #{i + 1}: {iss.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Expected format guide */}
+            <div className="p-2.5 bg-amber-950/20 border border-amber-500/30 rounded-lg text-[11px] text-amber-200/90 space-y-1">
+              <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                <span>
+                  {externalTargetTab === "decision" && "【Step 1】深掘り判断用プロンプト・期待される出力形式 (JSON)"}
+                  {externalTargetTab === "issues" && "【Step 2】調査論点提案用プロンプト・期待される出力形式 (JSON配列)"}
+                  {externalTargetTab === "analysis" && "【Step 3】深掘り詳細分析用プロンプト・期待される出力形式 (JSON配列または単体)"}
+                  {externalTargetTab === "review" && "【Step 4】予測と実績の振り返り用プロンプト・期待される出力形式 (JSON)"}
+                </span>
+              </div>
+              <p className="text-[10px] text-gray-300 leading-relaxed">
+                {externalTargetTab === "decision" && "主要主張、現状段階、影響度、実現性、優先度（high/medium/low）、深掘り理由等を含むJSONを出力させます。"}
+                {externalTargetTab === "issues" && "重要度順の最大5件の論点（論点名、重要理由、既知事実、未解明事項、調査方法、確認情報源、判断が変わる条件）を出力させます。"}
+                {externalTargetTab === "analysis" && "事実・仮説・ボトルネック・分析結論（200〜400字）・確度評価・今後の確認指標を含む詳細分析を出力させます。"}
+                {externalTargetTab === "review" && "当時の予測と実績動向を比較し、一致度（matched/partially_matched/diverged）、理由、教訓を出力させます。"}
+              </p>
+            </div>
+
+            {/* Prompt Display & Copy */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-[var(--bright)] text-xs">
+                  外部AI（ChatGPT / Claude等）に貼り付けるプロンプト:
+                </span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(externalPromptText);
+                      setIsCopiedExternalPrompt(true);
+                      onToast("プロンプトをクリップボードにコピーしました 📋");
+                      setTimeout(() => setIsCopiedExternalPrompt(false), 2500);
+                    } catch {}
+                  }}
+                  className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded text-[11px] flex items-center gap-1 cursor-pointer transition shadow-sm"
+                >
+                  {isCopiedExternalPrompt ? <Check className="w-3 h-3 text-white" /> : <Copy className="w-3 h-3" />}
+                  <span>{isCopiedExternalPrompt ? "コピー完了！" : "プロンプトをコピー"}</span>
+                </button>
+              </div>
+              <textarea
+                readOnly
+                value={externalPromptText}
+                onFocus={e => e.currentTarget.select()}
+                className="w-full h-36 bg-[#0d1117] border border-[var(--border2)] rounded-lg p-2.5 text-[11px] font-mono text-[var(--bright)] resize-y focus:outline-none focus:border-amber-500"
+              />
+            </div>
+
+            {/* External JSON Response Input */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-[var(--bright)] text-xs">外部AIからの返答JSONを貼り付け:</span>
+                <span className="text-[10px] text-[var(--muted)]">（```json ... ``` の囲みがあっても自動抽出されます）</span>
+              </div>
+              <textarea
+                value={externalJsonInput}
+                onChange={e => setExternalJsonInput(e.target.value)}
+                placeholder={'外部AIが返したJSON（またはコードブロック）をそのままここに貼り付けてください...'}
+                className="w-full h-32 bg-[#0d1117] border border-[var(--border2)] rounded-lg p-2.5 text-[11px] font-mono text-[var(--bright)] resize-y focus:outline-none focus:border-amber-500"
+              />
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="flex items-center justify-between pt-2 border-t border-[var(--border)]">
+              <span className="text-[10px] text-[var(--muted)]">
+                反映先: <strong className="text-amber-300">
+                  {externalTargetTab === "decision" && "1. 深掘り判断（シート1）"}
+                  {externalTargetTab === "issues" && "2. 調査論点（シート1）"}
+                  {externalTargetTab === "analysis" && "3. 深掘り分析結果（シート2）"}
+                  {externalTargetTab === "review" && "4. 予測振り返り（シート3）"}
+                </strong>
+              </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowExternalAiModal(false)}
+                  className="px-3 py-1.5 bg-[#21262d] hover:bg-[#30363d] text-[var(--subtle)] rounded text-xs cursor-pointer transition"
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApplyExternalJson}
+                  disabled={!externalJsonInput.trim()}
+                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold rounded text-xs cursor-pointer transition shadow-sm flex items-center gap-1.5"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>JSONを解析して適用</span>
+                </button>
+              </div>
+            </div>
+
           </div>
         </div>
       )}

@@ -220,6 +220,56 @@ export function buildDeepDiveAnalysisPrompt(
     .replace("{sourcesToVerify}", issue.sourcesToVerify);
 }
 
+export function buildDeepDiveBatchAnalysisPrompt(
+  note: Note,
+  issues: DeepDiveIssue[]
+): string {
+  const summary = (note.summary || note.content.slice(0, 500) || "").trim();
+  const issuesText = issues.map((iss, i) => `
+【論点 #${i + 1}】
+論点名: ${iss.title}
+重要性: ${iss.importanceReason}
+現時点の既知事項: ${iss.knownFacts}
+未解明事項: ${iss.unknownPoints}
+調査方針: ${iss.investigationMethod}
+確認すべき情報源: ${iss.sourcesToVerify}
+`).join("\n---\n");
+
+  return `あなたは技術・事業開発のデューデリジェンス担当者です。
+以下の記事および提示された【複数の重要調査論点】について、深い洞察と客観的証拠に基づいた分析を行ってください。
+
+【対象記事】
+タイトル: ${note.title || "無題"}
+本文要約: ${summary}
+
+【分析対象論点リスト】
+${issuesText}
+
+【分析における絶対ルール】
+1. 事実（Fact）、推定（Estimate）、仮説（Hypothesis）、未確認事項（Unknown）を明確に区別してください。
+2. 科学的根拠・コスト構造・規制・競合の各視点から、実現を妨げるボトルネックを厳しく指摘してください。
+3. 新技術の場合、「技術的成立」「商用化（コスト）」「社会普及」を絶対に混同せず切り分けて評価してください。
+4. 架空のURLや存在しない資料名を捏造しないでください。確認できないものは「要追加調査資料」として具体的な検索語を提示してください。
+
+【出力形式 (JSON)】
+必ず各論点に対応するオブジェクトを含む、以下のJSON配列形式のみを出力してください。
+[
+  {
+    "issueTitle": "（論点リストの論点名）",
+    "researchGoal": "この論点で何を明らかにするのかの目標設定",
+    "verifiedFacts": "記事や公開情報から確認できた客観的事実",
+    "sourceUrlAndEvidence": "根拠となる情報源の名称またはURL（推測のURLは記載しない）",
+    "sourcePublishedDate": "情報源の公開時期（不明な場合は推定年代）",
+    "estimatesAndHypotheses": "事実から導かれる合理的な推定および作業仮説",
+    "unknownsAndGaps": "現時点でも残る不確実性や検証不能な事項",
+    "hinderingFactors": "実現や普及を妨げる技術的・経済的・制度的ボトルネック",
+    "analysisConclusion": "この論点に対する詳細な分析結果と結論（200〜400字程度）",
+    "confidenceScoreAndReason": "結論の確度（高/中/低）とその根拠",
+    "futureCheckpoints": "今後半年〜1年で注視すべき具体的な数値指標やマイルストーン"
+  }
+]`;
+}
+
 export function buildDeepDiveReviewPrompt(
   note: Note,
   decision: DeepDiveDecision,
