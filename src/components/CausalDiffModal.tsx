@@ -22,6 +22,7 @@ import {
   placeEdge,
   selectRecentNotes
 } from "../utils/causalDiffUtils";
+import CausalLagPanel from "./CausalLagPanel";
 import { ArrowRight, Sparkles, Download, Search, Plus, Trash2, Calendar, RefreshCw, Copy, ClipboardPaste, Check } from "lucide-react";
 
 async function copyText(text: string): Promise<boolean> {
@@ -65,7 +66,7 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
     return DUMMY_CAUSAL_LINKS;
   });
 
-  const [activeTab, setActiveTab] = useState<"new-only" | "all-weeks" | "report" | "external">("new-only");
+  const [activeTab, setActiveTab] = useState<"new-only" | "all-weeks" | "report" | "external" | "lag">("new-only");
   const [searchQuery, setSearchQuery] = useState("");
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractStatus, setExtractStatus] = useState("");
@@ -374,7 +375,7 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
             <Sparkles className="w-5 h-5 shrink-0" />
             <span className="text-sm sm:text-base font-bold text-[var(--bright)] truncate">因果リンク週次差分 (A ➔ B)</span>
           </div>
-          <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold shrink-0">v2</span>
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold shrink-0">v3</span>
           <span className="text-xs text-[var(--muted)] hidden lg:inline">
             LLMによる方向性のある因果関係抽出・毎週の新規エッジ追跡
           </span>
@@ -456,6 +457,7 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
             ["new-only", "✨ 新着エッジ", "bg-emerald-500/20 text-emerald-300 border border-emerald-500/50"],
             ["all-weeks", `📅 週次推移一覧 (${links.length})`, "bg-[#388bfd33] text-[#58a6ff] border border-[#388bfd55]"],
             ["external", "🔌 外部AI連携", "bg-amber-500/20 text-amber-300 border border-amber-500/50"],
+            ["lag", "📈 ラグ相関", "bg-purple-500/20 text-purple-300 border border-purple-500/50"],
             ["report", "📄 レポートプレビュー", "bg-[#388bfd33] text-[#58a6ff] border border-[#388bfd55]"]
           ] as const).map(([key, label, activeCls]) => (
             <button
@@ -469,7 +471,7 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
             </button>
           ))}
         </div>
-        <div className="relative">
+        <div className={`relative ${activeTab === "new-only" || activeTab === "all-weeks" ? "" : "hidden"}`}>
           <Search className="w-3.5 h-3.5 text-[var(--muted)] absolute left-2.5 top-2.5" />
           <input
             type="text"
@@ -599,6 +601,9 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
             ))}
           </div>
         )}
+
+        {/* Tab 5: Lag correlation */}
+        {activeTab === "lag" && <CausalLagPanel links={links} notes={notes} />}
 
         {/* Tab 4: External AI */}
         {activeTab === "external" && (
