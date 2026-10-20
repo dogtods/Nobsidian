@@ -1515,8 +1515,52 @@ export default function QuestionGenerationModal({
                   if (!currentQ) return null;
                   const isCurrentQMastered = currentQ.status === "mastered" || reviewStates[currentQ.id]?.masteryLevel === "mastered";
 
+                  // タッチスワイプハンドラー
+                  let touchStartX = 0;
+                  let touchEndX = 0;
+
+                  const handleTouchStart = (e: React.TouchEvent) => {
+                    touchStartX = e.changedTouches[0].screenX;
+                  };
+
+                  const handleTouchEnd = (e: React.TouchEvent) => {
+                    touchEndX = e.changedTouches[0].screenX;
+                    const diff = touchEndX - touchStartX;
+                    const threshold = 50; // スワイプ判定の最小移動距離(px)
+
+                    if (Math.abs(diff) >= threshold) {
+                      if (diff > 0) {
+                        // 右スワイプ → 前の問題へ
+                        if (currentQuizIndex > 0) {
+                          setCurrentQuizIndex(prev => prev - 1);
+                          setSelectedQuizChoices([]);
+                          setEssayAnswer("");
+                          setIsQuizAnswerRevealed(false);
+                        }
+                      } else {
+                        // 左スワイプ → 次の問題へ
+                        if (currentQuizIndex < filteredQuizQuestions.length - 1) {
+                          setCurrentQuizIndex(prev => prev + 1);
+                          setSelectedQuizChoices([]);
+                          setEssayAnswer("");
+                          setIsQuizAnswerRevealed(false);
+                        }
+                      }
+                    }
+                  };
+
                   return (
-                    <div className="bg-[#1c2128] border border-[#30363d] rounded-xl p-5 space-y-4">
+                    <div
+                      onTouchStart={handleTouchStart}
+                      onTouchEnd={handleTouchEnd}
+                      className="bg-[#1c2128] border border-[#30363d] rounded-xl p-5 space-y-4 select-none"
+                    >
+                      {/* Swipe Guide Tip */}
+                      <div className="flex items-center justify-between text-[10px] text-gray-400 bg-[#0d1117] px-3 py-1.5 rounded-lg border border-[#30363d]">
+                        <span>💡 左右スワイプで前後の問題にすばやく切り替えできます</span>
+                        <span className="font-mono text-sky-400">← スワイプ →</span>
+                      </div>
+
                       {/* Question meta */}
                       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-400">
                         <div className="flex flex-wrap items-center gap-2">
