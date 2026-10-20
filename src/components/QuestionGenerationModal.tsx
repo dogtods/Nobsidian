@@ -165,7 +165,11 @@ export default function QuestionGenerationModal({
     return savedQuestions.filter(q => {
       if (q.status === "mastered" || reviewStates[q.id]?.masteryLevel === "mastered") return false;
       const state = reviewStates[q.id];
-      if (!state || !state.nextReviewDate) return true;
+      // まだ一度も解答していない新規問題（未レビュー）は、必ず最初に出題対象とする
+      if (!state || !state.nextReviewDate || !state.lastReviewedAt || (state.totalReviews || 0) === 0 || state.masteryLevel === "new") {
+        return true;
+      }
+      // 一度以上解答した問題は、次回復習期日が今日以前の場合に出題する
       return state.nextReviewDate <= todayStr;
     }).length;
   }, [savedQuestions, reviewStates, todayStr]);
@@ -177,11 +181,15 @@ export default function QuestionGenerationModal({
     if (quizFilter === "all") {
       return savedQuestions;
     }
-    // "active": 復習期日（nextReviewDate）が今日以前のもの、または未レビューのもの
+    // "active": 新規問題（未解答）または復習期日（nextReviewDate）が今日以前のもの
     return savedQuestions.filter(q => {
       if (q.status === "mastered" || reviewStates[q.id]?.masteryLevel === "mastered") return false;
       const state = reviewStates[q.id];
-      if (!state || !state.nextReviewDate) return true;
+      // まだ一度も解答していない新規問題（未レビュー）は、必ず最初に出題対象とする
+      if (!state || !state.nextReviewDate || !state.lastReviewedAt || (state.totalReviews || 0) === 0 || state.masteryLevel === "new") {
+        return true;
+      }
+      // 一度以上解答した問題は、次回復習期日が今日以前の場合に出題する
       return state.nextReviewDate <= todayStr;
     });
   }, [savedQuestions, reviewStates, quizFilter, todayStr]);

@@ -138,7 +138,9 @@ export const GuideBar: React.FC<GuideBarProps> = ({
     } else {
       // 記事最後まで到達 -> フォルダリストの次記事へ（最下段の場合はガイドバー解除）
       const moved = onNextArticle();
-      if (!moved) {
+      if (moved) {
+        onLineChange(0);
+      } else {
         setIsPlaying(false);
         onClose();
       }
@@ -151,7 +153,10 @@ export const GuideBar: React.FC<GuideBarProps> = ({
     if (currentLineIndex > 0) {
       onLineChange(currentLineIndex - 1);
     } else if (onPrevArticle) {
-      onPrevArticle();
+      const moved = onPrevArticle();
+      if (moved) {
+        onLineChange(0);
+      }
     }
   }, [currentLineIndex, totalLines, onLineChange, onPrevArticle]);
 
@@ -191,7 +196,9 @@ export const GuideBar: React.FC<GuideBarProps> = ({
     const timer = setTimeout(() => {
       if (currentLineIndex >= totalLines - 1) {
         const moved = onNextArticle();
-        if (!moved) {
+        if (moved) {
+          onLineChange(0);
+        } else {
           setIsPlaying(false);
           onClose();
         }
@@ -203,12 +210,10 @@ export const GuideBar: React.FC<GuideBarProps> = ({
     return () => clearTimeout(timer);
   }, [isPlaying, isOpen, speed, currentLineIndex, totalLines, activeNote?.content, onNextArticle, onLineChange, onClose]);
 
-  // ノート変更時の補正
+  // ノート変更時は必ず1行目（先頭: index 0）から開始する
   useEffect(() => {
-    if (currentLineIndex >= totalLines && totalLines > 0) {
-      onLineChange(0);
-    }
-  }, [activeNote?.id, totalLines, currentLineIndex, onLineChange]);
+    onLineChange(0);
+  }, [activeNote?.id, onLineChange]);
 
   // Spaceキーで再生/停止、上下キーで行送り
   useEffect(() => {

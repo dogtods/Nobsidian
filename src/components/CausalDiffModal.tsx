@@ -332,6 +332,14 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
       articleId: "",
       origin: "manual"
     };
+
+    const sig = edgeSignature(item.source, item.target);
+    const exists = links.some(l => l.periodKey === periodKey && edgeSignature(l.source, l.target) === sig);
+    if (exists) {
+      alert("すでに今週に同じ原因➔結果の因果リンクが存在します。");
+      return;
+    }
+
     setLinks(prev => [item, ...prev]);
     setNewSource("");
     setNewTarget("");

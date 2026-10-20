@@ -798,6 +798,23 @@ export default function App() {
 
   // 記事変更・ガイドバー開閉・モード変更・文字幅変更・フォントサイズ変更時の視覚行更新
   const currentNoteContent = notes.find(n => n.id === activeId)?.content;
+
+  // 記事が切り替わった時は、ガイドバー行インデックスを確実に0（先頭）にリセットし、プレビュー最上部にスクロールする
+  useEffect(() => {
+    setGuideLineIndex(0);
+    if (previewRef.current) {
+      previewRef.current.scrollTop = 0;
+    }
+    isAutoScrollingRef.current = true;
+    const t = setTimeout(() => {
+      if (previewRef.current) {
+        previewRef.current.scrollTop = 0;
+      }
+      isAutoScrollingRef.current = false;
+    }, 250);
+    return () => clearTimeout(t);
+  }, [activeId]);
+
   useEffect(() => {
     if (!isGuideBarOpen || mode !== "preview") return;
     const timer1 = setTimeout(() => {
@@ -10051,6 +10068,9 @@ const renderMarkdownToElements = (contentStr: string) => {
             const moved = navigateNote("next");
             if (moved) {
               setGuideLineIndex(0);
+              if (previewRef.current) {
+                previewRef.current.scrollTop = 0;
+              }
               return true;
             } else {
               setIsGuideBarOpen(false);
@@ -10066,6 +10086,9 @@ const renderMarkdownToElements = (contentStr: string) => {
             const moved = navigateNote("prev");
             if (moved) {
               setGuideLineIndex(0);
+              if (previewRef.current) {
+                previewRef.current.scrollTop = 0;
+              }
               return true;
             }
             return false;

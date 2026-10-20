@@ -1556,9 +1556,9 @@ function handleSaveLearningQuestions(questions, learningSpreadsheetUrl) {
       }
     }
 
-    // ReviewState 初期化
+    // ReviewState 初期化（新規登録時は今日から即座に出題・復習対象）
     if (!existingSRowMap[qId]) {
-      const nextDateStr = new Date(Date.now() + 86400000).toISOString().split("T")[0];
+      const nextDateStr = now.toISOString().split("T")[0];
       sSheet.appendRow([
         qId,
         0, // total_reviews
