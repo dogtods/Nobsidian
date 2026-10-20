@@ -159,9 +159,16 @@ export default function QuestionGenerationModal({
     return savedQuestions.filter(q => q.status === "mastered" || reviewStates[q.id]?.masteryLevel === "mastered").length;
   }, [savedQuestions, reviewStates]);
 
+  const todayStr = new Date().toISOString().split("T")[0];
+
   const activeCount = useMemo(() => {
-    return savedQuestions.filter(q => q.status !== "mastered" && reviewStates[q.id]?.masteryLevel !== "mastered").length;
-  }, [savedQuestions, reviewStates]);
+    return savedQuestions.filter(q => {
+      if (q.status === "mastered" || reviewStates[q.id]?.masteryLevel === "mastered") return false;
+      const state = reviewStates[q.id];
+      if (!state || !state.nextReviewDate) return true;
+      return state.nextReviewDate <= todayStr;
+    }).length;
+  }, [savedQuestions, reviewStates, todayStr]);
 
   const filteredQuizQuestions = useMemo(() => {
     if (quizFilter === "mastered") {
@@ -170,9 +177,14 @@ export default function QuestionGenerationModal({
     if (quizFilter === "all") {
       return savedQuestions;
     }
-    // "active": 通常復習対象（未習得）のみ
-    return savedQuestions.filter(q => q.status !== "mastered" && reviewStates[q.id]?.masteryLevel !== "mastered");
-  }, [savedQuestions, reviewStates, quizFilter]);
+    // "active": 復習期日（nextReviewDate）が今日以前のもの、または未レビューのもの
+    return savedQuestions.filter(q => {
+      if (q.status === "mastered" || reviewStates[q.id]?.masteryLevel === "mastered") return false;
+      const state = reviewStates[q.id];
+      if (!state || !state.nextReviewDate) return true;
+      return state.nextReviewDate <= todayStr;
+    });
+  }, [savedQuestions, reviewStates, quizFilter, todayStr]);
 
   // 学習用スプレッドシートURL設定状態
   const [learningSsUrl, setLearningSsUrl] = useState<string>(() => localStorage.getItem("cn_learning_spreadsheet_url") || "");
@@ -414,7 +426,16 @@ export default function QuestionGenerationModal({
       if (res && res.success && Array.isArray(res.questions)) {
         setSavedQuestions(res.questions);
         if (res.reviewStates && typeof res.reviewStates === "object") {
-          setReviewStates(res.reviewStates);
+          setReviewStates(prev => {
+            const merged = { ...res.reviewStates };
+            for (const [qId, localState] of Object.entries(prev)) {
+              const remoteState = merged[qId];
+              if (!remoteState || (localState.updatedAt || 0) >= (remoteState.updatedAt || 0)) {
+                merged[qId] = localState;
+              }
+            }
+            return merged;
+          });
         }
         const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
         setLastSyncedTime(timeStr);

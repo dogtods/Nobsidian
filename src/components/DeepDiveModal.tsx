@@ -498,7 +498,7 @@ export default function DeepDiveModal({
     setSaveErrorMessage("");
 
     try {
-      // 1. 判断データの保存
+      // 1. 判断データの保存（シート1）
       const decRes = await apiPost({
         action: "saveDeepDiveDecision",
         decision: decision,
@@ -508,7 +508,22 @@ export default function DeepDiveModal({
         throw new Error(decRes.error);
       }
 
-      // 2. 分析結果がある場合は保存
+      // 2. 調査論点データの保存（シート2）
+      if (issues.length > 0) {
+        const issRes = await apiPost({
+          action: "saveDeepDiveIssues",
+          issues: issues,
+          analysisId: decision.analysisId,
+          articleId: note.id,
+          articleTitle: note.title || "",
+          deepDiveSpreadsheetUrl: spreadsheetUrl
+        });
+        if (issRes && issRes.error) {
+          throw new Error(issRes.error);
+        }
+      }
+
+      // 3. 分析結果の保存（シート3）
       if (analysisResults.length > 0) {
         const anaRes = await apiPost({
           action: "saveDeepDiveAnalysis",
@@ -520,7 +535,7 @@ export default function DeepDiveModal({
         }
       }
 
-      // 3. 振り返りデータがある場合は保存
+      // 4. 振り返りデータの保存（シート4）
       if (reviews.length > 0) {
         for (const rev of reviews) {
           await apiPost({
@@ -532,7 +547,7 @@ export default function DeepDiveModal({
       }
 
       setSaveStatus("success");
-      onToast("Googleスプレッドシートへの保存に成功しました ✦");
+      onToast("Googleスプレッドシートの4シート（判断・論点・分析・振り返り）への保存に成功しました ✦");
     } catch (err: any) {
       console.error("Spreadsheet save failed:", err);
       setSaveStatus("error");

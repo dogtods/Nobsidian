@@ -1828,6 +1828,9 @@ const DEEP_DIVE_HEADERS = {
     "深掘りする意味がある理由", "深掘りしない場合の理由", "不足している情報", "推奨する調査論点", "再評価すべき条件",
     "AIの判定", "ユーザーの最終判断", "判断日時", "ステータス"
   ],
+  DeepDiveIssues: [
+    "analysisId", "articleId", "論点ID", "記事タイトル", "論点タイトル", "重要理由", "既知の事実", "未解明事項", "調査方法", "確認すべき情報源", "判断が変わる条件", "登録日時"
+  ],
   DeepDiveAnalysis: [
     "analysisId", "articleId", "論点ID", "記事タイトル", "論点名", "調査目的", "確認できた事実", "根拠と出典URL",
     "出典の公開日", "推定・仮説", "不明点", "実現を妨げる要因", "分析結果", "結論の確度とその理由", "今後の確認事項",
@@ -1907,7 +1910,7 @@ function getDeepDiveSheet(tabName, deepDiveSpreadsheetUrl) {
 }
 
 function initializeDeepDiveSheets(deepDiveSpreadsheetUrl) {
-  const targetTabs = ["DeepDiveDecisions", "DeepDiveAnalysis", "DeepDiveReview"];
+  const targetTabs = ["DeepDiveDecisions", "DeepDiveIssues", "DeepDiveAnalysis", "DeepDiveReview"];
   const initializedTabs = [];
   targetTabs.forEach(function(tab) {
     getDeepDiveSheet(tab, deepDiveSpreadsheetUrl);
@@ -1915,7 +1918,7 @@ function initializeDeepDiveSheets(deepDiveSpreadsheetUrl) {
   });
   return {
     success: true,
-    message: "深掘り用スプレッドシートの3タブを確認・初期化しました。",
+    message: "深掘り用スプレッドシートの4タブ（判断・論点・分析・振り返り）を確認・初期化しました。",
     tabs: initializedTabs
   };
 }
@@ -1971,6 +1974,56 @@ function handleSaveDeepDiveDecision(decision, deepDiveSpreadsheetUrl) {
     sheet.appendRow(rowData);
     return { success: true, updated: false, rowIndex: sheet.getLastRow(), analysisId: decision.analysisId };
   }
+}
+
+function handleSaveDeepDiveIssues(issues, analysisId, articleId, articleTitle, deepDiveSpreadsheetUrl) {
+  if (!issues) throw new Error("保存する論点データがありません");
+  const list = Array.isArray(issues) ? issues : [issues];
+  if (list.length === 0) return { success: true, savedCount: 0 };
+
+  const sheet = getDeepDiveSheet("DeepDiveIssues", deepDiveSpreadsheetUrl);
+  const lastRow = sheet.getLastRow();
+  const existingMap = {};
+  if (lastRow > 1) {
+    const existing = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
+    for (let i = 0; i < existing.length; i++) {
+      const aId = String(existing[i][0]).trim();
+      const issId = String(existing[i][2]).trim();
+      if (aId && issId) {
+        existingMap[aId + "___" + issId] = i + 2;
+      }
+    }
+  }
+
+  let savedCount = 0;
+  list.forEach(function(item) {
+    const rowData = [
+      analysisId || item.analysisId || "",
+      articleId || item.articleId || "",
+      item.issueId || "",
+      articleTitle || item.articleTitle || "",
+      item.title || "",
+      item.importanceReason || "",
+      item.knownFacts || "",
+      item.unknownPoints || "",
+      item.investigationMethod || "",
+      item.sourcesToVerify || "",
+      item.conditionsToChangeVerdict || "",
+      new Date().toISOString()
+    ];
+
+    const key = (analysisId || "") + "___" + (item.issueId || "");
+    const existingRow = existingMap[key];
+    if (existingRow) {
+      sheet.getRange(existingRow, 1, 1, rowData.length).setValues([rowData]);
+    } else {
+      sheet.appendRow(rowData);
+      existingMap[key] = sheet.getLastRow();
+    }
+    savedCount++;
+  });
+
+  return { success: true, savedCount: savedCount };
 }
 
 function handleSaveDeepDiveAnalysis(analyses, deepDiveSpreadsheetUrl) {
@@ -2051,6 +2104,7 @@ function handleSaveDeepDiveReview(review, deepDiveSpreadsheetUrl) {
 
 function handleGetDeepDiveHistory(articleId, deepDiveSpreadsheetUrl) {
   const dSheet = getDeepDiveSheet("DeepDiveDecisions", deepDiveSpreadsheetUrl);
+  const iSheet = getDeepDiveSheet("DeepDiveIssues", deepDiveSpreadsheetUrl);
   const aSheet = getDeepDiveSheet("DeepDiveAnalysis", deepDiveSpreadsheetUrl);
   const rSheet = getDeepDiveSheet("DeepDiveReview", deepDiveSpreadsheetUrl);
 
@@ -2086,6 +2140,30 @@ function handleGetDeepDiveHistory(articleId, deepDiveSpreadsheetUrl) {
           userFinalDecision: String(r[21]),
           decisionDate: String(r[22]),
           status: String(r[23])
+        });
+      }
+    }
+  }
+
+  const issues = [];
+  const iLast = iSheet.getLastRow();
+  if (iLast > 1) {
+    const iVals = iSheet.getRange(2, 1, iLast - 1, 12).getValues();
+    for (let i = 0; i < iVals.length; i++) {
+      const r = iVals[i];
+      if (!articleId || String(r[1]) === String(articleId)) {
+        issues.push({
+          analysisId: String(r[0]),
+          articleId: String(r[1]),
+          issueId: String(r[2]),
+          articleTitle: String(r[3]),
+          title: String(r[4]),
+          importanceReason: String(r[5]),
+          knownFacts: String(r[6]),
+          unknownPoints: String(r[7]),
+          investigationMethod: String(r[8]),
+          sourcesToVerify: String(r[9]),
+          conditionsToChangeVerdict: String(r[10])
         });
       }
     }
@@ -2149,6 +2227,7 @@ function handleGetDeepDiveHistory(articleId, deepDiveSpreadsheetUrl) {
   return {
     success: true,
     decisions: decisions,
+    issues: issues,
     analyses: analyses,
     reviews: reviews
   };
@@ -2233,6 +2312,12 @@ function processApiRequest(e) {
     } else if (action === "saveDeepDiveDecision") {
       const decision = typeof postData.decision === "string" ? JSON.parse(postData.decision) : postData.decision;
       result = handleSaveDeepDiveDecision(decision, deepDiveSsUrl);
+    } else if (action === "saveDeepDiveIssues") {
+      const issues = typeof postData.issues === "string" ? JSON.parse(postData.issues) : postData.issues;
+      const analysisId = postData.analysisId || (e.parameter ? e.parameter.analysisId : "");
+      const articleId = postData.articleId || (e.parameter ? e.parameter.articleId : "");
+      const articleTitle = postData.articleTitle || (e.parameter ? e.parameter.articleTitle : "");
+      result = handleSaveDeepDiveIssues(issues, analysisId, articleId, articleTitle, deepDiveSsUrl);
     } else if (action === "saveDeepDiveAnalysis") {
       const analyses = typeof postData.analyses === "string" ? JSON.parse(postData.analyses) : postData.analyses;
       result = handleSaveDeepDiveAnalysis(analyses, deepDiveSsUrl);
