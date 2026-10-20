@@ -642,6 +642,7 @@ export default function App() {
     return true; // デフォルトで暗転有効
   });
   const isAutoScrollingRef = useRef(false);
+  const isArticleSwitchingRef = useRef(false);
   const autoScrollTimerRef = useRef<any>(null);
 
   const [visualLines, setVisualLines] = useState<{
@@ -802,27 +803,50 @@ export default function App() {
   // 記事が切り替わった時は、ガイドバー行インデックスを確実に0（先頭）にリセットし、プレビュー最上部にスクロールする
   useEffect(() => {
     setGuideLineIndex(0);
+    setVisualLines([]);
     if (previewRef.current) {
+      previewRef.current.scrollTo({ top: 0, left: 0, behavior: "instant" as any });
       previewRef.current.scrollTop = 0;
     }
     isAutoScrollingRef.current = true;
-    const t = setTimeout(() => {
+    isArticleSwitchingRef.current = true;
+
+    // レンダリング直後（DOM更新後）に先頭位置を固定し、視覚行を再計算
+    const t1 = setTimeout(() => {
+      if (previewRef.current) {
+        previewRef.current.scrollTo({ top: 0, left: 0, behavior: "instant" as any });
+        previewRef.current.scrollTop = 0;
+      }
+      if (isGuideBarOpen && mode === "preview") {
+        updateVisualLines();
+      }
+    }, 40);
+
+    const t2 = setTimeout(() => {
       if (previewRef.current) {
         previewRef.current.scrollTop = 0;
       }
+      if (isGuideBarOpen && mode === "preview") {
+        updateVisualLines();
+      }
       isAutoScrollingRef.current = false;
-    }, 250);
-    return () => clearTimeout(t);
-  }, [activeId]);
+      isArticleSwitchingRef.current = false;
+    }, 240);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [activeId, isGuideBarOpen, mode, updateVisualLines]);
 
   useEffect(() => {
     if (!isGuideBarOpen || mode !== "preview") return;
     const timer1 = setTimeout(() => {
       updateVisualLines();
-    }, 60);
+    }, 80);
     const timer2 = setTimeout(() => {
       updateVisualLines();
-    }, 240);
+    }, 260);
     return () => {
       clearTimeout(timer1);
       clearTimeout(timer2);
@@ -857,6 +881,22 @@ export default function App() {
     const containerHeight = container.clientHeight;
     const lineTop = line.top;
 
+    // 0行目（記事の頭）の場合は、確実に最上部（scrollTop = 0）へスクロール
+    if (guideLineIndex === 0) {
+      isAutoScrollingRef.current = true;
+      clearTimeout(autoScrollTimerRef.current);
+      if (isArticleSwitchingRef.current) {
+        container.scrollTo({ top: 0, behavior: "instant" as any });
+        container.scrollTop = 0;
+      } else {
+        container.scrollTo({ top: 0, behavior: "smooth" });
+      }
+      autoScrollTimerRef.current = setTimeout(() => {
+        isAutoScrollingRef.current = false;
+      }, 250);
+      return;
+    }
+
     if (isGuideLineFixed) {
       // 【位置固定モード】: 画面上の指定位置（guideLineFixedRatio、約35%）に現在行が来るよう正確にスクロール
       const targetScrollTop = lineTop - (containerHeight * guideLineFixedRatio);
@@ -866,7 +906,7 @@ export default function App() {
       clearTimeout(autoScrollTimerRef.current);
       container.scrollTo({
         top: clampedTarget,
-        behavior: "smooth"
+        behavior: isArticleSwitchingRef.current ? "instant" as any : "smooth"
       });
       autoScrollTimerRef.current = setTimeout(() => {
         isAutoScrollingRef.current = false;
@@ -880,10 +920,15 @@ export default function App() {
         lineTop > currentScrollTop + containerHeight - 80;
 
       if (isOutOfView || Math.abs(currentScrollTop - targetScrollTop) > 70) {
+        isAutoScrollingRef.current = true;
+        clearTimeout(autoScrollTimerRef.current);
         container.scrollTo({
           top: Math.max(0, targetScrollTop),
           behavior: "smooth"
         });
+        autoScrollTimerRef.current = setTimeout(() => {
+          isAutoScrollingRef.current = false;
+        }, 250);
       }
     }
   }, [guideLineIndex, isGuideBarOpen, visualLines, isGuideLineFixed, guideLineFixedRatio]);
@@ -891,9 +936,15 @@ export default function App() {
   // 位置固定モード時、ユーザーがマウスホイールやタッチで手動スクロールした際に固定ライン位置にある行を自動同期
   const handlePreviewScroll = useCallback(() => {
     if (!isGuideLineFixed || !isGuideBarOpen || visualLines.length === 0 || !previewRef.current) return;
-    if (isAutoScrollingRef.current) return;
+    if (isAutoScrollingRef.current || isArticleSwitchingRef.current) return;
 
     const container = previewRef.current;
+    // スクロール位置が最上部（先頭付近: scrollTop <= 25）なら、確実に0行目（記事の頭）を維持する
+    if (container.scrollTop <= 25) {
+      setGuideLineIndex(0);
+      return;
+    }
+
     const fixedY = container.scrollTop + (container.clientHeight * guideLineFixedRatio);
 
     let closestIndex = 0;

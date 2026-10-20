@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   Play,
   Pause,
@@ -140,6 +140,7 @@ export const GuideBar: React.FC<GuideBarProps> = ({
       const moved = onNextArticle();
       if (moved) {
         onLineChange(0);
+        setIsPlaying(true);
       } else {
         setIsPlaying(false);
         onClose();
@@ -156,6 +157,7 @@ export const GuideBar: React.FC<GuideBarProps> = ({
       const moved = onPrevArticle();
       if (moved) {
         onLineChange(0);
+        setIsPlaying(true);
       }
     }
   }, [currentLineIndex, totalLines, onLineChange, onPrevArticle]);
@@ -198,6 +200,7 @@ export const GuideBar: React.FC<GuideBarProps> = ({
         const moved = onNextArticle();
         if (moved) {
           onLineChange(0);
+          setIsPlaying(true);
         } else {
           setIsPlaying(false);
           onClose();
@@ -210,9 +213,14 @@ export const GuideBar: React.FC<GuideBarProps> = ({
     return () => clearTimeout(timer);
   }, [isPlaying, isOpen, speed, currentLineIndex, totalLines, activeNote?.content, onNextArticle, onLineChange, onClose]);
 
-  // ノート変更時は必ず1行目（先頭: index 0）から開始する
+  // ノート変更時は必ず1行目（先頭: index 0、記事の頭）から開始し、再生中状態にする
+  const prevNoteIdRef = useRef<string | null>(activeNote?.id || null);
   useEffect(() => {
-    onLineChange(0);
+    if (activeNote?.id && activeNote.id !== prevNoteIdRef.current) {
+      prevNoteIdRef.current = activeNote.id;
+      onLineChange(0);
+      setIsPlaying(true);
+    }
   }, [activeNote?.id, onLineChange]);
 
   // Spaceキーで再生/停止、上下キーで行送り
