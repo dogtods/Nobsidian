@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Sparkles,
   Copy,
@@ -27,7 +27,8 @@ import {
   Quote,
   CheckCheck,
   Award,
-  Undo2
+  Undo2,
+  Shuffle
 } from "lucide-react";
 import {
   Note,
@@ -41,7 +42,8 @@ import {
   buildQuestionPrompt,
   validateQuestionJson,
   generateQuestionsViaGemini,
-  calculateSM2Review
+  calculateSM2Review,
+  shuffleArray
 } from "../utils/questionUtils";
 
 interface QuestionGenerationModalProps {
@@ -174,25 +176,101 @@ export default function QuestionGenerationModal({
     }).length;
   }, [savedQuestions, reviewStates, todayStr]);
 
-  const filteredQuizQuestions = useMemo(() => {
-    if (quizFilter === "mastered") {
-      return savedQuestions.filter(q => q.status === "mastered" || reviewStates[q.id]?.masteryLevel === "mastered");
+  // ランダム（シャッフル）出題設定（ローカルストレージに永続化）
+  const [isQuizShuffled, setIsQuizShuffled] = useState<boolean>(() => {
+    return localStorage.getItem("cn_quiz_shuffled") === "true";
+  });
+
+  const getQuestionsForFilter = useCallback((
+    filter: "active" | "all" | "mastered",
+    questions: LearningQuestion[],
+    states: Record<string, ReviewState>,
+    shuffle?: boolean
+  ) => {
+    const today = new Date().toISOString().split("T")[0];
+    let filtered: LearningQuestion[] = [];
+    if (filter === "mastered") {
+      filtered = questions.filter(q => q.status === "mastered" || states[q.id]?.masteryLevel === "mastered");
+    } else if (filter === "all") {
+      filtered = [...questions];
+    } else {
+      // "active": 新規問題（未解答）または復習期日（nextReviewDate）が今日以前のもの
+      filtered = questions.filter(q => {
+        if (q.status === "mastered" || states[q.id]?.masteryLevel === "mastered") return false;
+        const state = states[q.id];
+        // まだ一度も解答していない新規問題（未レビュー）は、必ず最初に出題対象とする
+        if (!state || !state.nextReviewDate || !state.lastReviewedAt || (state.totalReviews || 0) === 0 || state.masteryLevel === "new") {
+          return true;
+        }
+        // 一度以上解答した問題は、次回復習期日が今日以前の場合に出題する
+        return state.nextReviewDate <= today;
+      });
     }
-    if (quizFilter === "all") {
-      return savedQuestions;
+    const shouldShuffle = shuffle !== undefined ? shuffle : isQuizShuffled;
+    return shouldShuffle ? shuffleArray(filtered) : filtered;
+  }, [isQuizShuffled]);
+
+  // 現在のクイズセッションで解く問題のリスト（解答中に問題が消失・スキップされないようセッション中は固定）
+  const [sessionQuestions, setSessionQuestions] = useState<LearningQuestion[]>([]);
+
+  const handleFilterChange = useCallback((newFilter: "active" | "all" | "mastered") => {
+    setQuizFilter(newFilter);
+    setIsSessionCompleted(false);
+    setCurrentQuizIndex(0);
+    setSelectedQuizChoices([]);
+    setEssayAnswer("");
+    setIsQuizAnswerRevealed(false);
+    const qList = getQuestionsForFilter(newFilter, savedQuestions, reviewStates);
+    setSessionQuestions(qList);
+  }, [getQuestionsForFilter, savedQuestions, reviewStates]);
+
+  // ランダム（シャッフル）出題の切り替え
+  const handleToggleShuffle = useCallback(() => {
+    const nextShuffled = !isQuizShuffled;
+    setIsQuizShuffled(nextShuffled);
+    localStorage.setItem("cn_quiz_shuffled", String(nextShuffled));
+    const qList = getQuestionsForFilter(quizFilter, savedQuestions, reviewStates, nextShuffled);
+    setSessionQuestions(qList);
+    setCurrentQuizIndex(0);
+    setIsSessionCompleted(false);
+    setSelectedQuizChoices([]);
+    setEssayAnswer("");
+    setIsQuizAnswerRevealed(false);
+    onSaveToast(nextShuffled ? "出題順をランダム（シャッフル）に設定しました ✦" : "出題順を登録順に戻しました ✦");
+  }, [isQuizShuffled, getQuestionsForFilter, quizFilter, savedQuestions, reviewStates, onSaveToast]);
+
+  // 現在のセッション問題を再度シャッフル
+  const handleReshuffle = useCallback(() => {
+    const qList = getQuestionsForFilter(quizFilter, savedQuestions, reviewStates, true);
+    setSessionQuestions(qList);
+    setCurrentQuizIndex(0);
+    setIsSessionCompleted(false);
+    setSelectedQuizChoices([]);
+    setEssayAnswer("");
+    setIsQuizAnswerRevealed(false);
+    onSaveToast("問題をランダムに再シャッフルしました ✦");
+  }, [getQuestionsForFilter, quizFilter, savedQuestions, reviewStates, onSaveToast]);
+
+  // クイズタブを開いた時にセッション問題リストを構築
+  useEffect(() => {
+    if (activeTab === "quiz") {
+      const qList = getQuestionsForFilter(quizFilter, savedQuestions, reviewStates);
+      setSessionQuestions(qList);
+      setCurrentQuizIndex(0);
+      setIsSessionCompleted(false);
+      setSelectedQuizChoices([]);
+      setEssayAnswer("");
+      setIsQuizAnswerRevealed(false);
     }
-    // "active": 新規問題（未解答）または復習期日（nextReviewDate）が今日以前のもの
-    return savedQuestions.filter(q => {
-      if (q.status === "mastered" || reviewStates[q.id]?.masteryLevel === "mastered") return false;
-      const state = reviewStates[q.id];
-      // まだ一度も解答していない新規問題（未レビュー）は、必ず最初に出題対象とする
-      if (!state || !state.nextReviewDate || !state.lastReviewedAt || (state.totalReviews || 0) === 0 || state.masteryLevel === "new") {
-        return true;
-      }
-      // 一度以上解答した問題は、次回復習期日が今日以前の場合に出題する
-      return state.nextReviewDate <= todayStr;
-    });
-  }, [savedQuestions, reviewStates, quizFilter, todayStr]);
+  }, [activeTab]);
+
+  // 初回データ取得完了時にセッションが空なら初期化
+  useEffect(() => {
+    if (activeTab === "quiz" && sessionQuestions.length === 0 && savedQuestions.length > 0) {
+      const qList = getQuestionsForFilter(quizFilter, savedQuestions, reviewStates);
+      setSessionQuestions(qList);
+    }
+  }, [savedQuestions, activeTab, quizFilter, sessionQuestions.length, getQuestionsForFilter, reviewStates]);
 
   // 学習用スプレッドシートURL設定状態
   const [learningSsUrl, setLearningSsUrl] = useState<string>(() => localStorage.getItem("cn_learning_spreadsheet_url") || "");
@@ -498,9 +576,6 @@ export default function QuestionGenerationModal({
 
     if (newStatus === "mastered") {
       onSaveToast("習得済み（出題停止）に設定しました。次回の通常復習から除外されます ✦");
-      if (quizFilter === "active" && currentQuizIndex >= filteredQuizQuestions.length - 1) {
-        setCurrentQuizIndex(0);
-      }
     } else {
       onSaveToast("出題対象に復元しました（次回復習から出題されます）✦");
     }
@@ -527,8 +602,8 @@ export default function QuestionGenerationModal({
 
   // クイズの解答判定とレビュー記録 (即時UI更新0ms + バックグラウンド非同期同期)
   const handleSubmitQuizReview = (rating: number) => {
-    if (filteredQuizQuestions.length === 0) return;
-    const currentQ = filteredQuizQuestions[currentQuizIndex];
+    if (sessionQuestions.length === 0) return;
+    const currentQ = sessionQuestions[currentQuizIndex];
     if (!currentQ) return;
 
     const isMastered = rating === 5;
@@ -579,18 +654,12 @@ export default function QuestionGenerationModal({
       onSaveToast(`自己評価を記録しました（次回出題: ${nextState.intervalDays}日後）✦`);
     }
 
-    // 2. 【即時画面遷移 (0ms)】待ち時間ゼロで次の問題へ切り替え
-    if (quizFilter === "active" && isMastered) {
-      if (currentQuizIndex >= filteredQuizQuestions.length - 1) {
-        setIsSessionCompleted(true);
-      }
+    // 2. 【即時画面遷移 (0ms)】1問もスキップせず確実に次の問題へ順番に進む
+    if (currentQuizIndex < sessionQuestions.length - 1) {
+      setCurrentQuizIndex(prev => prev + 1);
     } else {
-      if (currentQuizIndex < filteredQuizQuestions.length - 1) {
-        setCurrentQuizIndex(prev => prev + 1);
-      } else {
-        onSaveToast("🎉 すべての問題の一巡が完了しました！お疲れ様でした。");
-        setIsSessionCompleted(true);
-      }
+      onSaveToast("🎉 すべての問題の一巡が完了しました！お疲れ様でした。");
+      setIsSessionCompleted(true);
     }
     setSelectedQuizChoices([]);
     setEssayAnswer("");
@@ -1319,14 +1388,7 @@ export default function QuestionGenerationModal({
                   <div className="flex items-center gap-1 bg-[#0d1117] p-1 rounded-lg border border-[#30363d] text-[11px]">
                     <button
                       type="button"
-                      onClick={() => {
-                        setQuizFilter("active");
-                        setIsSessionCompleted(false);
-                        setCurrentQuizIndex(0);
-                        setSelectedQuizChoices([]);
-                        setEssayAnswer("");
-                        setIsQuizAnswerRevealed(false);
-                      }}
+                      onClick={() => handleFilterChange("active")}
                       className={`px-2.5 py-1 rounded-md font-bold transition cursor-pointer flex items-center gap-1.5 ${
                         quizFilter === "active"
                           ? "bg-sky-600 text-white shadow-xs"
@@ -1342,14 +1404,7 @@ export default function QuestionGenerationModal({
 
                     <button
                       type="button"
-                      onClick={() => {
-                        setQuizFilter("all");
-                        setIsSessionCompleted(false);
-                        setCurrentQuizIndex(0);
-                        setSelectedQuizChoices([]);
-                        setEssayAnswer("");
-                        setIsQuizAnswerRevealed(false);
-                      }}
+                      onClick={() => handleFilterChange("all")}
                       className={`px-2.5 py-1 rounded-md font-bold transition cursor-pointer flex items-center gap-1.5 ${
                         quizFilter === "all"
                           ? "bg-indigo-600 text-white shadow-xs"
@@ -1365,14 +1420,7 @@ export default function QuestionGenerationModal({
 
                     <button
                       type="button"
-                      onClick={() => {
-                        setQuizFilter("mastered");
-                        setIsSessionCompleted(false);
-                        setCurrentQuizIndex(0);
-                        setSelectedQuizChoices([]);
-                        setEssayAnswer("");
-                        setIsQuizAnswerRevealed(false);
-                      }}
+                      onClick={() => handleFilterChange("mastered")}
                       className={`px-2.5 py-1 rounded-md font-bold transition cursor-pointer flex items-center gap-1.5 ${
                         quizFilter === "mastered"
                           ? "bg-purple-600 text-white shadow-xs"
@@ -1385,6 +1433,38 @@ export default function QuestionGenerationModal({
                         {masteredCount}
                       </span>
                     </button>
+                  </div>
+
+                  {/* Random / Shuffle Selector */}
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={handleToggleShuffle}
+                      className={`px-2.5 py-1 rounded-md font-bold transition cursor-pointer flex items-center gap-1.5 text-[11px] ${
+                        isQuizShuffled
+                          ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-xs hover:bg-amber-500/30"
+                          : "bg-[#0d1117] text-gray-400 hover:text-white border border-[#30363d] hover:bg-[#1f242c]"
+                      }`}
+                      title={
+                        isQuizShuffled
+                          ? "現在ランダム（シャッフル）出題中です。クリックすると登録順に戻します"
+                          : "現在登録順に出題中です。クリックするとランダム（シャッフル）出題に切り替えます"
+                      }
+                    >
+                      <Shuffle className={`w-3.5 h-3.5 ${isQuizShuffled ? "text-amber-400" : "text-gray-400"}`} />
+                      <span>{isQuizShuffled ? "ランダム出題" : "登録順"}</span>
+                    </button>
+                    {isQuizShuffled && (
+                      <button
+                        type="button"
+                        onClick={handleReshuffle}
+                        className="px-2 py-1 rounded-md bg-[#0d1117] text-amber-300 hover:text-amber-200 hover:bg-[#1f242c] border border-amber-500/30 transition cursor-pointer flex items-center gap-1 text-[11px]"
+                        title="問題をもう一度ランダムにシャッフル並び替えします"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span className="hidden sm:inline">再シャッフル</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1431,43 +1511,71 @@ export default function QuestionGenerationModal({
                     先に問題を生成してスプレッドシートへ保存してください →
                   </button>
                 </div>
-              ) : filteredQuizQuestions.length === 0 ? (
+              ) : sessionQuestions.length === 0 ? (
                 quizFilter === "active" ? (
-                  <div className="bg-[#1c2128] border border-purple-500/30 rounded-xl p-8 text-center space-y-3">
-                    <div className="w-12 h-12 mx-auto rounded-full bg-purple-500/20 text-purple-300 flex items-center justify-center">
-                      <Award className="w-6 h-6" />
+                  masteredCount === savedQuestions.length && savedQuestions.length > 0 ? (
+                    <div className="bg-[#1c2128] border border-purple-500/30 rounded-xl p-8 text-center space-y-3">
+                      <div className="w-12 h-12 mx-auto rounded-full bg-purple-500/20 text-purple-300 flex items-center justify-center">
+                        <Award className="w-6 h-6" />
+                      </div>
+                      <h4 className="text-base font-bold text-white">
+                        すべての問題が習得済み（出題停止中）です！🎉
+                      </h4>
+                      <p className="text-xs text-gray-400 max-w-md mx-auto leading-relaxed">
+                        保存されている全 {savedQuestions.length} 問が「もう出題しない（習得済み）」に設定されています。<br />
+                        復習を再開したい問題がある場合は「習得済み」タブからいつでも出題対象に戻せます。
+                      </p>
+                      <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => handleFilterChange("mastered")}
+                          className="px-4 py-2 rounded-lg text-xs font-bold bg-purple-600 hover:bg-purple-500 text-white transition cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Award className="w-4 h-4" />
+                          <span>★ 習得済み問題（{masteredCount}問）を確認・復元する</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleFilterChange("all")}
+                          className="px-4 py-2 rounded-lg text-xs font-bold bg-[#21262d] hover:bg-[#30363d] text-gray-200 transition cursor-pointer"
+                        >
+                          <span>全問題を通して通しクイズを行う</span>
+                        </button>
+                      </div>
                     </div>
-                    <h4 className="text-base font-bold text-white">
-                      すべての問題が習得済み（出題停止中）です！🎉
-                    </h4>
-                    <p className="text-xs text-gray-400 max-w-md mx-auto leading-relaxed">
-                      保存されている全 {savedQuestions.length} 問が「もう出題しない（習得済み）」に設定されています。<br />
-                      復習を再開したい問題がある場合は「習得済み」タブからいつでも出題対象に戻せます。
-                    </p>
-                    <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setQuizFilter("mastered");
-                          setCurrentQuizIndex(0);
-                        }}
-                        className="px-4 py-2 rounded-lg text-xs font-bold bg-purple-600 hover:bg-purple-500 text-white transition cursor-pointer flex items-center gap-1.5"
-                      >
-                        <Award className="w-4 h-4" />
-                        <span>★ 習得済み問題（{masteredCount}問）を確認・復元する</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setQuizFilter("all");
-                          setCurrentQuizIndex(0);
-                        }}
-                        className="px-4 py-2 rounded-lg text-xs font-bold bg-[#21262d] hover:bg-[#30363d] text-gray-200 transition cursor-pointer"
-                      >
-                        <span>全問題を通して通しクイズを行う</span>
-                      </button>
+                  ) : (
+                    <div className="bg-[#1c2128] border border-sky-500/30 rounded-xl p-8 text-center space-y-3">
+                      <div className="w-12 h-12 mx-auto rounded-full bg-sky-500/20 text-sky-300 flex items-center justify-center">
+                        <CheckCircle2 className="w-6 h-6 text-sky-400" />
+                      </div>
+                      <h4 className="text-base font-bold text-white">
+                        本日の復習はすべて完了しました！🎉
+                      </h4>
+                      <p className="text-xs text-gray-400 max-w-md mx-auto leading-relaxed">
+                        今日復習すべき問題はすべて解き終えました。<br />
+                        各問題の次回出題予定日になると自動的に再出題されます。「すべて」タブからいつでも通しクイズを練習できます。
+                      </p>
+                      <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => handleFilterChange("all")}
+                          className="px-4 py-2 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition cursor-pointer"
+                        >
+                          <span>全問題を通して通しクイズを行う</span>
+                        </button>
+                        {masteredCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleFilterChange("mastered")}
+                            className="px-4 py-2 rounded-lg text-xs font-bold bg-[#21262d] hover:bg-[#30363d] text-purple-300 border border-purple-500/30 transition cursor-pointer flex items-center gap-1.5"
+                          >
+                            <Award className="w-4 h-4 text-purple-400" />
+                            <span>★ 習得済み問題（{masteredCount}問）を確認・復元する</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )
                 ) : (
                   <div className="bg-[#1c2128] border border-[#30363d] rounded-xl p-8 text-center space-y-3">
                     <div className="w-12 h-12 mx-auto rounded-full bg-sky-500/20 text-sky-300 flex items-center justify-center">
@@ -1481,7 +1589,7 @@ export default function QuestionGenerationModal({
                     </p>
                     <button
                       type="button"
-                      onClick={() => setQuizFilter("active")}
+                      onClick={() => handleFilterChange("active")}
                       className="px-4 py-2 rounded-lg text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white transition cursor-pointer"
                     >
                       復習対象の問題に戻る →
@@ -1498,7 +1606,7 @@ export default function QuestionGenerationModal({
                       🎉 本日の問題が一巡しました！お疲れ様でした
                     </h4>
                     <p className="text-xs text-gray-300 max-w-md mx-auto leading-relaxed">
-                      出題対象の全 {filteredQuizQuestions.length} 問の復習・自己評価が完了しました。<br />
+                      出題対象の全 {sessionQuestions.length} 問の復習・自己評価が完了しました。<br />
                       各問題の解答結果と自己評価に基づき、最適な次回復習間隔（エビングハウスの忘却曲線・SM-2）が自動設定されました。
                     </p>
                   </div>
@@ -1516,7 +1624,26 @@ export default function QuestionGenerationModal({
                       className="px-4 py-2 rounded-lg text-xs font-semibold bg-[#21262d] hover:bg-[#30363d] text-gray-200 border border-[#30363d] transition cursor-pointer flex items-center gap-1.5"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
-                      <span>もう一度最初から解く</span>
+                      <span>もう一度解く</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsSessionCompleted(false);
+                        setCurrentQuizIndex(0);
+                        setSelectedQuizChoices([]);
+                        setEssayAnswer("");
+                        setIsQuizAnswerRevealed(false);
+                        const qList = getQuestionsForFilter(quizFilter, savedQuestions, reviewStates, true);
+                        setSessionQuestions(qList);
+                        setIsQuizShuffled(true);
+                        localStorage.setItem("cn_quiz_shuffled", "true");
+                        onSaveToast("問題をランダムにシャッフルして再出題します ✦");
+                      }}
+                      className="px-4 py-2 rounded-lg text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 transition cursor-pointer flex items-center gap-1.5 shadow"
+                    >
+                      <Shuffle className="w-3.5 h-3.5 text-amber-400" />
+                      <span>シャッフルして解き直す</span>
                     </button>
                     <button
                       type="button"
@@ -1540,7 +1667,7 @@ export default function QuestionGenerationModal({
                 </div>
               ) : (
                 (() => {
-                  const currentQ = filteredQuizQuestions[currentQuizIndex] || filteredQuizQuestions[0];
+                  const currentQ = sessionQuestions[currentQuizIndex] || sessionQuestions[0];
                   if (!currentQ) return null;
                   const isCurrentQMastered = currentQ.status === "mastered" || reviewStates[currentQ.id]?.masteryLevel === "mastered";
 
@@ -1568,7 +1695,7 @@ export default function QuestionGenerationModal({
                         }
                       } else {
                         // 左スワイプ → 次の問題へ
-                        if (currentQuizIndex < filteredQuizQuestions.length - 1) {
+                        if (currentQuizIndex < sessionQuestions.length - 1) {
                           setCurrentQuizIndex(prev => prev + 1);
                           setSelectedQuizChoices([]);
                           setEssayAnswer("");
@@ -1594,7 +1721,10 @@ export default function QuestionGenerationModal({
                       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-400">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-sky-300 font-bold">
-                            第 {currentQuizIndex + 1} / {filteredQuizQuestions.length} 問
+                            第 {currentQuizIndex + 1} / {sessionQuestions.length} 問
+                          </span>
+                          <span className="text-[11px] text-gray-400">
+                            （残り {Math.max(0, sessionQuestions.length - (currentQuizIndex + 1))} 問）
                           </span>
                           <span className="text-[10px] px-2 py-0.5 rounded bg-gray-800 text-gray-300">
                             {currentQ.type === "single_choice"
@@ -1603,6 +1733,12 @@ export default function QuestionGenerationModal({
                               ? "○×問題"
                               : "記述問題"}
                           </span>
+                          {isQuizShuffled && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950/60 text-amber-300 border border-amber-500/30 font-medium flex items-center gap-1" title="ランダム（シャッフル）順で出題中">
+                              <Shuffle className="w-2.5 h-2.5" />
+                              <span>ランダム</span>
+                            </span>
+                          )}
                           {isCurrentQMastered ? (
                             <span className="text-[10px] px-2 py-0.5 rounded bg-purple-950/70 text-purple-300 border border-purple-500/40 font-bold flex items-center gap-1">
                               <Award className="w-3 h-3 text-purple-400" />
