@@ -490,6 +490,7 @@ export default function App() {
   // Bookmarks State with scroll position & line focus
   interface BookmarkItem {
     noteId: string;
+    sheetName?: string;
     scrollRatio?: number;
     timestamp: number;
   }
@@ -511,6 +512,13 @@ export default function App() {
 
   const bookmarkedIds = useMemo(() => bookmarks.map(b => b.noteId), [bookmarks]);
 
+  // 現在表示中のシート（notes）に実際に存在するしおり付きノート
+  const currentSheetBookmarkedNotes = useMemo(() => {
+    return notes.filter(n => bookmarkedIds.includes(n.id));
+  }, [notes, bookmarkedIds]);
+
+  const currentSheetBookmarkCount = currentSheetBookmarkedNotes.length;
+
   useEffect(() => {
     try {
       localStorage.setItem("cn_bookmarks", JSON.stringify(bookmarks));
@@ -519,6 +527,7 @@ export default function App() {
 
   const toggleBookmark = (noteId: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
+    const currentSheetName = localStorage.getItem("cn_gas_sheet_name") || "Notes";
     setBookmarks(prev => {
       const exists = prev.some(b => b.noteId === noteId);
       if (exists) {
@@ -531,7 +540,7 @@ export default function App() {
           scrollRatio = container.scrollTop / container.scrollHeight;
         }
         toast("しおりを挟みました（現在の表示位置を記憶） 🔖");
-        return [...prev, { noteId, scrollRatio, timestamp: Date.now() }];
+        return [...prev, { noteId, sheetName: currentSheetName, scrollRatio, timestamp: Date.now() }];
       }
     });
   };
@@ -2030,6 +2039,7 @@ $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$
       onConfirm: () => {
         const nextList = notes.filter(n => n.id !== id);
         setNotes(nextList);
+        setBookmarks(prev => prev.filter(b => b.noteId !== id));
         
         let nextActiveId = activeId;
         if (activeId === id) {
@@ -7904,9 +7914,9 @@ const renderMarkdownToElements = (contentStr: string) => {
                     >
                       <span className="text-amber-400 text-sm shrink-0 select-none">🔖</span>
                       <span className="portrait:hidden">しおり</span>
-                      {bookmarkedIds.length > 0 && (
+                      {currentSheetBookmarkCount > 0 && (
                         <span className="bg-amber-500 text-black text-[10px] font-bold px-1 py-0.2 rounded-full min-w-[16px] text-center">
-                          {bookmarkedIds.length}
+                          {currentSheetBookmarkCount}
                         </span>
                       )}
                     </button>
@@ -9596,7 +9606,7 @@ const renderMarkdownToElements = (contentStr: string) => {
             <div className="flex justify-between items-center p-4 border-b border-[var(--border2)] bg-[#1c2128]">
               <h2 className="text-sm font-bold text-white flex items-center gap-2">
                 <span className="text-amber-400 text-sm shrink-0 select-none">🔖</span>
-                しおりを挟んだノート一覧 ({bookmarkedIds.length}件)
+                しおりを挟んだノート一覧 ({currentSheetBookmarkCount}件)
               </h2>
               <button
                 onClick={() => setIsBookmarksModalOpen(false)}
@@ -9607,72 +9617,85 @@ const renderMarkdownToElements = (contentStr: string) => {
             </div>
             
             <div className="p-4 overflow-y-auto flex-1 flex flex-col gap-2">
-              {bookmarkedIds.length === 0 ? (
+              {currentSheetBookmarkCount === 0 ? (
                 <div className="text-center py-10 text-[var(--subtle)] text-xs flex flex-col items-center gap-2">
                   <Bookmark className="w-8 h-8 text-gray-600 stroke-1" />
-                  <p>しおりが挟まれたノートはありません。<br />各ノートの「しおり」ボタンを押して登録できます。</p>
+                  <p>このシートにしおりが挟まれたノートはありません。<br />各ノートの「しおり」ボタンを押して登録できます。</p>
                 </div>
               ) : (
-                notes
-                  .filter(n => bookmarkedIds.includes(n.id))
-                  .map(n => {
-                    const folderName = getFolder(n);
-                    const displayDate = getNoteDisplayDate(n);
-                    return (
-                      <div
-                        key={n.id}
-                        onClick={() => {
-                          selectNote(n.id);
-                          setIsBookmarksModalOpen(false);
-                          const bm = bookmarks.find(b => b.noteId === n.id);
-                          if (bm && typeof bm.scrollRatio === "number") {
-                            setTimeout(() => {
-                              const container = previewRef.current || editorRef.current;
-                              if (container) {
-                                container.scrollTo({
-                                  top: bm.scrollRatio * container.scrollHeight,
-                                  behavior: "smooth"
-                                });
-                              }
-                            }, 150);
-                          }
-                        }}
-                        className="group flex items-center justify-between p-3 bg-[#1c2128] hover:bg-[#21262d] border border-[var(--border2)] hover:border-[var(--purple)] rounded-lg cursor-pointer transition-all"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                          <Bookmark className="w-4 h-4 text-amber-400 fill-amber-400 shrink-0" />
-                          <div className="min-w-0 flex-1">
-                            <div className="text-xs font-bold text-white truncate">{n.title}</div>
-                            <div className="text-[10px] text-[var(--subtle)] flex items-center gap-2 mt-0.5">
-                              <span className="bg-[#30363d] px-1.5 py-0.5 rounded text-gray-300">{folderName}</span>
-                              {displayDate && <span className="font-mono">{displayDate}</span>}
-                            </div>
+                currentSheetBookmarkedNotes.map(n => {
+                  const folderName = getFolder(n);
+                  const displayDate = getNoteDisplayDate(n);
+                  return (
+                    <div
+                      key={n.id}
+                      onClick={() => {
+                        selectNote(n.id);
+                        setIsBookmarksModalOpen(false);
+                        const bm = bookmarks.find(b => b.noteId === n.id);
+                        if (bm && typeof bm.scrollRatio === "number") {
+                          setTimeout(() => {
+                            const container = previewRef.current || editorRef.current;
+                            if (container) {
+                              container.scrollTo({
+                                top: bm.scrollRatio * container.scrollHeight,
+                                behavior: "smooth"
+                              });
+                            }
+                          }, 150);
+                        }
+                      }}
+                      className="group flex items-center justify-between p-3 bg-[#1c2128] hover:bg-[#21262d] border border-[var(--border2)] hover:border-[var(--purple)] rounded-lg cursor-pointer transition-all"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <Bookmark className="w-4 h-4 text-amber-400 fill-amber-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-bold text-white truncate">{n.title}</div>
+                          <div className="text-[10px] text-[var(--subtle)] flex items-center gap-2 mt-0.5">
+                            <span className="bg-[#30363d] px-1.5 py-0.5 rounded text-gray-300">{folderName}</span>
+                            {displayDate && <span className="font-mono">{displayDate}</span>}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleBookmark(n.id);
-                            }}
-                            className="text-gray-400 hover:text-red-400 p-1.5 rounded hover:bg-[#30363d] cursor-pointer transition-colors"
-                            title="しおりを外す"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
                       </div>
-                    );
-                  })
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleBookmark(n.id);
+                          }}
+                          className="text-gray-400 hover:text-red-400 p-1.5 rounded hover:bg-[#30363d] cursor-pointer transition-colors"
+                          title="しおりを外す"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
               )}
             </div>
 
-            <div className="p-3 border-t border-[var(--border2)] bg-[#1c2128] flex justify-end">
+            <div className="p-3 border-t border-[var(--border2)] bg-[#1c2128] flex items-center justify-between gap-2">
+              {bookmarks.length > currentSheetBookmarkCount ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBookmarks(prev => prev.filter(b => notes.some(n => n.id === b.noteId)));
+                    toast("現在のシート以外の不要なしおりデータを整理しました 🧹");
+                  }}
+                  className="text-[11px] text-[var(--subtle)] hover:text-amber-300 underline cursor-pointer truncate"
+                  title="現在のシートに存在しない古いしおりや他シートのしおりデータをストレージから削除します"
+                >
+                  他シートの不要なしおりデータを整理 ({bookmarks.length - currentSheetBookmarkCount}件)
+                </button>
+              ) : (
+                <div />
+              )}
               <button
                 type="button"
                 onClick={() => setIsBookmarksModalOpen(false)}
-                className="px-4 py-1.5 text-xs bg-[var(--surface)] hover:bg-[var(--border)] text-white rounded font-medium cursor-pointer transition-colors"
+                className="px-4 py-1.5 text-xs bg-[var(--surface)] hover:bg-[var(--border)] text-white rounded font-medium cursor-pointer transition-colors shrink-0"
               >
                 閉じる
               </button>
