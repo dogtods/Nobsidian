@@ -21,8 +21,20 @@ import {
   prepareNotes,
   verdictSentence,
   getAllKeywordsStats,
-  KeywordStat
+  scanAllKeywordsLag,
+  KeywordScanItem
 } from "../utils/lagCorrelation";
+import {
+  Search,
+  ArrowRight,
+  Zap,
+  TrendingUp,
+  Filter,
+  CheckCircle2,
+  AlertCircle,
+  Clock,
+  Sparkles
+} from "lucide-react";
 
 interface Props {
   links: CausalLink[];
@@ -123,10 +135,10 @@ const OverlayChart: React.FC<{
   );
 };
 
-/* ---------------- Panel ---------------- */
+/* ---------------- Main Panel Component ---------------- */
 
 const CausalLagPanel: React.FC<Props> = ({ links, notes }) => {
-  const [analysisType, setAnalysisType] = useState<"causal" | "keyword-pair">("causal");
+  const [analysisType, setAnalysisType] = useState<"causal" | "keyword-pair" | "scan">("scan");
   const [mode, setMode] = useState<MatchMode>("keywords");
   const [pre, setPre] = useState<Preprocess>("diff");
   const [maxLag, setMaxLag] = useState(8);
@@ -137,6 +149,21 @@ const CausalLagPanel: React.FC<Props> = ({ links, notes }) => {
   const [batch, setBatch] = useState<{ sig: string; items: { key: string; source: string; target: string; a: LagAnalysis }[] } | null>(null);
   const [batchBusy, setBatchBusy] = useState(false);
   const topRef = useRef<HTMLDivElement>(null);
+
+  // 全キーワード自動スキャン用 State
+  const [scanResult, setScanResult] = useState<{
+    items: KeywordScanItem[];
+    totalCandidates: number;
+    totalPairs: number;
+    analyzedPairs: number;
+    sig: string;
+  } | null>(null);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanMinCount, setScanMinCount] = useState<number>(3);
+  const [scanFilter, setScanFilter] = useState<"all" | "significant" | "lead" | "positive">("all");
+  const [scanSort, setScanSort] = useState<"abs_r" | "pos_r" | "p_value" | "lag">("abs_r");
+  const [scanSearch, setScanSearch] = useState("");
+  const [visibleCount, setVisibleCount] = useState(30);
 
   const prepared = useMemo(() => prepareNotes(notes, mode), [notes, mode]);
   const keywordStats = useMemo(() => getAllKeywordsStats(prepared), [prepared]);
@@ -195,6 +222,72 @@ const CausalLagPanel: React.FC<Props> = ({ links, notes }) => {
     }, 30);
   };
 
+  // 全キーワード自動スキャンの実行
+  const handleRunScan = () => {
+    setScanBusy(true);
+    setTimeout(() => {
+      const res = scanAllKeywordsLag(prepared, {
+        minCount: scanMinCount,
+        minNonzeroWeeks: 2,
+        maxLag,
+        pre,
+        maxCandidates: 60
+      });
+      setScanResult({
+        ...res,
+        sig: `${mode}|${pre}|${maxLag}|${scanMinCount}|${notes.length}`
+      });
+      setScanBusy(false);
+      setVisibleCount(30);
+    }, 40);
+  };
+
+  // スキャン結果の絞り込みとソート
+  const filteredScanItems = useMemo(() => {
+    if (!scanResult) return [];
+    let list = scanResult.items;
+
+    if (scanSearch.trim()) {
+      const q = scanSearch.trim().toLowerCase();
+      list = list.filter(item =>
+        item.termA.toLowerCase().includes(q) ||
+        item.termB.toLowerCase().includes(q)
+      );
+    }
+
+    if (scanFilter === "significant") {
+      list = list.filter(item => item.significant);
+    } else if (scanFilter === "lead") {
+      list = list.filter(item => item.peakLag > 0);
+    } else if (scanFilter === "positive") {
+      list = list.filter(item => item.peakR > 0);
+    }
+
+    const sorted = [...list];
+    if (scanSort === "abs_r") {
+      sorted.sort((a, b) => Math.abs(b.peakR) - Math.abs(a.peakR));
+    } else if (scanSort === "pos_r") {
+      sorted.sort((a, b) => b.peakR - a.peakR);
+    } else if (scanSort === "p_value") {
+      sorted.sort((a, b) => a.pValue - b.pValue || Math.abs(b.peakR) - Math.abs(a.peakR));
+    } else if (scanSort === "lag") {
+      sorted.sort((a, b) => b.peakLag - a.peakLag || Math.abs(b.peakR) - Math.abs(a.peakR));
+    }
+
+    return sorted;
+  }, [scanResult, scanSearch, scanFilter, scanSort]);
+
+  // ランキング項目をクリックして詳細グラフへジャンプ
+  const handleInspectPair = (termA: string, termB: string, rawLag: number) => {
+    setAnalysisType("keyword-pair");
+    setKeywordA(termA);
+    setKeywordB(termB);
+    setShiftOverride(rawLag);
+    setTimeout(() => {
+      topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 60);
+  };
+
   const datedPct = prepared.totalNotes > 0 ? Math.round((prepared.datedNotes / prepared.totalNotes) * 100) : 0;
   const warnings: string[] = [];
   if (prepared.totalNotes > 0 && prepared.datedNotes < prepared.totalNotes)
@@ -212,23 +305,32 @@ const CausalLagPanel: React.FC<Props> = ({ links, notes }) => {
     <div className="space-y-4 max-w-4xl mx-auto">
       <div ref={topRef} />
 
-      {/* 分析モード切り替えタブ */}
-      <div className="flex items-center gap-2 bg-[#161b22] p-1.5 rounded-xl border border-[var(--border)]">
+      {/* 分析モード切り替えタブ (3パターン) */}
+      <div className="flex flex-wrap items-center gap-1.5 bg-[#161b22] p-1.5 rounded-xl border border-[var(--border)]">
         <button
-          onClick={() => { setAnalysisType("causal"); setShiftOverride(null); }}
-          className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-            analysisType === "causal" ? "bg-blue-600 text-white shadow-md" : "text-[var(--muted)] hover:text-white"
+          onClick={() => { setAnalysisType("scan"); }}
+          className={`flex-1 min-w-[130px] py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+            analysisType === "scan" ? "bg-purple-600 text-white shadow-md" : "text-[var(--muted)] hover:text-white"
           }`}
         >
-          🔗 因果リンクを分析（{edges.length}件）
+          <Zap className="w-3.5 h-3.5" />
+          <span>⚡ 全自動スキャン・ランキング</span>
         </button>
         <button
           onClick={() => { setAnalysisType("keyword-pair"); setShiftOverride(null); }}
-          className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+          className={`flex-1 min-w-[130px] py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
             analysisType === "keyword-pair" ? "bg-emerald-600 text-white shadow-md" : "text-[var(--muted)] hover:text-white"
           }`}
         >
-          🔑 記事キーワードで共起・ラグ分析（{keywordStats.length}語）
+          <span>🔑 2語を手動で比較（{keywordStats.length}語）</span>
+        </button>
+        <button
+          onClick={() => { setAnalysisType("causal"); setShiftOverride(null); }}
+          className={`flex-1 min-w-[130px] py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+            analysisType === "causal" ? "bg-blue-600 text-white shadow-md" : "text-[var(--muted)] hover:text-white"
+          }`}
+        >
+          <span>🔗 因果リンクを分析（{edges.length}件）</span>
         </button>
       </div>
 
@@ -258,9 +360,9 @@ const CausalLagPanel: React.FC<Props> = ({ links, notes }) => {
         ))}
       </div>
 
-      {/* 条件 */}
+      {/* 条件設定 */}
       <div className={cardCls}>
-        <h3 className="text-sm font-bold text-[var(--bright)]">⚙ 条件</h3>
+        <h3 className="text-sm font-bold text-[var(--bright)]">⚙ 集計・分析条件</h3>
         <label className="block space-y-1 text-xs">
           <span className="font-semibold text-[var(--bright)]">用語の数え方</span>
           <select value={mode} onChange={e => { setMode(e.target.value as MatchMode); setShiftOverride(null); }} className={selectCls}>
@@ -271,135 +373,348 @@ const CausalLagPanel: React.FC<Props> = ({ links, notes }) => {
           <label className="space-y-1">
             <span className="block font-semibold text-[var(--bright)]">前処理</span>
             <select value={pre} onChange={e => { setPre(e.target.value as Preprocess); setShiftOverride(null); }} className={selectCls}>
-              <option value="diff">階差（前週との変化）</option>
-              <option value="raw">そのまま（件数）</option>
+              <option value="diff">階差（前週との変化・トレンド除去）</option>
+              <option value="raw">そのまま（週次言及数）</option>
             </select>
           </label>
           <label className="space-y-1">
-            <span className="block font-semibold text-[var(--bright)]">最大ラグ</span>
+            <span className="block font-semibold text-[var(--bright)]">最大ラグ範囲</span>
             <select value={maxLag} onChange={e => { setMaxLag(Number(e.target.value)); setShiftOverride(null); }} className={selectCls}>
               {[4, 8, 12].map(n => <option key={n} value={n}>±{n}週</option>)}
             </select>
           </label>
         </div>
-        <p className="text-[10px] text-[var(--muted)]">
-          既定の「階差」は、共通の上昇・下降トレンドによる見せかけの相関を減らします。
-        </p>
       </div>
 
-      {/* 選択エリア: 因果リンク or キーワードペア自由選択 */}
-      <div className={cardCls}>
-        {analysisType === "causal" ? (
-          <>
-            <h3 className="text-sm font-bold text-[var(--bright)]">🔗 リンクを選んで確認</h3>
-            {edges.length === 0 ? (
-              <div className="text-xs text-[var(--muted)] py-4 text-center">因果リンクがありません。</div>
-            ) : (
-              <select
-                value={selectedEdge?.key || ""}
-                onChange={e => { setSelKey(e.target.value); setShiftOverride(null); }}
-                className={selectCls}
-              >
-                {edges.map(e => (
-                  <option key={e.key} value={e.key}>{e.source} ➔ {e.target}</option>
-                ))}
-              </select>
-            )}
-          </>
-        ) : (
-          <>
-            <h3 className="text-sm font-bold text-[var(--bright)]">🔑 記事キーワードのペアを自由に選んでラグ分析</h3>
-            <p className="text-[11px] text-[var(--muted)]">
-              毎記事で抽出されるキーワードや共起語の中から2つ選び、タイムラグを持った連動関係を検証できます。
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <label className="space-y-1 text-xs">
-                <span className="font-semibold text-emerald-400">A（原因・先行候補）</span>
-                <select
-                  value={keywordA}
-                  onChange={e => { setKeywordA(e.target.value); setShiftOverride(null); }}
-                  className={selectCls}
-                >
-                  {keywordStats.map(s => (
-                    <option key={s.term} value={s.term}>
-                      {s.term}（計{s.totalCount}件 / {s.nonzeroWeeks}週）
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="space-y-1 text-xs">
-                <span className="font-semibold text-blue-400">B（結果・後行候補）</span>
-                <select
-                  value={keywordB}
-                  onChange={e => { setKeywordB(e.target.value); setShiftOverride(null); }}
-                  className={selectCls}
-                >
-                  {keywordStats.map(s => (
-                    <option key={s.term} value={s.term}>
-                      {s.term}（計{s.totalCount}件 / {s.nonzeroWeeks}週）
-                    </option>
-                  ))}
-                </select>
-              </label>
+      {/* ---------------- モード 1: 全自動スキャン & ランキング ---------------- */}
+      {analysisType === "scan" && (
+        <div className={cardCls}>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] pb-3">
+            <div>
+              <h3 className="text-sm font-bold text-purple-300 flex items-center gap-1.5">
+                <Zap className="w-4 h-4 text-purple-400" />
+                <span>全キーワード自動スキャン & 先行・後続ランキング</span>
+              </h3>
+              <p className="text-[11px] text-[var(--muted)] mt-0.5">
+                登録されたキーワードの全組み合わせを総当たりで計算し、時間差で連動するペアを特定します。
+              </p>
             </div>
-          </>
-        )}
+            <button
+              type="button"
+              onClick={handleRunScan}
+              disabled={scanBusy || keywordStats.length < 2}
+              className="px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 disabled:opacity-50 text-white font-bold text-xs rounded-lg transition-all shadow-md flex items-center gap-2 cursor-pointer shrink-0"
+            >
+              <Zap className={`w-3.5 h-3.5 ${scanBusy ? "animate-spin" : ""}`} />
+              <span>{scanBusy ? "全ペア計算中..." : scanResult ? "再スキャンする" : "⚡ 自動スキャンを実行"}</span>
+            </button>
+          </div>
 
-        {(analysisType === "causal" && edges.length > 0) || (analysisType === "keyword-pair" && keywordA && keywordB) ? (
-          <>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-[var(--muted)] pt-2">
-              <span><span className="text-emerald-400 font-bold">A</span> {sourceName}：{analysis.totalA}件・{analysis.nzA}週に登場</span>
-              <span><span className="text-blue-400 font-bold">B</span> {targetName}：{analysis.totalB}件・{analysis.nzB}週に登場</span>
-            </div>
-
-            {analysis.status === "insufficient" ? (
-              <div className="text-xs text-amber-300 bg-amber-950/30 border border-amber-500/30 rounded p-3 leading-relaxed">
-                <b>データ不足:</b> {analysis.reason}
-                {mode === "keywords" && "。語が【キーワード】欄に載っていない可能性があります。数え方を「タイトル・要約への部分一致」に変えてみてください。"}
+          {/* スキャン前の案内 または スキャン結果 */}
+          {!scanResult ? (
+            <div className="bg-[#12161c] border border-[var(--border2)] rounded-lg p-6 text-center space-y-3">
+              <Sparkles className="w-8 h-8 text-purple-400 mx-auto opacity-70" />
+              <div className="text-xs text-[var(--bright)] font-semibold">
+                ボタンを押すと、候補となるキーワード（{keywordStats.filter(s => s.totalCount >= scanMinCount).length}語）の全ペアを自動計算します
               </div>
-            ) : (
-              <>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${VERDICT_CLS[analysis.verdict]}`}>{VERDICT_LABEL[analysis.verdict]}</span>
-                  {analysis.peak && (
-                    <span className="text-[11px] text-[var(--muted)]">
-                      ピーク: ラグ {analysis.peak.lag > 0 ? `+${analysis.peak.lag}` : analysis.peak.lag}週 / r={analysis.peak.r.toFixed(2)} / {formatP(analysis.pValue ?? 1)}
-                    </span>
+              <p className="text-[11px] text-[var(--muted)] max-w-lg mx-auto">
+                各キーワードの週次出現系列をキャッシュして一括計算するため、通常1秒以内に完了します。
+                見つかった候補から「詳細グラフ」を開いて波形を確認できます。
+              </p>
+              <div className="flex items-center justify-center gap-2 pt-1 text-xs">
+                <span className="text-[var(--muted)]">分析対象の最小出現数:</span>
+                <select
+                  value={scanMinCount}
+                  onChange={e => setScanMinCount(Number(e.target.value))}
+                  className="bg-[#161b22] border border-[var(--border2)] rounded px-2 py-1 text-xs text-[var(--bright)]"
+                >
+                  <option value={2}>2件以上（より多くの候補）</option>
+                  <option value={3}>3件以上（推奨・ノイズ除去）</option>
+                  <option value={5}>5件以上（高頻度語のみ）</option>
+                </select>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {/* スキャン概要バッジ */}
+              <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-[#161b22] rounded-lg border border-[var(--border2)] text-xs">
+                <div className="flex items-center gap-3 text-[11px] text-[var(--muted)]">
+                  <span>対象語: <b className="text-[var(--bright)]">{scanResult.totalCandidates}語</b></span>
+                  <span>総ペア: <b className="text-[var(--bright)]">{scanResult.totalPairs.toLocaleString()}組</b></span>
+                  <span>計算完了: <b className="text-emerald-400">{scanResult.analyzedPairs.toLocaleString()}組</b></span>
+                </div>
+                <div className="text-[11px] text-[var(--muted)]">
+                  ヒット: <b className="text-purple-300">{filteredScanItems.length}件</b>
+                </div>
+              </div>
+
+              {/* フィルター & ソート バー */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                {/* キーワード検索 */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-[var(--muted)] absolute left-2.5 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="キーワードで絞り込み..."
+                    value={scanSearch}
+                    onChange={e => setScanSearch(e.target.value)}
+                    className="w-full bg-[#161b22] border border-[var(--border2)] rounded pl-8 pr-3 py-1.5 text-xs text-[var(--bright)] placeholder-[var(--muted)] focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+
+                {/* 絞り込み条件 */}
+                <select
+                  value={scanFilter}
+                  onChange={e => setScanFilter(e.target.value as any)}
+                  className="bg-[#161b22] border border-[var(--border2)] rounded px-2 py-1.5 text-xs text-[var(--bright)]"
+                >
+                  <option value="all">すべての関係を表示</option>
+                  <option value="significant">有意な相関のみ (p &lt; 0.05)</option>
+                  <option value="lead">時間差のある先行関係のみ (ラグ≠0)</option>
+                  <option value="positive">正の相関のみ (r &gt; 0)</option>
+                </select>
+
+                {/* 並び替え */}
+                <select
+                  value={scanSort}
+                  onChange={e => setScanSort(e.target.value as any)}
+                  className="bg-[#161b22] border border-[var(--border2)] rounded px-2 py-1.5 text-xs text-[var(--bright)]"
+                >
+                  <option value="abs_r">相関の強さ順 (|r| 降順)</option>
+                  <option value="pos_r">正の相関順 (r 降順)</option>
+                  <option value="p_value">統計的有意性順 (p 昇順)</option>
+                  <option value="lag">先行週数の大きさ順 (ラグ 降順)</option>
+                </select>
+              </div>
+
+              {/* ランキング一覧 */}
+              {filteredScanItems.length === 0 ? (
+                <div className="bg-[#12161c] border border-[var(--border2)] rounded-lg p-6 text-center text-xs text-[var(--muted)]">
+                  条件に一致するキーワードペアがありませんでした。
+                </div>
+              ) : (
+                <div className="space-y-2.5 pt-1">
+                  {filteredScanItems.slice(0, visibleCount).map((item, idx) => {
+                    const isPositive = item.peakR > 0;
+                    return (
+                      <div
+                        key={item.id}
+                        className="p-3 bg-[#12161c] hover:bg-[#161b22] border border-[var(--border2)] hover:border-gray-600 rounded-lg transition-colors flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3"
+                      >
+                        <div className="space-y-1.5 min-w-0 flex-1">
+                          {/* 順位 & 先行 ➔ 後続 表示 */}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="w-6 h-5 rounded bg-[#21262d] text-gray-300 font-mono text-[10px] font-bold flex items-center justify-center shrink-0">
+                              #{idx + 1}
+                            </span>
+
+                            {item.direction === "simultaneous" ? (
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-bold text-xs text-blue-300 bg-blue-950/40 px-2 py-0.5 rounded border border-blue-500/30">
+                                  {item.termA}
+                                </span>
+                                <span className="text-[10px] text-gray-400">⬌</span>
+                                <span className="font-bold text-xs text-blue-300 bg-blue-950/40 px-2 py-0.5 rounded border border-blue-500/30">
+                                  {item.termB}
+                                </span>
+                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300 font-semibold">
+                                  同時連動 (0週)
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-bold text-xs text-emerald-300 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/30 flex items-center gap-1">
+                                  <span className="text-[9px] text-emerald-400 font-bold">先行</span>
+                                  {item.leader}
+                                </span>
+                                <ArrowRight className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                <span className="font-bold text-xs text-blue-300 bg-blue-950/40 px-2 py-0.5 rounded border border-blue-500/30 flex items-center gap-1">
+                                  <span className="text-[9px] text-blue-400 font-bold">後続</span>
+                                  {item.follower}
+                                </span>
+                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold">
+                                  +{item.peakLag}週 先行
+                                </span>
+                              </div>
+                            )}
+
+                            {item.significant && (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
+                                有意 (p &lt; 0.05)
+                              </span>
+                            )}
+                          </div>
+
+                          {/* 統計指標 pills */}
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[var(--muted)]">
+                            <span>
+                              相関係数:{" "}
+                              <b className={isPositive ? "text-emerald-400" : "text-rose-400"}>
+                                r = {item.peakR > 0 ? `+${item.peakR.toFixed(2)}` : item.peakR.toFixed(2)}
+                              </b>
+                            </span>
+                            <span>p値: <b>{formatP(item.pValue)}</b></span>
+                            <span className="text-gray-400">
+                              出現: {item.termA} ({item.countA}件/{item.nzA}週) ⬌ {item.termB} ({item.countB}件/{item.nzB}週)
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* アクション: 詳細グラフを見る */}
+                        <button
+                          type="button"
+                          onClick={() => handleInspectPair(item.termA, item.termB, item.rawLag)}
+                          className="shrink-0 px-3 py-1.5 bg-[#21262d] hover:bg-[#30363d] text-blue-400 hover:text-white font-semibold text-xs rounded-md border border-[var(--border2)] transition-colors cursor-pointer flex items-center gap-1"
+                          title="この2語を詳細画面にセットし、週次言及の重ね合わせグラフとスライダーを確認します"
+                        >
+                          <TrendingUp className="w-3.5 h-3.5" />
+                          <span>詳細グラフ</span>
+                        </button>
+                      </div>
+                    );
+                  })}
+
+                  {/* もっと見る ボタン */}
+                  {filteredScanItems.length > visibleCount && (
+                    <div className="text-center pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setVisibleCount(prev => prev + 30)}
+                        className="px-4 py-1.5 bg-[#21262d] hover:bg-[#30363d] text-xs text-[var(--bright)] rounded-md border border-[var(--border2)] transition-colors cursor-pointer"
+                      >
+                        さらに表示（残り {filteredScanItems.length - visibleCount}件）
+                      </button>
+                    </div>
                   )}
-                </div>
-                <p className="text-xs text-[var(--text)] leading-relaxed">{verdictSentence(analysis, sourceName, targetName)}</p>
 
-                <div className="bg-[#0d1117] border border-[var(--border2)] rounded-lg p-2">
-                  <div className="text-[10px] text-[var(--muted)] mb-1">ラグ相関（橙=有意な正、赤点線=有意ライン、白枠=ピーク）</div>
-                  <LagBarChart rows={analysis.rows} peak={analysis.peak} />
-                </div>
-
-                <div className="bg-[#0d1117] border border-[var(--border2)] rounded-lg p-2 space-y-2">
-                  <div className="text-[10px] text-[var(--muted)]">週次の言及数（Bをずらして重ねて見る）</div>
-                  <OverlayChart weekKeys={prepared.weekKeys} a={seriesA} b={seriesB} shift={shift} nameA={sourceName} nameB={targetName} />
-                  <div className="flex items-center gap-2 text-xs">
-                    <input
-                      type="range"
-                      min={-maxLag}
-                      max={maxLag}
-                      step={1}
-                      value={shift}
-                      onChange={e => setShiftOverride(Number(e.target.value))}
-                      className="flex-1"
-                    />
-                    <span className="w-24 text-right text-[var(--bright)] font-bold">B を {shift > 0 ? `${shift}週戻す` : shift < 0 ? `${-shift}週進める` : "ずらさない"}</span>
+                  {/* 統計上の注意書き */}
+                  <div className="p-2.5 bg-[#0d1117] rounded-lg border border-[var(--border2)] text-[10px] text-[var(--muted)] leading-relaxed">
+                    💡 <b>統計解釈の注意事項</b>:
+                    上記は記事の週次言及数をもとに計算された「時間的な連動・先行の統計的候補」です。
+                    共通の社会動向（外生要因）による見せかけの相関も含まれ得るため、因果関係の証明ではありません。「詳細グラフ」を開いて実際の波形と記事内容を確認してください。
                   </div>
-                  {analysis.peak && shift !== analysis.peak.lag && (
-                    <button onClick={() => setShiftOverride(null)} className="text-[11px] text-blue-400 underline cursor-pointer">
-                      ピーク（{analysis.peak.lag > 0 ? `+${analysis.peak.lag}` : analysis.peak.lag}週）に合わせる
-                    </button>
-                  )}
                 </div>
-              </>
-            )}
-          </>
-        ) : null}
-      </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ---------------- モード 2: 2語を手動で比較 / モード 3: 因果リンク分析 ---------------- */}
+      {(analysisType === "causal" || analysisType === "keyword-pair") && (
+        <div className={cardCls}>
+          {analysisType === "causal" ? (
+            <>
+              <h3 className="text-sm font-bold text-[var(--bright)]">🔗 リンクを選んで確認</h3>
+              {edges.length === 0 ? (
+                <div className="text-xs text-[var(--muted)] py-4 text-center">因果リンクがありません。</div>
+              ) : (
+                <select
+                  value={selectedEdge?.key || ""}
+                  onChange={e => { setSelKey(e.target.value); setShiftOverride(null); }}
+                  className={selectCls}
+                >
+                  {edges.map(e => (
+                    <option key={e.key} value={e.key}>{e.source} ➔ {e.target}</option>
+                  ))}
+                </select>
+              )}
+            </>
+          ) : (
+            <>
+              <h3 className="text-sm font-bold text-[var(--bright)]">🔑 記事キーワードのペアを自由に選んでラグ分析</h3>
+              <p className="text-[11px] text-[var(--muted)]">
+                抽出されたキーワード群から2語を選び、タイムラグを持った連動関係をグラフとスライダーで検証できます。
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="space-y-1 text-xs">
+                  <span className="font-semibold text-emerald-400">A（原因・先行候補）</span>
+                  <select
+                    value={keywordA}
+                    onChange={e => { setKeywordA(e.target.value); setShiftOverride(null); }}
+                    className={selectCls}
+                  >
+                    {keywordStats.map(s => (
+                      <option key={s.term} value={s.term}>
+                        {s.term}（計{s.totalCount}件 / {s.nonzeroWeeks}週）
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-1 text-xs">
+                  <span className="font-semibold text-blue-400">B（結果・後行候補）</span>
+                  <select
+                    value={keywordB}
+                    onChange={e => { setKeywordB(e.target.value); setShiftOverride(null); }}
+                    className={selectCls}
+                  >
+                    {keywordStats.map(s => (
+                      <option key={s.term} value={s.term}>
+                        {s.term}（計{s.totalCount}件 / {s.nonzeroWeeks}週）
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </>
+          )}
+
+          {(analysisType === "causal" && edges.length > 0) || (analysisType === "keyword-pair" && keywordA && keywordB) ? (
+            <>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-[var(--muted)] pt-2">
+                <span><span className="text-emerald-400 font-bold">A</span> {sourceName}：{analysis.totalA}件・{analysis.nzA}週に登場</span>
+                <span><span className="text-blue-400 font-bold">B</span> {targetName}：{analysis.totalB}件・{analysis.nzB}週に登場</span>
+              </div>
+
+              {analysis.status === "insufficient" ? (
+                <div className="text-xs text-amber-300 bg-amber-950/30 border border-amber-500/30 rounded p-3 leading-relaxed">
+                  <b>データ不足:</b> {analysis.reason}
+                  {mode === "keywords" && "。語が【キーワード】欄に載っていない可能性があります。数え方を「タイトル・要約への部分一致」に変えてみてください。"}
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${VERDICT_CLS[analysis.verdict]}`}>{VERDICT_LABEL[analysis.verdict]}</span>
+                    {analysis.peak && (
+                      <span className="text-[11px] text-[var(--muted)]">
+                        ピーク: ラグ {analysis.peak.lag > 0 ? `+${analysis.peak.lag}` : analysis.peak.lag}週 / r={analysis.peak.r.toFixed(2)} / {formatP(analysis.pValue ?? 1)}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-[var(--text)] leading-relaxed">{verdictSentence(analysis, sourceName, targetName)}</p>
+
+                  <div className="bg-[#0d1117] border border-[var(--border2)] rounded-lg p-2">
+                    <div className="text-[10px] text-[var(--muted)] mb-1">ラグ相関（橙=有意な正、赤点線=有意ライン、白枠=ピーク）</div>
+                    <LagBarChart rows={analysis.rows} peak={analysis.peak} />
+                  </div>
+
+                  <div className="bg-[#0d1117] border border-[var(--border2)] rounded-lg p-2 space-y-2">
+                    <div className="text-[10px] text-[var(--muted)]">週次の言及数（Bをずらして重ねて見る）</div>
+                    <OverlayChart weekKeys={prepared.weekKeys} a={seriesA} b={seriesB} shift={shift} nameA={sourceName} nameB={targetName} />
+                    <div className="flex items-center gap-2 text-xs">
+                      <input
+                        type="range"
+                        min={-maxLag}
+                        max={maxLag}
+                        step={1}
+                        value={shift}
+                        onChange={e => setShiftOverride(Number(e.target.value))}
+                        className="flex-1 cursor-pointer"
+                      />
+                      <span className="w-24 text-right text-[var(--bright)] font-bold">B を {shift > 0 ? `${shift}週戻す` : shift < 0 ? `${-shift}週進める` : "ずらさない"}</span>
+                    </div>
+                    {analysis.peak && shift !== analysis.peak.lag && (
+                      <button onClick={() => setShiftOverride(null)} className="text-[11px] text-blue-400 underline cursor-pointer">
+                        ピーク（{analysis.peak.lag > 0 ? `+${analysis.peak.lag}` : analysis.peak.lag}週）に合わせる
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </>
+          ) : null}
+        </div>
+      )}
 
       {/* 一括判定 (因果リンクモードのみ) */}
       {analysisType === "causal" && edges.length > 0 && (

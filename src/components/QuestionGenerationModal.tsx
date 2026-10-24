@@ -130,6 +130,8 @@ export default function QuestionGenerationModal({
   const [isQuizAnswerRevealed, setIsQuizAnswerRevealed] = useState<boolean>(false);
   const [externalAiQuestionInput, setExternalAiQuestionInput] = useState<string>("");
   const [showExternalAiPromptBox, setShowExternalAiPromptBox] = useState<boolean>(false);
+  const [pastedExplanation, setPastedExplanation] = useState<string>("");
+  const [isSavingExplanationToSheet, setIsSavingExplanationToSheet] = useState<boolean>(false);
   const [isSessionCompleted, setIsSessionCompleted] = useState<boolean>(false);
 
   // ローカルキャッシュの永続化 (変更時に即時一時記憶)
@@ -647,6 +649,50 @@ export default function QuestionGenerationModal({
     });
   };
 
+  // 外部AIの図解・解説を取り込んでスプレッドシートに保存・更新
+  const handleSaveDiagramExplanation = async (saveMode: "replace" | "append") => {
+    if (sessionQuestions.length === 0) return;
+    const currentQ = sessionQuestions[currentQuizIndex];
+    if (!currentQ || !pastedExplanation.trim()) return;
+
+    const newExplanation = saveMode === "replace"
+      ? pastedExplanation.trim()
+      : `${currentQ.explanation ? currentQ.explanation + "\n\n" : ""}【図解・詳細解説】\n${pastedExplanation.trim()}`;
+
+    const updatedQ: LearningQuestion = {
+      ...currentQ,
+      explanation: newExplanation,
+      updatedAt: Date.now()
+    };
+
+    // 1. 【即時一時記憶 (0ms)】ローカル状態とキャッシュを即時更新
+    setSavedQuestions(prev => prev.map(q => q.id === currentQ.id ? updatedQ : q));
+    setSessionQuestions(prev => prev.map(q => q.id === currentQ.id ? updatedQ : q));
+    setPastedExplanation("");
+
+    // 2. スプレッドシートへ同期保存
+    setIsSavingExplanationToSheet(true);
+    try {
+      const res = await learningApiPost({
+        action: "saveLearningQuestions",
+        questions: [updatedQ]
+      });
+
+      if (res && res.success) {
+        onSaveToast("🎉 図解・解説を学習用スプレッドシートに保存・更新しました！");
+        const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        setLastSyncedTime(timeStr);
+        localStorage.setItem("cn_learning_last_synced_at", timeStr);
+      } else {
+        throw new Error(res?.error || "スプレッドシートへの保存でエラーが発生しました。");
+      }
+    } catch (err: any) {
+      onSaveToast(`保存エラー: ${err.message || String(err)}`);
+    } finally {
+      setIsSavingExplanationToSheet(false);
+    }
+  };
+
   // クイズの解答判定とレビュー記録 (即時UI更新0ms + バックグラウンド非同期同期)
   const handleSubmitQuizReview = (rating: number) => {
     if (sessionQuestions.length === 0) return;
@@ -719,6 +765,7 @@ export default function QuestionGenerationModal({
     setEssayAnswer("");
     setIsQuizAnswerRevealed(false);
     setExternalAiQuestionInput("");
+    setPastedExplanation("");
     setShowExternalAiPromptBox(false);
 
     // 3. 【非同期バックグラウンド同期】SpreadSheetへ裏でログ保存（操作を一切止めない）
@@ -1768,6 +1815,8 @@ export default function QuestionGenerationModal({
                           setEssayAnswer("");
                           setIsQuizAnswerRevealed(false);
                           setShowExternalAiPromptBox(false);
+                          setPastedExplanation("");
+                          setExternalAiQuestionInput("");
                         }
                       } else {
                         // 左スワイプ → 次の未解答問題へ
@@ -1777,6 +1826,8 @@ export default function QuestionGenerationModal({
                           setEssayAnswer("");
                           setIsQuizAnswerRevealed(false);
                           setShowExternalAiPromptBox(false);
+                          setPastedExplanation("");
+                          setExternalAiQuestionInput("");
                         }
                       }
                     }
@@ -1800,6 +1851,8 @@ export default function QuestionGenerationModal({
                               setEssayAnswer("");
                               setIsQuizAnswerRevealed(false);
                               setShowExternalAiPromptBox(false);
+                              setPastedExplanation("");
+                              setExternalAiQuestionInput("");
                             }
                           }}
                           className={`flex items-center gap-1 font-semibold transition px-2 py-0.5 rounded ${
@@ -1827,6 +1880,8 @@ export default function QuestionGenerationModal({
                               setEssayAnswer("");
                               setIsQuizAnswerRevealed(false);
                               setShowExternalAiPromptBox(false);
+                              setPastedExplanation("");
+                              setExternalAiQuestionInput("");
                             }
                           }}
                           className={`flex items-center gap-1 font-semibold transition px-2 py-0.5 rounded ${
@@ -2002,54 +2057,86 @@ export default function QuestionGenerationModal({
                       ) : (
                         /* Revealed explanation & self evaluation */
                         <div className="space-y-3 pt-3 border-t border-[#30363d] animate-[fadeIn_0.15s_ease-out]">
-                          <div className="bg-[#0d1117] border border-[#30363d] rounded-xl p-3 space-y-2 text-xs">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-emerald-400">模範解答:</span>
-                              <span className="text-white font-bold">{currentQ.correctAnswer}</span>
+                          <div className="bg-[#0d1117] border border-[#30363d] rounded-xl p-3.5 space-y-2.5 text-xs">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-emerald-400">模範解答:</span>
+                                <span className="text-white font-bold bg-emerald-950/40 border border-emerald-500/30 px-2 py-0.5 rounded text-xs">
+                                  {currentQ.correctAnswer}
+                                </span>
+                              </div>
+                              {currentQ.explanation && (currentQ.explanation.includes("➔") || currentQ.explanation.includes("->") || currentQ.explanation.includes("▼") || currentQ.explanation.includes("【図解") || currentQ.explanation.includes("──") || currentQ.explanation.includes("│")) && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950/60 text-cyan-300 border border-cyan-500/30 font-medium flex items-center gap-1">
+                                  <span>📊 図解あり</span>
+                                </span>
+                              )}
                             </div>
                             <div>
-                              <span className="font-bold text-gray-400">解説: </span>
-                              <span className="text-gray-300 text-[11px]">{currentQ.explanation}</span>
+                              <div className="font-bold text-gray-400 mb-1 flex items-center justify-between">
+                                <span>解説・図解:</span>
+                              </div>
+                              <div className="text-gray-200 text-xs whitespace-pre-wrap font-sans leading-relaxed bg-[#161b22] p-3 rounded-lg border border-[#30363d]/80 max-h-72 overflow-y-auto selection:bg-indigo-500/30">
+                                {currentQ.explanation || <span className="text-gray-500 italic">解説は未登録です。</span>}
+                              </div>
                             </div>
                             {currentQ.evidence && currentQ.evidence.quote && (
-                              <div className="pt-1 text-[11px] text-indigo-300 italic border-t border-[#30363d]/60">
-                                📌 <strong>出題根拠:</strong> 「{currentQ.evidence.quote}」
+                              <div className="pt-2 text-[11px] text-indigo-300 italic border-t border-[#30363d]/60 flex items-start gap-1.5">
+                                <span className="shrink-0">📌</span>
+                                <div>
+                                  <strong>出題根拠:</strong> 「{currentQ.evidence.quote}」
+                                </div>
                               </div>
                             )}
                           </div>
 
-                          {/* External AI Prompt Generator for unclear parts (#10) */}
-                          <div className="bg-[#0b0f15] border border-indigo-500/40 rounded-xl p-3 space-y-2.5 text-xs">
+                          {/* External AI Prompt Generator & Sheet Saver */}
+                          <div className="bg-[#0b0f15] border border-indigo-500/40 rounded-xl p-3.5 space-y-3 text-xs">
                             <div className="flex items-center justify-between">
-                              <span className="font-bold text-indigo-300 flex items-center gap-1.5">
-                                <span>🤖 答えや解説が分からない場合（外部AI用プロンプト生成）</span>
-                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-indigo-300 flex items-center gap-1.5">
+                                  <span>🤖 外部AIに図解解説を依頼 ＆ スプレッドシート保存</span>
+                                </span>
+                                <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-900/40 text-indigo-200 border border-indigo-500/30">
+                                  図解特化プロンプト
+                                </span>
+                              </div>
                               <button
                                 type="button"
                                 onClick={() => setShowExternalAiPromptBox(!showExternalAiPromptBox)}
-                                className="text-[10px] text-indigo-400 hover:text-indigo-300 bg-indigo-950/60 border border-indigo-500/30 px-2.5 py-0.5 rounded cursor-pointer transition"
+                                className="text-xs text-indigo-300 hover:text-white bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/40 px-3 py-1 rounded-lg cursor-pointer transition flex items-center gap-1 font-semibold"
                               >
-                                {showExternalAiPromptBox ? "閉じる" : "質問する"}
+                                {showExternalAiPromptBox ? "閉じる ▲" : "図解を依頼・保存する ▼"}
                               </button>
                             </div>
 
                             {showExternalAiPromptBox && (
-                              <div className="space-y-2 pt-1 border-t border-[#30363d]/60">
-                                <p className="text-gray-300 text-[11px] leading-relaxed">
-                                  分からない部分や質問したい内容を以下に記入し、プロンプトをコピーしてChatGPT、Claude、Gemini等の外部AIに貼り付けてください。
-                                </p>
-                                <textarea
-                                  rows={2}
-                                  value={externalAiQuestionInput}
-                                  onChange={(e) => setExternalAiQuestionInput(e.target.value)}
-                                  placeholder="例: 選択肢Bの概念と正解の選択肢の違いがいまいち分かりません。わかりやすく噛み砕いて解説してください。"
-                                  className="w-full p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-xs text-white outline-none focus:border-indigo-500 leading-relaxed"
-                                />
-                                <div className="flex justify-end">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const promptText = `あなたは優秀なAI家庭教師です。以下の学習問題の解答・解説を読みましたが、分からない点があります。分かりやすく詳しく解説してください。
+                              <div className="space-y-3 pt-2 border-t border-[#30363d]/60">
+                                {/* Step 1: Prompt Generation */}
+                                <div className="space-y-2 bg-[#12161c] p-3 rounded-lg border border-[#30363d]">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-bold text-gray-200 text-xs flex items-center gap-1.5">
+                                      <span className="w-4 h-4 rounded-full bg-indigo-600 text-white text-[10px] flex items-center justify-center font-bold">1</span>
+                                      <span>外部AI用プロンプトの作成（視覚的図解・短文指定）</span>
+                                    </span>
+                                    <span className="text-[10px] text-gray-400">長文防止 / 図解・フローチャート指定</span>
+                                  </div>
+                                  <p className="text-gray-300 text-[11px] leading-relaxed">
+                                    質問や特に知りたい論点があれば入力し、「プロンプトをコピー」を押してChatGPT、Claude、Gemini等の外部AIに貼り付けてください。
+                                  </p>
+                                  <textarea
+                                    rows={2}
+                                    value={externalAiQuestionInput}
+                                    onChange={(e) => setExternalAiQuestionInput(e.target.value)}
+                                    placeholder="例: 正解と選択肢Bの概念の違いを対比させてください。矢印を使った因果フローで図解してください。"
+                                    className="w-full p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-xs text-white outline-none focus:border-indigo-500 leading-relaxed placeholder:text-gray-600"
+                                  />
+                                  <div className="flex justify-end">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const promptText = `あなたは卓越した要約力と図解力を持つプロの教育AIです。
+以下の学習問題について、長文テキストでのダラダラとした説明は避け、
+【一目で構造がわかる視覚的な図解（関係図・矢印フロー・対比マップ・箇条書き）】を中心に分かりやすく解説してください。
 
 【対象ノート】
 タイトル: ${currentQ.noteTitle || "学習ノート"}
@@ -2062,23 +2149,102 @@ ${currentQ.choices ? `【選択肢】\n${currentQ.choices.map(c => `${c.label}: 
 【模範解答】
 ${currentQ.correctAnswer}
 
-【解説】
+【既存の解説】
 ${currentQ.explanation}
 
 ${currentQ.evidence?.quote ? `【出題根拠引用】\n「${currentQ.evidence.quote}」` : ""}
 
-【ユーザーの質問・分からない点】
-${externalAiQuestionInput.trim() || "この問題と解説の背景概念、およびなぜこの解答になるのかのプロセスについて、初心者にもわかりやすく噛み砕いて説明してください。"}
+【ユーザーの質問・知りたい点】
+${externalAiQuestionInput.trim() || "なぜこの解答になるのかのロジックや、選択肢の違い・概念の全体像を視覚的に把握したいです。"}
 
-上記について、丁寧なステップバイステップの解説をお願いします。`;
+────────────────────────
+【出力形式の指定（厳守）】
+長文の説明は不要です。以下の3構成で、スマホやPCでも等幅で見やすい図解テキストを出力してください。
 
-                                      navigator.clipboard.writeText(promptText);
-                                      onSaveToast("✓ 外部AI用の質問プロンプトをクリップボードにコピーしました！ChatGPTやClaudeに貼り付けてご活用ください。");
-                                    }}
-                                    className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition cursor-pointer flex items-center gap-1.5 shadow"
-                                  >
-                                    <span>📋 質問プロンプトをコピー</span>
-                                  </button>
+1. 📌【コア結論（1行）】
+正解となる決定的な理由を1文でズバリ要約。
+
+2. 📊【視覚的図解（矢印・フロー・対比マップ）】
+テキストで概念の前後関係、因果の流れ、選択肢の対比をアスキーアート・記号（[概念A] ➔ [概念B] ➔ [結果]、▼、├── などのツリー構造）を使ってわかりやすく描いてください。
+
+3. 🔍【要点まとめ（箇条書き3点以内）】
+・正解のポイント: ...
+・誤り選択肢との決定的な違い: ...
+・覚えておくべきキーワード: ...`;
+
+                                        navigator.clipboard.writeText(promptText);
+                                        onSaveToast("✓ 外部AI用の視覚的図解プロンプトをコピーしました！ChatGPTやClaudeに貼り付けて解説を生成してください。");
+                                      }}
+                                      className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition cursor-pointer flex items-center gap-1.5 shadow"
+                                    >
+                                      <span>📋 視覚的図解プロンプトをコピー</span>
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* Step 2: Paste Diagram & Save to Spreadsheet */}
+                                <div className="space-y-2 bg-[#12161c] p-3 rounded-lg border border-[#30363d]">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-bold text-gray-200 text-xs flex items-center gap-1.5">
+                                      <span className="w-4 h-4 rounded-full bg-emerald-600 text-white text-[10px] flex items-center justify-center font-bold">2</span>
+                                      <span>AIの回答（図解テキスト）をスプレッドシートへ登録</span>
+                                    </span>
+                                    <span className="text-[10px] text-emerald-400 font-medium">スプレッドシート「Questions」へ保存</span>
+                                  </div>
+                                  <p className="text-gray-300 text-[11px] leading-relaxed">
+                                    外部AIが出力した図解・解説をそのまま以下に貼り付け、「保存」ボタンを押してください。スプレッドシートの解説列が自動更新されます。
+                                  </p>
+                                  <textarea
+                                    rows={4}
+                                    value={pastedExplanation}
+                                    onChange={(e) => setPastedExplanation(e.target.value)}
+                                    placeholder={`外部AIの図解出力をここに貼り付け\n\n例:\n📌【コア結論】...\n\n📊【視覚的図解】\n[金利上昇] ➔ [借入コスト増] ➔ [住宅着工減少]\n       └── [銀行収益改善]\n\n🔍【要点まとめ】\n・...`}
+                                    className="w-full p-2.5 bg-[#0d1117] border border-[#30363d] rounded-lg text-xs text-white outline-none focus:border-emerald-500 leading-relaxed font-mono placeholder:text-gray-600 placeholder:font-sans"
+                                  />
+
+                                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                                    <span className="text-[10px] text-gray-400">
+                                      ※保存すると即座に現在の解説画面が更新され、復習時にも表示されます。
+                                    </span>
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        disabled={!pastedExplanation.trim() || isSavingExplanationToSheet}
+                                        onClick={() => handleSaveDiagramExplanation("append")}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 ${
+                                          !pastedExplanation.trim() || isSavingExplanationToSheet
+                                            ? "bg-[#161b22] text-gray-500 border-[#30363d] cursor-not-allowed"
+                                            : "bg-gray-800 hover:bg-gray-700 text-gray-200 border-gray-600 hover:text-white"
+                                        }`}
+                                        title="既存の解説を残し、末尾に貼り付けた図解を追加保存します"
+                                      >
+                                        <span>📎 既存解説の末尾に追記</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={!pastedExplanation.trim() || isSavingExplanationToSheet}
+                                        onClick={() => handleSaveDiagramExplanation("replace")}
+                                        className={`px-4 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow ${
+                                          !pastedExplanation.trim() || isSavingExplanationToSheet
+                                            ? "bg-emerald-950/40 text-emerald-700/50 border border-emerald-900/30 cursor-not-allowed"
+                                            : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/50"
+                                        }`}
+                                        title="貼り付けた図解で既存の解説を上書き保存します"
+                                      >
+                                        {isSavingExplanationToSheet ? (
+                                          <>
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                            <span>シートへ保存中...</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Save className="w-3.5 h-3.5" />
+                                            <span>💾 図解をスプレッドシートに保存（上書き）</span>
+                                          </>
+                                        )}
+                                      </button>
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
                             )}

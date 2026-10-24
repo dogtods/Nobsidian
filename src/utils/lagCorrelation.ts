@@ -342,3 +342,149 @@ export function verdictSentence(a: LagAnalysis, source: string, target: string):
       return "偶然では説明しにくい連動（p<0.05）は見つかりませんでした。語の数え方や前処理を変えると見え方が変わる場合があります。";
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* 全キーワード自動スキャン & ランキング                                  */
+/* ------------------------------------------------------------------ */
+
+export interface KeywordScanItem {
+  id: string;
+  termA: string;
+  termB: string;
+  leader: string;      // 先行している方の語（lag > 0 なら A、lag < 0 なら B、lag === 0 なら A）
+  follower: string;    // 後続している方の語
+  peakLag: number;     // leader から follower への先行週数 (0 以上の値)
+  rawLag: number;      // 元の a ➔ b のラグ
+  peakR: number;       // ピーク時の相関係数 r
+  pValue: number;      // 補正後 p 値
+  significant: boolean; // p < ALPHA かつ r > 0
+  countA: number;
+  countB: number;
+  nzA: number;
+  nzB: number;
+  weeks: number;
+  direction: "forward" | "reverse" | "simultaneous" | "none";
+  directionLabel: string;
+  analysis: LagAnalysis;
+}
+
+export interface KeywordScanOptions {
+  minCount?: number;
+  minNonzeroWeeks?: number;
+  maxLag?: number;
+  pre?: Preprocess;
+  maxCandidates?: number;
+}
+
+export function scanAllKeywordsLag(
+  prepared: PreparedData,
+  options?: KeywordScanOptions
+): {
+  items: KeywordScanItem[];
+  totalCandidates: number;
+  totalPairs: number;
+  analyzedPairs: number;
+} {
+  const minCount = options?.minCount ?? MIN_TOTAL;
+  const minNonzeroWeeks = options?.minNonzeroWeeks ?? MIN_NONZERO_WEEKS;
+  const maxLag = options?.maxLag ?? 8;
+  const pre = options?.pre ?? "diff";
+  const maxCandidates = options?.maxCandidates ?? 60;
+
+  const allStats = getAllKeywordsStats(prepared);
+  // 出現頻度・出現週数が閾値以上のキーワードに絞り込み
+  const candidateStats = allStats
+    .filter(s => s.totalCount >= minCount && s.nonzeroWeeks >= minNonzeroWeeks)
+    .slice(0, maxCandidates);
+
+  const totalCandidates = candidateStats.length;
+  const totalPairs = (totalCandidates * (totalCandidates - 1)) / 2;
+
+  if (totalCandidates < 2) {
+    return { items: [], totalCandidates, totalPairs: 0, analyzedPairs: 0 };
+  }
+
+  // 週次出現配列をマップに保持
+  const seriesMap = new Map<string, number[]>();
+  candidateStats.forEach(s => {
+    seriesMap.set(s.term, s.weekly);
+  });
+
+  const items: KeywordScanItem[] = [];
+
+  for (let i = 0; i < candidateStats.length; i++) {
+    for (let j = i + 1; j < candidateStats.length; j++) {
+      const statA = candidateStats[i];
+      const statB = candidateStats[j];
+      const a = seriesMap.get(statA.term)!;
+      const b = seriesMap.get(statB.term)!;
+
+      const analysis = analyzeLag(a, b, maxLag, pre);
+      if (analysis.status !== "ok" || !analysis.peak) continue;
+
+      const peak = analysis.peak;
+      const pVal = analysis.pValue ?? 1;
+      const rawLag = peak.lag;
+      let leader = statA.term;
+      let follower = statB.term;
+      let leadWeeks = 0;
+      let direction: "forward" | "reverse" | "simultaneous" | "none" = "none";
+      let directionLabel = "有意な連動なし";
+
+      if (rawLag > 0) {
+        leader = statA.term;
+        follower = statB.term;
+        leadWeeks = rawLag;
+        direction = "forward";
+        directionLabel = `「${leader}」が「${follower}」に +${leadWeeks}週 先行`;
+      } else if (rawLag < 0) {
+        leader = statB.term;
+        follower = statA.term;
+        leadWeeks = -rawLag;
+        direction = "reverse";
+        directionLabel = `「${leader}」が「${follower}」に +${leadWeeks}週 先行`;
+      } else {
+        leader = statA.term;
+        follower = statB.term;
+        leadWeeks = 0;
+        direction = "simultaneous";
+        directionLabel = `「${statA.term}」と「${statB.term}」が同時期に連動 (ラグ0週)`;
+      }
+
+      items.push({
+        id: `${statA.term}__${statB.term}`,
+        termA: statA.term,
+        termB: statB.term,
+        leader,
+        follower,
+        peakLag: leadWeeks,
+        rawLag,
+        peakR: peak.r,
+        pValue: pVal,
+        significant: pVal < ALPHA && peak.r > 0,
+        countA: statA.totalCount,
+        countB: statB.totalCount,
+        nzA: statA.nonzeroWeeks,
+        nzB: statB.nonzeroWeeks,
+        weeks: analysis.weeks,
+        direction,
+        directionLabel,
+        analysis
+      });
+    }
+  }
+
+  // 初期ソート: 有意なものを優先しつつ、相関の絶対値降順
+  items.sort((x, y) => {
+    if (x.significant && !y.significant) return -1;
+    if (!x.significant && y.significant) return 1;
+    return Math.abs(y.peakR) - Math.abs(x.peakR);
+  });
+
+  return {
+    items,
+    totalCandidates,
+    totalPairs,
+    analyzedPairs: items.length
+  };
+}
