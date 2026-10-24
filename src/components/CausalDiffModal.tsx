@@ -85,7 +85,7 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
     return DUMMY_CAUSAL_LINKS;
   });
 
-  const [activeTab, setActiveTab] = useState<"new-only" | "all-weeks" | "report" | "external" | "lag">("new-only");
+  const [activeTab, setActiveTab] = useState<"new-only" | "all-weeks" | "folder-view" | "report" | "external" | "lag">("new-only");
   const [searchQuery, setSearchQuery] = useState("");
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractStatus, setExtractStatus] = useState("");
@@ -656,6 +656,7 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
           {([
             ["new-only", "✨ 新着エッジ", "bg-emerald-500/20 text-emerald-300 border border-emerald-500/50"],
             ["all-weeks", `📅 週次推移一覧 (${links.length})`, "bg-[#388bfd33] text-[#58a6ff] border border-[#388bfd55]"],
+            ["folder-view", "📁 フォルダ別ブラウザ", "bg-blue-500/20 text-blue-300 border border-blue-500/50"],
             ["external", "🔌 外部AI連携", "bg-amber-500/20 text-amber-300 border border-amber-500/50"],
             ["lag", "📈 ラグ相関", "bg-purple-500/20 text-purple-300 border border-purple-500/50"],
             ["report", "📄 レポートプレビュー", "bg-[#388bfd33] text-[#58a6ff] border border-[#388bfd55]"]
@@ -671,7 +672,7 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
             </button>
           ))}
         </div>
-        <div className={`relative ${activeTab === "new-only" || activeTab === "all-weeks" ? "" : "hidden"}`}>
+        <div className={`relative ${activeTab === "new-only" || activeTab === "all-weeks" || activeTab === "folder-view" ? "" : "hidden"}`}>
           <Search className="w-3.5 h-3.5 text-[var(--muted)] absolute left-2.5 top-2.5" />
           <input
             type="text"
@@ -752,6 +753,135 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* Tab: Folder View Browser */}
+        {activeTab === "folder-view" && (
+          <div className="space-y-6">
+            <div className="p-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-[var(--bright)] mb-1 flex items-center gap-2">
+                  <span>📁</span> フォルダ別因果リンクブラウザ
+                </h3>
+                <p className="text-xs text-[var(--muted)]">
+                  各因果リンクをフォルダ（{folderColumnSource === "N" ? "N列基準" : "D列基準"}）ごとに分類して一覧表示します。見たいテーマのリンクをすばやく探せます。
+                </p>
+              </div>
+              <div className="flex bg-[#0d1117] p-0.5 rounded-lg border border-[var(--border2)] text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => handleFolderColumnChange("D")}
+                  className={`px-3 py-1 rounded-md transition-all cursor-pointer ${folderColumnSource === "D" ? "bg-blue-600 text-white font-bold" : "text-gray-400 hover:text-white"}`}
+                >
+                  D列基準
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleFolderColumnChange("N")}
+                  className={`px-3 py-1 rounded-md transition-all cursor-pointer ${folderColumnSource === "N" ? "bg-blue-600 text-white font-bold" : "text-gray-400 hover:text-white"}`}
+                >
+                  N列基準
+                </button>
+              </div>
+            </div>
+
+            {(() => {
+              const q = searchQuery.trim().toLowerCase();
+              const filteredLinks = links.filter(l => {
+                const folder = getLinkFolder(l);
+                if (!q) return true;
+                return (
+                  l.source.toLowerCase().includes(q) ||
+                  l.target.toLowerCase().includes(q) ||
+                  l.reason.toLowerCase().includes(q) ||
+                  l.articleTitle.toLowerCase().includes(q) ||
+                  folder.toLowerCase().includes(q)
+                );
+              });
+
+              const map: Record<string, CausalLink[]> = {};
+              filteredLinks.forEach(l => {
+                const f = getLinkFolder(l);
+                if (!map[f]) map[f] = [];
+                map[f].push(l);
+              });
+
+              const entries = Object.entries(map).sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+
+              if (entries.length === 0) {
+                return (
+                  <div className="text-center py-12 text-xs text-[var(--muted)] bg-[var(--surface)] rounded-xl border border-[var(--border)]">
+                    該当する因果リンクが見つかりません。
+                  </div>
+                );
+              }
+
+              return entries.map(([folder, fLinks]) => {
+                const isCollapsed = collapsedFolderMap[`folder-view-${folder}`];
+                return (
+                  <div key={folder} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden shadow-sm">
+                    <div
+                      onClick={() => toggleFolderCollapse(`folder-view-${folder}`)}
+                      className="px-4 py-3 bg-[#161b22] border-b border-[var(--border)] flex items-center justify-between cursor-pointer hover:bg-[#21262d] transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Folder className="w-4 h-4 text-amber-400" />
+                        <span className="font-bold text-sm text-[var(--bright)]">{folder}</span>
+                        <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 font-bold text-[10px]">
+                          {fLinks.length}件
+                        </span>
+                      </div>
+                      <span className="text-xs text-[var(--muted)] flex items-center gap-1">
+                        {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                        {isCollapsed ? "展開" : "折りたたむ"}
+                      </span>
+                    </div>
+
+                    {!isCollapsed && (
+                      <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {fLinks.map(link => (
+                          <div key={link.id} className="p-4 bg-[#0d1117] border border-[var(--border2)] rounded-xl space-y-3 relative group">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="px-2.5 py-1 rounded bg-blue-600/20 text-blue-300 font-bold text-xs">
+                                  {link.source}
+                                </span>
+                                <ArrowRight className="w-4 h-4 text-emerald-400 shrink-0" />
+                                <span className="px-2.5 py-1 rounded bg-emerald-600/20 text-emerald-300 font-bold text-xs">
+                                  {link.target}
+                                </span>
+                              </div>
+                              <button
+                                onClick={() => handleDeleteLink(link.id)}
+                                className="text-[var(--muted)] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 cursor-pointer"
+                                title="削除"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            <p className="text-xs text-[var(--text)] leading-relaxed bg-[#161b22] p-2.5 rounded border border-[var(--border2)]">
+                              {link.reason}
+                            </p>
+
+                            <div className="flex justify-between items-center text-[10px] text-[var(--muted)] pt-1 border-t border-[var(--border2)]/50">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-300 font-semibold border border-blue-500/30 shrink-0">
+                                  {link.weekLabel}
+                                </span>
+                                <span className="truncate">参照: {link.articleTitle}</span>
+                              </div>
+                              {link.isNew && <span className="text-emerald-400 font-bold shrink-0">NEW ✨</span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              });
+            })()}
           </div>
         )}
 

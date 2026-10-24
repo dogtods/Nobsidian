@@ -186,11 +186,42 @@ export interface LagAnalysis {
   verdict: Verdict;
 }
 
-export const MIN_WEEKS = 20;
-export const MIN_TOTAL = 8;
-export const MIN_NONZERO_WEEKS = 6;
+export const MIN_WEEKS = 8;
+export const MIN_TOTAL = 3;
+export const MIN_NONZERO_WEEKS = 2;
 
 export const ALPHA = 0.05;
+
+export interface KeywordStat {
+  term: string;
+  totalCount: number;
+  nonzeroWeeks: number;
+  weekly: number[];
+}
+
+export function getAllKeywordsStats(data: PreparedData): KeywordStat[] {
+  const map = new Map<string, number[]>();
+  data.notes.forEach(n => {
+    n.terms.forEach(t => {
+      let arr = map.get(t);
+      if (!arr) {
+        arr = new Array<number>(data.weekKeys.length).fill(0);
+        map.set(t, arr);
+      }
+      arr[n.week] += 1;
+    });
+  });
+
+  const stats: KeywordStat[] = [];
+  map.forEach((weekly, term) => {
+    const totalCount = weekly.reduce((a, b) => a + b, 0);
+    const nonzeroWeeks = weekly.filter(v => v > 0).length;
+    stats.push({ term, totalCount, nonzeroWeeks, weekly });
+  });
+
+  stats.sort((a, b) => b.totalCount - a.totalCount || b.nonzeroWeeks - a.nonzeroWeeks);
+  return stats;
+}
 
 /** 標準正規の累積分布 (Abramowitz-Stegun 7.1.26 による erf 近似) */
 function normCdf(z: number): number {
