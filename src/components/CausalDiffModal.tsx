@@ -85,7 +85,7 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
     return DUMMY_CAUSAL_LINKS;
   });
 
-  const [activeTab, setActiveTab] = useState<"new-only" | "all-weeks" | "folder-view" | "report" | "external" | "lag">("new-only");
+  const [activeTab, setActiveTab] = useState<"all-weeks" | "external" | "lag">("all-weeks");
   const [searchQuery, setSearchQuery] = useState("");
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractStatus, setExtractStatus] = useState("");
@@ -113,13 +113,30 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
     } catch {}
   };
 
-  // 📅 週次推移一覧のフォルダ絞り込み & 表示形式（レイアウト）設定
-  const [selectedWeekFolder, setSelectedWeekFolder] = useState<string>("all");
-  const [weekViewLayout, setWeekViewLayout] = useState<"by-week-folder" | "by-folder-timeline" | "by-week-flat">("by-week-folder");
+  // 📅 週次推移一覧（フォルダ別、デフォルトで畳み込み）
   const [collapsedFolderMap, setCollapsedFolderMap] = useState<Record<string, boolean>>({});
 
   const toggleFolderCollapse = (key: string) => {
-    setCollapsedFolderMap(prev => ({ ...prev, [key]: !prev[key] }));
+    setCollapsedFolderMap(prev => {
+      const cur = prev[key] ?? true;
+      return { ...prev, [key]: !cur };
+    });
+  };
+
+  const handleCollapseAllFolders = () => {
+    const map: Record<string, boolean> = {};
+    folderTimelineGroups.forEach(fg => {
+      map[`folder-${fg.folder}`] = true;
+    });
+    setCollapsedFolderMap(map);
+  };
+
+  const handleExpandAllFolders = () => {
+    const map: Record<string, boolean> = {};
+    folderTimelineGroups.forEach(fg => {
+      map[`folder-${fg.folder}`] = false;
+    });
+    setCollapsedFolderMap(map);
   };
 
   const [promptMaxChars, setPromptMaxChars] = useState(500);
@@ -215,65 +232,12 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
     })).filter(g => g.newLinks.length > 0 || g.continuingLinks.length > 0);
   }, [weeklyGroups, searchQuery]);
 
-  // 週 ➔ フォルダ別グループ化データ（Layout 1: by-week-folder 用）
-  const weeklyGroupsWithFolders = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return weeklyGroups.map(group => {
-      // 検索とフォルダ絞り込み
-      const filteredLinks = group.links.filter(l => {
-        const folder = getLinkFolder(l);
-        if (selectedWeekFolder !== "all" && folder !== selectedWeekFolder) return false;
-        if (!q) return true;
-        return (
-          l.source.toLowerCase().includes(q) ||
-          l.target.toLowerCase().includes(q) ||
-          l.reason.toLowerCase().includes(q) ||
-          l.articleTitle.toLowerCase().includes(q) ||
-          folder.toLowerCase().includes(q)
-        );
-      });
 
-      // フォルダごとにグループ化
-      const folderMap: Record<string, { newLinks: CausalLink[]; continuingLinks: CausalLink[]; allLinks: CausalLink[] }> = {};
-      filteredLinks.forEach(l => {
-        const folder = getLinkFolder(l);
-        if (!folderMap[folder]) {
-          folderMap[folder] = { newLinks: [], continuingLinks: [], allLinks: [] };
-        }
-        folderMap[folder].allLinks.push(l);
-        if (l.isNew) {
-          folderMap[folder].newLinks.push(l);
-        } else {
-          folderMap[folder].continuingLinks.push(l);
-        }
-      });
-
-      const folderGroups = Object.entries(folderMap).map(([folder, data]) => ({
-        folder,
-        links: data.allLinks,
-        newLinks: data.newLinks,
-        continuingLinks: data.continuingLinks
-      })).sort((a, b) => b.links.length - a.links.length || a.folder.localeCompare(b.folder));
-
-      const newLinks = filteredLinks.filter(l => l.isNew);
-      const continuingLinks = filteredLinks.filter(l => !l.isNew);
-
-      return {
-        ...group,
-        links: filteredLinks,
-        newLinks,
-        continuingLinks,
-        folderGroups
-      };
-    }).filter(g => g.links.length > 0);
-  }, [weeklyGroups, searchQuery, selectedWeekFolder, getLinkFolder]);
-
-  // フォルダ ➔ 週次推移データ（Layout 2: by-folder-timeline 用）
+  // フォルダ ➔ 週次推移データ（フォルダ別、週次推移を一覧）
   const folderTimelineGroups = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const filteredLinks = links.filter(l => {
       const folder = getLinkFolder(l);
-      if (selectedWeekFolder !== "all" && folder !== selectedWeekFolder) return false;
       if (!q) return true;
       return (
         l.source.toLowerCase().includes(q) ||
@@ -301,7 +265,7 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
         weeks: wGroups.filter(w => w.links.length > 0)
       };
     }).sort((a, b) => b.totalLinks - a.totalLinks || a.folder.localeCompare(b.folder));
-  }, [links, searchQuery, selectedWeekFolder, getLinkFolder]);
+  }, [links, searchQuery, getLinkFolder]);
 
   const existingTerms = useMemo(() => collectExistingTerms(links), [links]);
 
@@ -388,7 +352,7 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
     setPasteText("");
     setParsed(null);
     setExcluded(new Set());
-    setActiveTab("new-only");
+    setActiveTab("all-weeks");
   };
 
   const hasSample = links.some(l => l.origin === "sample" || l.id.startsWith("cl-"));
@@ -654,12 +618,9 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
           style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-x" } as React.CSSProperties}
         >
           {([
-            ["new-only", "✨ 新着エッジ", "bg-emerald-500/20 text-emerald-300 border border-emerald-500/50"],
             ["all-weeks", `📅 週次推移一覧 (${links.length})`, "bg-[#388bfd33] text-[#58a6ff] border border-[#388bfd55]"],
-            ["folder-view", "📁 フォルダ別ブラウザ", "bg-blue-500/20 text-blue-300 border border-blue-500/50"],
             ["external", "🔌 外部AI連携", "bg-amber-500/20 text-amber-300 border border-amber-500/50"],
-            ["lag", "📈 ラグ相関", "bg-purple-500/20 text-purple-300 border border-purple-500/50"],
-            ["report", "📄 レポートプレビュー", "bg-[#388bfd33] text-[#58a6ff] border border-[#388bfd55]"]
+            ["lag", "📈 ラグ相関", "bg-purple-500/20 text-purple-300 border border-purple-500/50"]
           ] as const).map(([key, label, activeCls]) => (
             <button
               key={key}
@@ -672,7 +633,7 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
             </button>
           ))}
         </div>
-        <div className={`relative ${activeTab === "new-only" || activeTab === "all-weeks" || activeTab === "folder-view" ? "" : "hidden"}`}>
+        <div className={`relative ${activeTab === "all-weeks" ? "" : "hidden"}`}>
           <Search className="w-3.5 h-3.5 text-[var(--muted)] absolute left-2.5 top-2.5" />
           <input
             type="text"
@@ -687,209 +648,13 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-6">
 
-        {/* Tab 1: New Edges Only */}
-        {activeTab === "new-only" && (
-          <div className="space-y-6">
-            <div className="p-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl">
-              <h3 className="text-sm font-bold text-[var(--bright)] mb-1 flex items-center gap-2">
-                <span>✨</span> 毎週の新着因果エッジ（過去に存在しなかった新興トレンド）
-              </h3>
-              <p className="text-xs text-[var(--muted)]">
-                例：「電力逼迫 ➔ 地熱・自営電源」のような、今期初めて表出した因果の矢印をピックアップしています。
-              </p>
-            </div>
 
-            {filteredGroups.map(group => {
-              if (group.newLinks.length === 0) return null;
-              return (
-                <div key={group.periodKey} className="space-y-3">
-                  <div className="flex items-center gap-2 border-b border-[var(--border)] pb-2">
-                    <Calendar className="w-4 h-4 text-emerald-400" />
-                    <span className="font-bold text-sm text-[var(--bright)]">{group.weekLabel}</span>
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold text-[10px]">
-                      新規 {group.newLinks.length}件
-                    </span>
-                  </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {group.newLinks.map(link => (
-                      <div key={link.id} className="p-4 bg-[var(--surface)] border border-emerald-500/30 rounded-xl shadow-md space-y-3 relative group">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="px-2.5 py-1 rounded bg-blue-600/20 text-blue-300 font-bold text-xs">
-                              {link.source}
-                            </span>
-                            <ArrowRight className="w-4 h-4 text-emerald-400 shrink-0" />
-                            <span className="px-2.5 py-1 rounded bg-emerald-600/20 text-emerald-300 font-bold text-xs">
-                              {link.target}
-                            </span>
-                          </div>
-                          <button
-                            onClick={() => handleDeleteLink(link.id)}
-                            className="text-[var(--muted)] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 cursor-pointer"
-                            title="削除"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-
-                        <p className="text-xs text-[var(--text)] leading-relaxed bg-[#161b22] p-2.5 rounded border border-[var(--border2)]">
-                          {link.reason}
-                        </p>
-
-                        <div className="flex justify-between items-center text-[10px] text-[var(--muted)] pt-1 border-t border-[var(--border2)]/50">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 font-semibold border border-amber-500/30 flex items-center gap-1 shrink-0">
-                              <Folder className="w-2.5 h-2.5" />
-                              <span>{getLinkFolder(link)}</span>
-                            </span>
-                            <span className="truncate">参照: {link.articleTitle}</span>
-                          </div>
-                          <span className="text-emerald-400 font-bold shrink-0">NEW ✨</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Tab: Folder View Browser */}
-        {activeTab === "folder-view" && (
-          <div className="space-y-6">
-            <div className="p-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-bold text-[var(--bright)] mb-1 flex items-center gap-2">
-                  <span>📁</span> フォルダ別因果リンクブラウザ
-                </h3>
-                <p className="text-xs text-[var(--muted)]">
-                  各因果リンクをフォルダ（{folderColumnSource === "N" ? "N列基準" : "D列基準"}）ごとに分類して一覧表示します。見たいテーマのリンクをすばやく探せます。
-                </p>
-              </div>
-              <div className="flex bg-[#0d1117] p-0.5 rounded-lg border border-[var(--border2)] text-xs font-semibold">
-                <button
-                  type="button"
-                  onClick={() => handleFolderColumnChange("D")}
-                  className={`px-3 py-1 rounded-md transition-all cursor-pointer ${folderColumnSource === "D" ? "bg-blue-600 text-white font-bold" : "text-gray-400 hover:text-white"}`}
-                >
-                  D列基準
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleFolderColumnChange("N")}
-                  className={`px-3 py-1 rounded-md transition-all cursor-pointer ${folderColumnSource === "N" ? "bg-blue-600 text-white font-bold" : "text-gray-400 hover:text-white"}`}
-                >
-                  N列基準
-                </button>
-              </div>
-            </div>
-
-            {(() => {
-              const q = searchQuery.trim().toLowerCase();
-              const filteredLinks = links.filter(l => {
-                const folder = getLinkFolder(l);
-                if (!q) return true;
-                return (
-                  l.source.toLowerCase().includes(q) ||
-                  l.target.toLowerCase().includes(q) ||
-                  l.reason.toLowerCase().includes(q) ||
-                  l.articleTitle.toLowerCase().includes(q) ||
-                  folder.toLowerCase().includes(q)
-                );
-              });
-
-              const map: Record<string, CausalLink[]> = {};
-              filteredLinks.forEach(l => {
-                const f = getLinkFolder(l);
-                if (!map[f]) map[f] = [];
-                map[f].push(l);
-              });
-
-              const entries = Object.entries(map).sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
-
-              if (entries.length === 0) {
-                return (
-                  <div className="text-center py-12 text-xs text-[var(--muted)] bg-[var(--surface)] rounded-xl border border-[var(--border)]">
-                    該当する因果リンクが見つかりません。
-                  </div>
-                );
-              }
-
-              return entries.map(([folder, fLinks]) => {
-                const isCollapsed = collapsedFolderMap[`folder-view-${folder}`];
-                return (
-                  <div key={folder} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden shadow-sm">
-                    <div
-                      onClick={() => toggleFolderCollapse(`folder-view-${folder}`)}
-                      className="px-4 py-3 bg-[#161b22] border-b border-[var(--border)] flex items-center justify-between cursor-pointer hover:bg-[#21262d] transition-colors"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Folder className="w-4 h-4 text-amber-400" />
-                        <span className="font-bold text-sm text-[var(--bright)]">{folder}</span>
-                        <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 font-bold text-[10px]">
-                          {fLinks.length}件
-                        </span>
-                      </div>
-                      <span className="text-xs text-[var(--muted)] flex items-center gap-1">
-                        {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                        {isCollapsed ? "展開" : "折りたたむ"}
-                      </span>
-                    </div>
-
-                    {!isCollapsed && (
-                      <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {fLinks.map(link => (
-                          <div key={link.id} className="p-4 bg-[#0d1117] border border-[var(--border2)] rounded-xl space-y-3 relative group">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="px-2.5 py-1 rounded bg-blue-600/20 text-blue-300 font-bold text-xs">
-                                  {link.source}
-                                </span>
-                                <ArrowRight className="w-4 h-4 text-emerald-400 shrink-0" />
-                                <span className="px-2.5 py-1 rounded bg-emerald-600/20 text-emerald-300 font-bold text-xs">
-                                  {link.target}
-                                </span>
-                              </div>
-                              <button
-                                onClick={() => handleDeleteLink(link.id)}
-                                className="text-[var(--muted)] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 cursor-pointer"
-                                title="削除"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-
-                            <p className="text-xs text-[var(--text)] leading-relaxed bg-[#161b22] p-2.5 rounded border border-[var(--border2)]">
-                              {link.reason}
-                            </p>
-
-                            <div className="flex justify-between items-center text-[10px] text-[var(--muted)] pt-1 border-t border-[var(--border2)]/50">
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <span className="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-300 font-semibold border border-blue-500/30 shrink-0">
-                                  {link.weekLabel}
-                                </span>
-                                <span className="truncate">参照: {link.articleTitle}</span>
-                              </div>
-                              {link.isNew && <span className="text-emerald-400 font-bold shrink-0">NEW ✨</span>}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              });
-            })()}
-          </div>
-        )}
-
-        {/* Tab 2: All Weeks Timeline */}
+        {/* Tab 2: All Weeks Timeline (週次推移一覧 - フォルダ別、デフォルトで畳み込み) */}
         {activeTab === "all-weeks" && (
           <div className="space-y-4">
-            {/* 2パターン フォルダ基準 & レイアウト & フィルター コントロールパネル */}
-            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4 space-y-3.5">
+            {/* フォルダ基準切り替え & 一括展開/畳み込みバー */}
+            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-3.5 sm:p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 {/* 2パターンのフォルダ基準切り替え */}
                 <div className="flex flex-wrap items-center gap-2">
@@ -927,259 +692,80 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
                   </div>
                 </div>
 
-                {/* 表示形式（レイアウト切替） */}
-                <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                  <span className="text-[var(--muted)] text-[11px] font-medium">表示形式:</span>
-                  <div className="flex bg-[#0d1117] p-0.5 rounded-lg border border-[var(--border2)] text-xs font-semibold">
-                    <button
-                      type="button"
-                      onClick={() => setWeekViewLayout("by-week-folder")}
-                      className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer flex items-center gap-1 ${
-                        weekViewLayout === "by-week-folder"
-                          ? "bg-blue-600 text-white shadow-xs font-bold"
-                          : "text-gray-400 hover:text-white"
-                      }`}
-                      title="週ごとにカードを分け、その中でフォルダ別にグループ化して見やすく整理します"
-                    >
-                      <Calendar className="w-3.5 h-3.5" />
-                      <span>📅 週 ➔ 📁 フォルダ別</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setWeekViewLayout("by-folder-timeline")}
-                      className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer flex items-center gap-1 ${
-                        weekViewLayout === "by-folder-timeline"
-                          ? "bg-amber-600 text-white shadow-xs font-bold"
-                          : "text-gray-400 hover:text-white"
-                      }`}
-                      title="フォルダ（テーマ・分野）ごとにカードをまとめ、週ごとの変化を縦断して見ます"
-                    >
-                      <FolderTree className="w-3.5 h-3.5" />
-                      <span>📁 フォルダ ➔ 📅 週次推移</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setWeekViewLayout("by-week-flat")}
-                      className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer flex items-center gap-1 ${
-                        weekViewLayout === "by-week-flat"
-                          ? "bg-[#30363d] text-white shadow-xs font-bold"
-                          : "text-gray-400 hover:text-white"
-                      }`}
-                      title="従来の週別フラット一覧（すべてのフォルダをフラットに表示）"
-                    >
-                      <Layers className="w-3.5 h-3.5" />
-                      <span>📋 フラット一覧</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* フォルダ絞り込みフィルター（Filter Pills） */}
-              <div className="pt-2 border-t border-[var(--border2)] flex flex-wrap items-center gap-1.5">
-                <span className="text-xs text-[var(--muted)] font-semibold shrink-0 flex items-center gap-1">
-                  <Filter className="w-3 h-3" />
-                  <span>絞り込み:</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setSelectedWeekFolder("all")}
-                  className={`px-2.5 py-1 rounded-full text-xs font-bold transition-all cursor-pointer ${
-                    selectedWeekFolder === "all"
-                      ? "bg-blue-600 text-white shadow-xs"
-                      : "bg-[#161b22] text-gray-400 border border-[var(--border2)] hover:text-white"
-                  }`}
-                >
-                  すべて ({links.length})
-                </button>
-                {activeFoldersWithCounts.map(({ folder, count }) => (
+                {/* 一括折りたたみ / 展開 ボタン */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-[var(--muted)]">
+                    {folderTimelineGroups.length} フォルダ / {links.length} 件
+                  </span>
                   <button
-                    key={folder}
                     type="button"
-                    onClick={() => setSelectedWeekFolder(folder)}
-                    className={`px-2.5 py-1 rounded-full text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                      selectedWeekFolder === folder
-                        ? "bg-amber-500 text-black shadow-xs font-extrabold"
-                        : "bg-[#161b22] text-amber-300/80 border border-amber-500/30 hover:bg-amber-500/10 hover:text-amber-200"
-                    }`}
+                    onClick={handleCollapseAllFolders}
+                    className="px-2.5 py-1 bg-[#21262d] hover:bg-[#30363d] text-[var(--muted)] hover:text-white rounded text-xs transition cursor-pointer"
                   >
-                    <Folder className="w-3 h-3" />
-                    <span>{folder}</span>
-                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                      selectedWeekFolder === folder ? "bg-black/20 text-black font-bold" : "bg-amber-950/70 text-amber-300 border border-amber-500/30"
-                    }`}>
-                      {count}
-                    </span>
+                    すべて畳む
                   </button>
-                ))}
+                  <button
+                    type="button"
+                    onClick={handleExpandAllFolders}
+                    className="px-2.5 py-1 bg-[#21262d] hover:bg-[#30363d] text-[var(--muted)] hover:text-white rounded text-xs transition cursor-pointer"
+                  >
+                    すべて展開
+                  </button>
+                </div>
               </div>
             </div>
 
             {/* Empty state */}
-            {((weekViewLayout === "by-folder-timeline" && folderTimelineGroups.length === 0) ||
-              (weekViewLayout !== "by-folder-timeline" && weeklyGroupsWithFolders.length === 0)) && (
+            {folderTimelineGroups.length === 0 && (
               <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-8 text-center space-y-3">
                 <p className="text-gray-400 text-xs">
-                  {selectedWeekFolder !== "all"
-                    ? `フォルダ「${selectedWeekFolder}」に該当する因果リンクが見つかりません。`
-                    : searchQuery
+                  {searchQuery
                     ? `検索ワード「${searchQuery}」に一致する因果リンクがありません。`
                     : "表示できる因果リンクがありません。"}
                 </p>
-                {(selectedWeekFolder !== "all" || searchQuery) && (
+                {searchQuery && (
                   <button
                     type="button"
-                    onClick={() => { setSelectedWeekFolder("all"); setSearchQuery(""); }}
+                    onClick={() => setSearchQuery("")}
                     className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-bold cursor-pointer transition"
                   >
-                    絞り込み・検索をリセット
+                    検索をリセット
                   </button>
                 )}
               </div>
             )}
 
-            {/* Layout 1: 📅 週 ➔ 📁 フォルダ別 */}
-            {weekViewLayout === "by-week-folder" && (
-              <div className="space-y-6">
-                {weeklyGroupsWithFolders.map(group => (
-                  <div key={group.periodKey} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 space-y-4">
-                    {/* 週ヘッダー */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] pb-3">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-blue-400 shrink-0" />
-                        <span className="font-bold text-sm text-[var(--bright)]">{group.weekLabel}</span>
-                        <span className="text-xs text-[var(--muted)] font-mono">({group.periodKey})</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold text-[10px]">
-                          新規 {group.newLinks.length}件
-                        </span>
-                        <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 font-bold text-[10px]">
-                          継続 {group.continuingLinks.length}件
-                        </span>
-                        <span className="px-2 py-0.5 rounded bg-[#30363d] text-gray-300 font-bold text-[10px]">
-                          計 {group.links.length}件
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* フォルダごとのグループ */}
-                    <div className="space-y-3">
-                      {group.folderGroups.map(fg => {
-                        const collapseKey = `${group.periodKey}-${fg.folder}`;
-                        const isCollapsed = collapsedFolderMap[collapseKey] ?? false;
-
-                        return (
-                          <div key={fg.folder} className="bg-[#12161c] border border-[var(--border2)] rounded-lg overflow-hidden">
-                            {/* フォルダタイトルバー（クリックで折りたたみ） */}
-                            <div
-                              onClick={() => toggleFolderCollapse(collapseKey)}
-                              className="px-3.5 py-2.5 bg-[#161b22] hover:bg-[#1c2128] transition-colors cursor-pointer flex items-center justify-between gap-2 border-b border-[var(--border2)]/60 select-none"
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                {isCollapsed ? (
-                                  <ChevronRight className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                                ) : (
-                                  <ChevronDown className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                                )}
-                                <span className="font-bold text-xs text-amber-300 flex items-center gap-1.5 truncate">
-                                  <Folder className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                                  <span>{fg.folder}</span>
-                                </span>
-                                <span className="text-[10px] text-gray-400">
-                                  ({fg.links.length}件)
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                {fg.newLinks.length > 0 && (
-                                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-500/30 font-semibold">
-                                    新着 {fg.newLinks.length}
-                                  </span>
-                                )}
-                                <span className="text-[10px] text-gray-500 font-mono">
-                                  {folderColumnSource === "N" ? "N列基準" : "D列基準"}
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* リンクカード一覧 */}
-                            {!isCollapsed && (
-                              <div className="p-3 space-y-2">
-                                {fg.links.map(link => (
-                                  <div
-                                    key={link.id}
-                                    className="p-3 bg-[#0d1117] rounded-lg border border-[var(--border2)] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 hover:border-gray-600 transition-colors"
-                                  >
-                                    <div className="flex items-center gap-2 flex-wrap min-w-0">
-                                      {link.isNew && (
-                                        <span className="px-1.5 py-0.5 rounded bg-emerald-500/25 text-emerald-300 font-bold text-[9px] shrink-0">
-                                          NEW
-                                        </span>
-                                      )}
-                                      <span className="font-bold text-xs bg-blue-950/40 text-blue-300 px-2 py-0.5 rounded border border-blue-500/30">
-                                        {link.source}
-                                      </span>
-                                      <ArrowRight className="w-3.5 h-3.5 text-[var(--muted)] shrink-0" />
-                                      <span className="font-bold text-xs bg-emerald-950/40 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30">
-                                        {link.target}
-                                      </span>
-                                      <span className="text-xs text-[var(--muted)] truncate max-w-sm">
-                                        ({link.reason})
-                                      </span>
-                                    </div>
-                                    <div className="flex items-center gap-2 shrink-0">
-                                      <span className="text-[10px] text-[var(--subtle)] truncate max-w-[150px]" title={link.articleTitle}>
-                                        {link.articleTitle}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleDeleteLink(link.id)}
-                                        className="text-[var(--muted)] hover:text-red-400 p-1 cursor-pointer transition-colors"
-                                        title="削除"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Layout 2: 📁 フォルダ ➔ 📅 週次推移 */}
-            {weekViewLayout === "by-folder-timeline" && (
-              <div className="space-y-6">
+            {/* フォルダ別リスト（フォルダは畳み込みがデフォルト） */}
+            {folderTimelineGroups.length > 0 && (
+              <div className="space-y-4">
                 {folderTimelineGroups.map(fg => {
-                  const isCollapsed = collapsedFolderMap[`folder-${fg.folder}`] ?? false;
+                  const isCollapsed = collapsedFolderMap[`folder-${fg.folder}`] ?? true;
 
                   return (
-                    <div key={fg.folder} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 space-y-4">
-                      {/* フォルダヘッダー */}
+                    <div
+                      key={fg.folder}
+                      className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4 sm:p-5 space-y-3 transition-colors"
+                    >
+                      {/* フォルダヘッダー（クリックで畳み込み/展開） */}
                       <div
                         onClick={() => toggleFolderCollapse(`folder-${fg.folder}`)}
-                        className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] pb-3 cursor-pointer select-none"
+                        className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] pb-3 cursor-pointer select-none group"
                       >
-                        <div className="flex items-center gap-2.5">
+                        <div className="flex items-center gap-2.5 min-w-0">
                           {isCollapsed ? (
-                            <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />
+                            <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-amber-400 transition-colors shrink-0" />
                           ) : (
-                            <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
+                            <ChevronDown className="w-4 h-4 text-amber-400 shrink-0" />
                           )}
-                          <span className="font-bold text-sm text-amber-300 flex items-center gap-2">
-                            <Folder className="w-4 h-4 text-amber-400" />
+                          <span className="font-bold text-sm text-amber-300 flex items-center gap-2 truncate">
+                            <Folder className="w-4 h-4 text-amber-400 shrink-0" />
                             <span>{fg.folder}</span>
                           </span>
-                          <span className="text-[10px] text-gray-400 font-mono">
+                          <span className="text-[10px] text-gray-500 font-mono shrink-0">
                             ({folderColumnSource === "N" ? "N列基準" : "D列基準"})
                           </span>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 shrink-0">
                           {fg.totalNew > 0 && (
                             <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold text-[10px]">
                               新規 {fg.totalNew}件
@@ -1188,14 +774,20 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
                           <span className="px-2 py-0.5 rounded bg-[#30363d] text-gray-200 font-bold text-[10px]">
                             全 {fg.totalLinks}件
                           </span>
+                          <span className="text-[11px] text-[var(--muted)] group-hover:text-white transition-colors">
+                            {isCollapsed ? "開く ▼" : "畳む ▲"}
+                          </span>
                         </div>
                       </div>
 
-                      {/* 週ごとの推移 */}
+                      {/* 週ごとの推移 (展開時のみ表示) */}
                       {!isCollapsed && (
-                        <div className="space-y-4 pt-1">
+                        <div className="space-y-3 pt-1">
                           {fg.weeks.map(w => (
-                            <div key={w.periodKey} className="bg-[#12161c] border border-[var(--border2)] rounded-lg p-3.5 space-y-2.5">
+                            <div
+                              key={w.periodKey}
+                              className="bg-[#12161c] border border-[var(--border2)] rounded-lg p-3 sm:p-3.5 space-y-2.5"
+                            >
                               <div className="flex items-center justify-between gap-2 border-b border-[var(--border2)]/60 pb-2">
                                 <div className="flex items-center gap-2">
                                   <Calendar className="w-3.5 h-3.5 text-blue-400 shrink-0" />
@@ -1260,63 +852,6 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
                     </div>
                   );
                 })}
-              </div>
-            )}
-
-            {/* Layout 3: 📋 フラット一覧 */}
-            {weekViewLayout === "by-week-flat" && (
-              <div className="space-y-6">
-                {weeklyGroupsWithFolders.map(group => (
-                  <div key={group.periodKey} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 space-y-4">
-                    <div className="flex items-center justify-between border-b border-[var(--border)] pb-3">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-blue-400" />
-                        <span className="font-bold text-sm text-[var(--bright)]">{group.weekLabel}</span>
-                        <span className="text-xs text-[var(--muted)] font-mono">({group.periodKey})</span>
-                      </div>
-                      <div className="flex gap-2">
-                        <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold text-[10px]">
-                          新規 {group.newLinks.length}件
-                        </span>
-                        <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 font-bold text-[10px]">
-                          継続 {group.continuingLinks.length}件
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2.5">
-                      {group.links.map(link => (
-                        <div key={link.id} className="p-3 bg-[#161b22] rounded-lg border border-[var(--border2)] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                          <div className="flex items-center gap-2 flex-wrap min-w-0">
-                            {link.isNew && (
-                              <span className="px-1.5 py-0.5 rounded bg-emerald-500/25 text-emerald-300 font-bold text-[9px]">
-                                NEW
-                              </span>
-                            )}
-                            <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 font-semibold text-[10px] border border-amber-500/30 flex items-center gap-1">
-                              <Folder className="w-2.5 h-2.5" />
-                              <span>{getLinkFolder(link)}</span>
-                            </span>
-                            <span className="font-bold text-xs text-[var(--bright)]">{link.source}</span>
-                            <ArrowRight className="w-3.5 h-3.5 text-[var(--muted)] shrink-0" />
-                            <span className="font-bold text-xs text-[var(--bright)]">{link.target}</span>
-                            <span className="text-xs text-[var(--muted)] truncate max-w-xs">({link.reason})</span>
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className="text-[10px] text-[var(--subtle)]">{link.articleTitle}</span>
-                            <button
-                              onClick={() => handleDeleteLink(link.id)}
-                              className="text-[var(--muted)] hover:text-red-400 p-1 cursor-pointer"
-                              title="削除"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
               </div>
             )}
           </div>
@@ -1568,23 +1103,7 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
           </div>
         )}
 
-        {/* Tab 3: Report Preview */}
-        {activeTab === "report" && (
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-6 space-y-4">
-            <div className="flex justify-between items-center border-b border-[var(--border)] pb-3">
-              <h3 className="text-sm font-bold text-[var(--bright)]">📄 レポート用マークダウンプレビュー</h3>
-              <button
-                onClick={handleDownloadMarkdown}
-                className="px-3 py-1.5 bg-[#238636] hover:bg-[#2ea043] text-white font-bold text-xs rounded transition-colors cursor-pointer flex items-center gap-1.5"
-              >
-                <Download className="w-3.5 h-3.5" /> .mdファイルをダウンロード
-              </button>
-            </div>
-            <pre className="p-4 bg-[#0d1117] rounded-lg border border-[var(--border2)] text-xs font-mono text-[var(--bright)] overflow-x-auto whitespace-pre-wrap leading-relaxed">
-              {generateMarkdownReport()}
-            </pre>
-          </div>
-        )}
+
 
       </div>
 
