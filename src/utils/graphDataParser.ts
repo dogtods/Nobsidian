@@ -23,6 +23,111 @@ export function extractKeywordsSectionLinks(summary: string): string[] {
   return extractWikiLinks(targetText);
 }
 
+export interface KeywordExtractionOptions {
+  /** 「単語とその説明文」形式（- [[用語]]: 説明）のみをキーワードとして抽出するか */
+  requireDefinition?: boolean;
+  /** 既存記事タイトルと一致するリンクを除外するか */
+  excludeNoteTitles?: boolean;
+  /** 照合用の全記事タイトルSet (正規化または小文字) */
+  noteTitlesSet?: Set<string>;
+  /** 次のセクション見出し（【関連記事】や【関連ノート】等）でキーワード欄を打ち切るか (デフォルト: true) */
+  stopAtNextSection?: boolean;
+}
+
+export interface DetailedKeywordResult {
+  /** 識別されたキーワード（用語） */
+  keywords: string[];
+  /** 識別された記事間リンク（記事タイトルや説明文なしリンク） */
+  articleLinks: string[];
+  /** 全てのWikiリンク */
+  allLinks: string[];
+}
+
+/**
+ * キーワード欄から「単語とその説明文」形式の純粋なキーワードと、
+ * その下に羅列された「記事間リンク」を識別して分離抽出する
+ */
+export function extractKeywordsWithDistinction(
+  summary: string,
+  options: KeywordExtractionOptions = {}
+): DetailedKeywordResult {
+  if (!summary) return { keywords: [], articleLinks: [], allLinks: [] };
+
+  const {
+    requireDefinition = false,
+    excludeNoteTitles = false,
+    noteTitlesSet,
+    stopAtNextSection = true
+  } = options;
+
+  const keywordSectionIdx = summary.indexOf("【キーワード】");
+  let targetText = summary;
+
+  if (keywordSectionIdx !== -1) {
+    const afterKeyword = summary.substring(keywordSectionIdx + "【キーワード】".length);
+    if (stopAtNextSection) {
+      // 次のセクション見出し（【関連記事】、【関連ノート】、【年表】、【本文】、## など）で打ち切る
+      const nextSectionMatch = afterKeyword.match(/\n\s*(?:【\s*(?:関連(?:記事|ノート|リンク|ナレッジ)|年表|具体的数値|市場|本文|参考|出題)[^】]*】|#{1,6}\s+|---)/);
+      if (nextSectionMatch && nextSectionMatch.index !== undefined) {
+        targetText = afterKeyword.substring(0, nextSectionMatch.index);
+      } else {
+        targetText = afterKeyword;
+      }
+    } else {
+      targetText = afterKeyword;
+    }
+  }
+
+  const allMatches = extractWikiLinks(targetText);
+  const keywordsSet = new Set<string>();
+  const articleLinksSet = new Set<string>();
+
+  // 行単位で「単語とその説明文」形式（- [[用語]]: 説明文）を判定
+  const lines = targetText.split("\n");
+  const definitionTermSet = new Set<string>();
+
+  lines.forEach(line => {
+    // 例: - [[用語]]: 説明文  または  [[用語]]：説明文  または  * [[用語]]: 説明文
+    const defMatch = line.match(/^\s*[-*•▸・]?\s*\[\[([^\]|]+)(?:\|[^\]]+)?\]\]\s*[:：]\s*(\S+.*)$/);
+    if (defMatch) {
+      const term = defMatch[1].trim();
+      if (term) definitionTermSet.add(term);
+    }
+  });
+
+  allMatches.forEach(rawTerm => {
+    const term = rawTerm.trim();
+    if (!term) return;
+
+    const norm = term.toLowerCase();
+    const isTitleMatch = noteTitlesSet && (noteTitlesSet.has(norm) || noteTitlesSet.has(term));
+    const hasDef = definitionTermSet.has(term);
+
+    if (isTitleMatch) {
+      // 記事タイトルと一致するものは記事間リンクとして分類
+      articleLinksSet.add(term);
+      if (!excludeNoteTitles) {
+        keywordsSet.add(term);
+      }
+    } else if (hasDef) {
+      // 説明文が付いているものは確実にキーワード
+      keywordsSet.add(term);
+    } else {
+      // 説明文がない単独の [[...]]
+      articleLinksSet.add(term);
+      if (!requireDefinition) {
+        keywordsSet.add(term);
+      }
+    }
+  });
+
+  return {
+    keywords: Array.from(keywordsSet),
+    articleLinks: Array.from(articleLinksSet),
+    allLinks: allMatches
+  };
+}
+
 // Comprehensive keyword extractor for an individual note
 export function extractNoteKeywords(note: Note): string[] {
   if (!note) return [];

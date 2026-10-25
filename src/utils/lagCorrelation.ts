@@ -4,16 +4,22 @@
  */
 
 import { Note } from "../types";
-import { extractKeywordsSectionLinks, extractNoteKeywords, getNoteYMD } from "./graphDataParser";
+import {
+  extractKeywordsSectionLinks,
+  extractKeywordsWithDistinction,
+  extractNoteKeywords,
+  getNoteYMD
+} from "./graphDataParser";
 import { normalizeTerm } from "./causalDiffUtils";
 
 /** 用語の数え方 */
-export type MatchMode = "keywords" | "keywords+tags" | "text";
+export type MatchMode = "keywords" | "keywords-all" | "keywords+tags" | "text";
 /** 前処理 */
 export type Preprocess = "raw" | "diff";
 
 export const MATCH_MODE_LABEL: Record<MatchMode, string> = {
-  keywords: "【キーワード】欄の [[用語]]（既存グラフと同じ）",
+  keywords: "【キーワード】欄（説明文付き用語・記事リンク自動除外）★推奨",
+  "keywords-all": "【キーワード】欄の全 [[ ]]（記事間リンクも含む従来仕様）",
   "keywords+tags": "キーワード欄＋本文[[ ]]＋タグ列",
   text: "タイトル・要約への部分一致"
 };
@@ -38,6 +44,7 @@ export interface PreparedData {
   uniqueTerms: number;
   first: string;
   last: string;
+  excludedArticleLinksCount?: number; // 識別・除外された記事間リンクの延べ数
 }
 
 function ymdToUtc(ymd: string): number {
@@ -52,19 +59,42 @@ function mondayUtc(t: number): number {
 
 const isoDay = (t: number) => new Date(t).toISOString().slice(0, 10);
 
-function termsOf(note: Note, mode: MatchMode): Set<string> {
-  const raw =
-    mode === "keywords+tags"
-      ? extractNoteKeywords(note)
-      : mode === "keywords"
-      ? extractKeywordsSectionLinks(String((note as any).summary || ""))
-      : [];
+function termsOf(note: Note, mode: MatchMode, noteTitlesSet?: Set<string>): { terms: Set<string>; excludedCount: number } {
+  let raw: string[] = [];
+  let excludedCount = 0;
+
+  if (mode === "keywords") {
+    const res = extractKeywordsWithDistinction(String((note as any).summary || (note as any).content || ""), {
+      requireDefinition: true,
+      excludeNoteTitles: true,
+      noteTitlesSet: noteTitlesSet,
+      stopAtNextSection: true
+    });
+    // 説明文付きキーワードがある場合はそれを採用
+    if (res.keywords.length > 0) {
+      raw = res.keywords;
+      excludedCount = res.articleLinks.length;
+    } else {
+      // 説明文がない場合でも、記事タイトルと一致するリンクは除外
+      raw = res.allLinks.filter(l => {
+        const norm = normalizeTerm(l);
+        const isTitle = noteTitlesSet && (noteTitlesSet.has(norm) || noteTitlesSet.has(l.trim().toLowerCase()));
+        if (isTitle) excludedCount++;
+        return !isTitle;
+      });
+    }
+  } else if (mode === "keywords-all") {
+    raw = extractKeywordsSectionLinks(String((note as any).summary || ""));
+  } else if (mode === "keywords+tags") {
+    raw = extractNoteKeywords(note);
+  }
+
   const set = new Set<string>();
   raw.forEach(t => {
     const n = normalizeTerm(t);
     if (n) set.add(n);
   });
-  return set;
+  return { terms: set, excludedCount };
 }
 
 /** ノート群を週インデックス付きに前処理する (用語の数え方を切り替え可能) */
@@ -80,9 +110,19 @@ export function prepareNotes(notes: Note[], mode: MatchMode): PreparedData {
   if (dated.length === 0) {
     return {
       mode, weekKeys: [], notes: [], totalNotes: notes.length, datedNotes: 0, outOfRange: 0,
-      keywordNotes: 0, uniqueTerms: 0, first: "", last: ""
+      keywordNotes: 0, uniqueTerms: 0, first: "", last: "", excludedArticleLinksCount: 0
     };
   }
+
+  // 記事タイトル照合用Setの構築（正規化タイトル & 小文字タイトル）
+  const noteTitlesSet = new Set<string>();
+  notes.forEach(n => {
+    if (n.title) {
+      const norm = normalizeTerm(n.title);
+      if (norm) noteTitlesSet.add(norm);
+      noteTitlesSet.add(n.title.trim().toLowerCase());
+    }
+  });
 
   let minM = Infinity, maxM = -Infinity;
   dated.forEach(d => {
@@ -99,6 +139,7 @@ export function prepareNotes(notes: Note[], mode: MatchMode): PreparedData {
   const termUniverse = new Set<string>();
   let keywordNotes = 0;
   let outOfRange = 0;
+  let totalExcludedLinks = 0;
 
   dated.forEach(({ ymdT, note }) => {
     const m = mondayUtc(ymdT);
@@ -107,7 +148,8 @@ export function prepareNotes(notes: Note[], mode: MatchMode): PreparedData {
       return;
     }
     const week = Math.round((m - minM) / (7 * DAY));
-    const terms = termsOf(note, mode);
+    const { terms, excludedCount } = termsOf(note, mode, noteTitlesSet);
+    totalExcludedLinks += excludedCount;
     if (terms.size > 0) keywordNotes += 1;
     terms.forEach(t => termUniverse.add(t));
     const text = mode === "text" ? normalizeTerm(`${(note as any).title || ""} ${(note as any).summary || ""}`) : "";
@@ -124,7 +166,8 @@ export function prepareNotes(notes: Note[], mode: MatchMode): PreparedData {
     keywordNotes,
     uniqueTerms: termUniverse.size,
     first: weekKeys[0],
-    last: weekKeys[weekKeys.length - 1]
+    last: weekKeys[weekKeys.length - 1],
+    excludedArticleLinksCount: totalExcludedLinks
   };
 }
 

@@ -2233,6 +2233,132 @@ function handleGetDeepDiveHistory(articleId, deepDiveSpreadsheetUrl) {
   };
 }
 
+// ==== 因果リンク（CausalLinks）専用シート操作関数 ====
+const CAUSAL_LINKS_HEADERS = [
+  "id",
+  "source",
+  "target",
+  "periodKey",
+  "weekLabel",
+  "reason",
+  "detailedInference",
+  "articleTitle",
+  "articleId",
+  "origin",
+  "created_at",
+  "updated_at"
+];
+
+function getCausalLinksSheet(targetSsUrl) {
+  let ss = null;
+  if (targetSsUrl && String(targetSsUrl).trim() !== "") {
+    try {
+      ss = SpreadsheetApp.openByUrl(String(targetSsUrl).trim());
+    } catch(e) {
+      const match = String(targetSsUrl).match(/[-\w]{25,}/);
+      if (match) {
+        ss = SpreadsheetApp.openById(match[0]);
+      } else {
+        throw new Error("指定されたスプレッドシートを開けません: " + targetSsUrl);
+      }
+    }
+  } else {
+    ss = SpreadsheetApp.getActiveSpreadsheet();
+  }
+  if (!ss) throw new Error("スプレッドシートが見つかりません。");
+
+  let sheet = ss.getSheetByName("CausalLinks");
+  if (!sheet) {
+    sheet = ss.insertSheet("CausalLinks");
+    sheet.appendRow(CAUSAL_LINKS_HEADERS);
+    sheet.getRange(1, 1, 1, CAUSAL_LINKS_HEADERS.length).setBackground("#e0e7ff").setFontWeight("bold");
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function handleSaveCausalLinks(links, targetSsUrl) {
+  if (!links) throw new Error("保存する因果リンクデータがありません");
+  const list = Array.isArray(links) ? links : [links];
+  if (list.length === 0) return { success: true, savedCount: 0 };
+
+  const sheet = getCausalLinksSheet(targetSsUrl);
+  const lastRow = sheet.getLastRow();
+  const existingMap = {};
+  if (lastRow > 1) {
+    const existing = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+    for (let i = 0; i < existing.length; i++) {
+      const idStr = String(existing[i][0]).trim();
+      const sStr = String(existing[i][1]).trim();
+      const tStr = String(existing[i][2]).trim();
+      const pStr = String(existing[i][3]).trim();
+      if (idStr) existingMap[idStr] = i + 2;
+      if (sStr && tStr) existingMap[sStr + "___" + tStr + "___" + pStr] = i + 2;
+    }
+  }
+
+  let savedCount = 0;
+  const now = new Date().toISOString();
+
+  list.forEach(function(item) {
+    const id = item.id || ("cl_" + Date.now() + "_" + Math.floor(Math.random() * 1000));
+    const rowData = [
+      id,
+      item.source || "",
+      item.target || "",
+      item.periodKey || "",
+      item.weekLabel || "",
+      item.reason || "",
+      item.detailedInference || "",
+      item.articleTitle || "",
+      item.articleId || "",
+      item.origin || "manual",
+      item.createdAt ? new Date(item.createdAt).toISOString() : now,
+      now
+    ];
+
+    const matchKey = (item.source || "") + "___" + (item.target || "") + "___" + (item.periodKey || "");
+    const existingRow = existingMap[id] || existingMap[matchKey];
+    if (existingRow) {
+      sheet.getRange(existingRow, 1, 1, rowData.length).setValues([rowData]);
+    } else {
+      sheet.appendRow(rowData);
+      existingMap[id] = sheet.getLastRow();
+    }
+    savedCount++;
+  });
+
+  SpreadsheetApp.flush();
+  return { success: true, savedCount: savedCount, message: `${savedCount}件の因果リンク・推論データをスプレッドシートに保存しました。` };
+}
+
+function handleGetCausalLinks(targetSsUrl) {
+  const sheet = getCausalLinksSheet(targetSsUrl);
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return { success: true, links: [] };
+
+  const numCols = Math.max(12, sheet.getLastColumn());
+  const data = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
+  const links = data.map(function(row) {
+    return {
+      id: String(row[0] || ""),
+      source: String(row[1] || ""),
+      target: String(row[2] || ""),
+      periodKey: String(row[3] || ""),
+      weekLabel: String(row[4] || ""),
+      reason: String(row[5] || ""),
+      detailedInference: String(row[6] || ""),
+      articleTitle: String(row[7] || ""),
+      articleId: String(row[8] || ""),
+      origin: String(row[9] || "manual"),
+      createdAt: row[10] ? new Date(row[10]).getTime() : Date.now(),
+      updatedAt: row[11] ? new Date(row[11]).getTime() : Date.now()
+    };
+  }).filter(function(l) { return l.source && l.target; });
+
+  return { success: true, links: links };
+}
+
 // ==== 統合リクエスト処理関数 ====
 function processApiRequest(e) {
   if (!e) {
@@ -2327,6 +2453,11 @@ function processApiRequest(e) {
     } else if (action === "getDeepDiveHistory") {
       const articleId = postData.articleId || (e.parameter ? e.parameter.articleId : "");
       result = handleGetDeepDiveHistory(articleId, deepDiveSsUrl);
+    } else if (action === "saveCausalLinks") {
+      const links = typeof postData.links === "string" ? JSON.parse(postData.links) : postData.links;
+      result = handleSaveCausalLinks(links, targetSsUrl);
+    } else if (action === "getCausalLinks") {
+      result = handleGetCausalLinks(targetSsUrl);
     } else if (action === "syncExternalSources" || action === "syncAllExternalSources") {
       const options = postData.options || { raindrop: true, drive: true };
       result = syncExternalSources(options, targetSheet, targetSsUrl);

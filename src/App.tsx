@@ -9475,6 +9475,8 @@ const renderMarkdownToElements = (contentStr: string) => {
           isOpen={isCausalModalOpen}
           onClose={() => setIsCausalModalOpen(false)}
           notes={notes}
+          apiPost={apiPost}
+          onToast={(msg) => toast(msg)}
         />
       )}
 

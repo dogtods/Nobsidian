@@ -15,10 +15,49 @@ export interface CausalLink {
   periodKey: string; // ISO週 "2026-W42" (月曜始まり)
   weekLabel: string; // "10/12 - 10/18"
   reason: string; // 因果関係の説明
+  detailedInference?: string; // AIによる因果推論の論理ステップ・図解解説
   articleTitle: string;
   articleId: string;
   isNew?: boolean; // 過去の週に登場していない新規エッジかどうか
   origin?: CausalOrigin;
+  updatedAt?: number;
+}
+
+/**
+ * 外部AI（ChatGPT / Claude / Gemini等）に因果推論の論理ステップ・図解を解説させるためのプロンプトを構築
+ */
+export function buildCausalInferencePrompt(
+  link: { source: string; target: string; reason?: string; articleTitle?: string },
+  contextNote?: Note | null
+): string {
+  const contextSnippet = contextNote
+    ? `\n【参照記事の抜粋・要約】\nタイトル: ${contextNote.title}\n${(contextNote.summary || contextNote.content || "").substring(0, 800)}`
+    : "";
+
+  return `あなたは卓越した論理的推論力と図解力を持つプロの因果分析・リサーチアナリストです。
+以下の因果関係（原因 ➔ 結果）について、どのような因果推論・背景メカニズム・論理のステップを経てこの結論にたどり着くのか（想定されるのか）を、論理的かつ視覚的に分かりやすく解き明かしてください。
+
+【対象の因果リンク】
+・原因 (Source): ${link.source}
+・結果 (Target): ${link.target}
+・現状の概要理由: ${link.reason || "（簡潔な因果関係として登録されています）"}
+・参照記事: ${link.articleTitle || "（全体ナレッジ）"}${contextSnippet}
+
+────────────────────────
+【出力形式の指定（厳守）】
+長文でダラダラ書かず、思考プロセスと因果の連鎖が一目でわかるように以下の3構成で出力してください。
+
+1. 🎯【因果推論の核心ロジック（結論1〜2行）】
+なぜ [${link.source}] が [${link.target}] を引き起こすのか、その決定的な因果の結びつき・ブリッジを端的に説明。
+
+2. 📊【ステップ別 因果チェーン（視覚的フロー・図解）】
+原因から結果に至るまでの中間プロセス・波及メカニズムを、矢印（➔）や記号を用いたステップ図で明示してください。
+（例: [${link.source}] ➔ [中間事象1: ○○の変化] ➔ [中間事象2: △△の行動・圧力] ➔ [${link.target}]）
+
+3. 🔍【想定される前提条件・媒介変数（箇条書き3点以内）】
+・どのような前提や市場・制度環境があるからこの因果が成り立つのか
+・因果を媒介する要素（テクノロジー、規制、心理、経済的インセンティブなど）
+・想定される反論や、因果が成立しなくなるリスク・例外要因`;
 }
 
 export interface WeeklyCausalGroup {

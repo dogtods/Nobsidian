@@ -20,7 +20,8 @@ import {
   migrateLinks,
   parseExternalCausalResult,
   placeEdge,
-  selectRecentNotes
+  selectRecentNotes,
+  buildCausalInferencePrompt
 } from "../utils/causalDiffUtils";
 import CausalLagPanel from "./CausalLagPanel";
 import { getFolderFromKeywords, getFolderFromColumnN } from "../utils/graphDataParser";
@@ -71,9 +72,11 @@ interface CausalDiffModalProps {
   isOpen: boolean;
   onClose: () => void;
   notes: Note[];
+  apiPost?: (body: any) => Promise<any>;
+  onToast?: (msg: string) => void;
 }
 
-export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffModalProps) {
+export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToast }: CausalDiffModalProps) {
   const [links, setLinks] = useState<CausalLink[]>(() => {
     try {
       const saved = localStorage.getItem("cn_causal_links_cache");
@@ -156,6 +159,113 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
       localStorage.setItem("cn_causal_links_cache", JSON.stringify(links));
     } catch {}
   }, [links]);
+
+  // 因果推論（論理解明・図解プロンプト・回答取り込み・スプレッドシート保管）用 State
+  const [activeInferenceLinkId, setActiveInferenceLinkId] = useState<string | null>(null);
+  const [pastedInferenceMap, setPastedInferenceMap] = useState<Record<string, string>>({});
+  const [isSavingInferenceMap, setIsSavingInferenceMap] = useState<Record<string, boolean>>({});
+  const [copiedPromptLinkId, setCopiedPromptLinkId] = useState<string | null>(null);
+  const [isSyncingWithSs, setIsSyncingWithSs] = useState(false);
+
+  // Google Apps Script (CausalLinks シート) から既存の因果リンク・推論解説を同期
+  useEffect(() => {
+    let isMounted = true;
+    const fetchCausalFromSs = async () => {
+      if (!apiPost) return;
+      try {
+        setIsSyncingWithSs(true);
+        const res = await apiPost({ action: "getCausalLinks" });
+        if (isMounted && res && res.success && Array.isArray(res.links) && res.links.length > 0) {
+          setLinks(prev => {
+            const map = new Map<string, CausalLink>();
+            prev.forEach(l => map.set(l.id || `${l.source}__${l.target}__${l.periodKey}`, l));
+            res.links.forEach((remoteLink: CausalLink) => {
+              const key = remoteLink.id || `${remoteLink.source}__${remoteLink.target}__${remoteLink.periodKey}`;
+              const existing = map.get(key);
+              if (existing) {
+                map.set(key, {
+                  ...existing,
+                  ...remoteLink,
+                  detailedInference: remoteLink.detailedInference || existing.detailedInference,
+                  reason: remoteLink.reason || existing.reason
+                });
+              } else {
+                map.set(key, remoteLink);
+              }
+            });
+            return Array.from(map.values());
+          });
+        }
+      } catch (err) {
+        console.warn("Failed to fetch causal links from spreadsheet:", err);
+      } finally {
+        if (isMounted) setIsSyncingWithSs(false);
+      }
+    };
+
+    fetchCausalFromSs();
+    return () => { isMounted = false; };
+  }, [apiPost]);
+
+  const handleCopyInferencePrompt = async (link: CausalLink) => {
+    const relatedNote = link.articleId
+      ? notes.find(n => String(n.id) === String(link.articleId))
+      : notes.find(n => link.articleTitle && n.title && n.title.includes(link.articleTitle));
+    const prompt = buildCausalInferencePrompt(link, relatedNote);
+    const ok = await copyText(prompt);
+    if (ok) {
+      setCopiedPromptLinkId(link.id);
+      setTimeout(() => setCopiedPromptLinkId(null), 3000);
+      onToast?.("因果推論プロンプトをコピーしました！外部AIに貼り付けてください。");
+    } else {
+      onToast?.("クリップボードへのコピーに失敗しました。");
+    }
+  };
+
+  const handleSaveInferenceToSpreadsheet = async (link: CausalLink) => {
+    const textToSave = (
+      pastedInferenceMap[link.id] !== undefined
+        ? pastedInferenceMap[link.id]
+        : link.detailedInference || ""
+    ).trim();
+
+    if (!textToSave) {
+      onToast?.("保存する因果推論の解説テキストを入力または貼り付けてください。");
+      return;
+    }
+
+    const updatedLink: CausalLink = {
+      ...link,
+      detailedInference: textToSave,
+      updatedAt: Date.now()
+    };
+
+    // 1. ローカルState即時更新
+    setLinks(prev => prev.map(l => l.id === link.id ? updatedLink : l));
+
+    // 2. スプレッドシートへ送信
+    setIsSavingInferenceMap(prev => ({ ...prev, [link.id]: true }));
+    try {
+      if (apiPost) {
+        const res = await apiPost({
+          action: "saveCausalLinks",
+          links: [updatedLink]
+        });
+        if (res && res.success) {
+          onToast?.("因果推論の論理ステップ・図解をスプレッドシート（CausalLinksシート）に保存しました！");
+        } else {
+          onToast?.("スプレッドシートへの保存に失敗しましたが、ローカルには保存されました。");
+        }
+      } else {
+        onToast?.("ローカルに因果推論の論理ステップを保存しました（スプレッドシート未接続）。");
+      }
+    } catch (e: any) {
+      console.error("Save causal inference error:", e);
+      onToast?.("スプレッドシート保存中にエラーが発生しました（ローカルには保持されています）");
+    } finally {
+      setIsSavingInferenceMap(prev => ({ ...prev, [link.id]: false }));
+    }
+  };
 
   // 各因果リンクの所属フォルダを判定（D列基準 or N列基準）
   const getLinkFolder = useCallback((link: CausalLink): string => {
@@ -807,43 +917,186 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
                               </div>
 
                               <div className="space-y-2">
-                                {w.links.map(link => (
-                                  <div
-                                    key={link.id}
-                                    className="p-2.5 bg-[#0d1117] rounded border border-[var(--border2)] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 hover:border-gray-600 transition-colors"
-                                  >
-                                    <div className="flex items-center gap-2 flex-wrap min-w-0">
-                                      {link.isNew && (
-                                        <span className="px-1.5 py-0.5 rounded bg-emerald-500/25 text-emerald-300 font-bold text-[9px] shrink-0">
-                                          NEW
-                                        </span>
+                                {w.links.map(link => {
+                                  const isInferenceOpen = activeInferenceLinkId === link.id;
+                                  const hasInference = Boolean(link.detailedInference && link.detailedInference.trim());
+                                  const isSaving = Boolean(isSavingInferenceMap[link.id]);
+                                  const isCopied = copiedPromptLinkId === link.id;
+
+                                  return (
+                                    <div
+                                      key={link.id}
+                                      className="bg-[#0d1117] rounded-lg border border-[var(--border2)] hover:border-gray-600 transition-colors overflow-hidden"
+                                    >
+                                      {/* リンク基本情報バー */}
+                                      <div className="p-2.5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                                        <div className="flex items-center gap-2 flex-wrap min-w-0">
+                                          {link.isNew && (
+                                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/25 text-emerald-300 font-bold text-[9px] shrink-0">
+                                              NEW
+                                            </span>
+                                          )}
+                                          <span className="font-bold text-xs text-blue-300 bg-blue-950/40 px-2 py-0.5 rounded border border-blue-500/30">
+                                            {link.source}
+                                          </span>
+                                          <ArrowRight className="w-3.5 h-3.5 text-[var(--muted)] shrink-0" />
+                                          <span className="font-bold text-xs text-emerald-300 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/30">
+                                            {link.target}
+                                          </span>
+                                          <span className="text-xs text-[var(--muted)] truncate max-w-sm">
+                                            ({link.reason})
+                                          </span>
+                                          {hasInference && (
+                                            <span className="px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold text-[9px] shrink-0 flex items-center gap-1">
+                                              <span>💡</span>
+                                              <span>推論解説あり</span>
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                                          <span className="text-[10px] text-[var(--subtle)] truncate max-w-[120px]" title={link.articleTitle}>
+                                            {link.articleTitle}
+                                          </span>
+
+                                          {/* 因果推論の論理解明トグルボタン */}
+                                          <button
+                                            type="button"
+                                            onClick={() => setActiveInferenceLinkId(prev => prev === link.id ? null : link.id)}
+                                            className={`px-2 py-1 rounded text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors ${
+                                              isInferenceOpen
+                                                ? "bg-purple-600 text-white shadow-sm"
+                                                : hasInference
+                                                ? "bg-purple-950/40 text-purple-300 border border-purple-500/40 hover:bg-purple-900/50"
+                                                : "bg-[#21262d] text-gray-300 hover:text-white border border-[var(--border2)]"
+                                            }`}
+                                            title="なぜこの因果リンクに至るのか、推論の論理ステップ・図解プロンプトを出力し、回答をスプレッドシートに保存します"
+                                          >
+                                            <Sparkles className="w-3 h-3 text-purple-400" />
+                                            <span>{isInferenceOpen ? "閉じる" : hasInference ? "💡 推論を確認・更新" : "💡 推論を解明"}</span>
+                                          </button>
+
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDeleteLink(link.id)}
+                                            className="text-[var(--muted)] hover:text-red-400 p-1 cursor-pointer transition-colors"
+                                            title="削除"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      {/* 因果推論ドロワー（プロンプト出力・回答取り込み・スプレッドシート保管） */}
+                                      {isInferenceOpen && (
+                                        <div className="p-3.5 bg-[#12161f] border-t border-purple-500/30 space-y-3">
+                                          <div className="flex items-center justify-between border-b border-[var(--border2)] pb-2">
+                                            <div className="flex items-center gap-2">
+                                              <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-[10px] font-bold rounded border border-purple-500/30">
+                                                💡 なぜこの因果関係が想定されるのか？
+                                              </span>
+                                              <span className="text-xs font-bold text-[var(--bright)]">
+                                                {link.source} ➔ {link.target} の推論プロセスの解明
+                                              </span>
+                                            </div>
+                                            {link.updatedAt && (
+                                              <span className="text-[10px] text-[var(--muted)]">
+                                                更新: {new Date(link.updatedAt).toLocaleDateString()}
+                                              </span>
+                                            )}
+                                          </div>
+
+                                          {/* 保存済みの因果推論・図解解説がある場合 */}
+                                          {hasInference && (
+                                            <div className="space-y-1.5">
+                                              <div className="text-[11px] font-bold text-emerald-400 flex items-center gap-1">
+                                                <Check className="w-3.5 h-3.5" />
+                                                <span>保存済みの因果推論解説・図解:</span>
+                                              </div>
+                                              <div className="p-3 bg-[#0d1117] border border-[var(--border2)] rounded text-xs text-[var(--text)] whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto font-sans">
+                                                {link.detailedInference}
+                                              </div>
+                                            </div>
+                                          )}
+
+                                          {/* 3ステップ解明フロー */}
+                                          <div className="space-y-3 pt-1">
+                                            {/* STEP 1: プロンプト出力 */}
+                                            <div className="p-2.5 bg-[#161b22] border border-[var(--border2)] rounded-lg space-y-1.5">
+                                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                                <div className="text-xs text-[var(--bright)] font-semibold flex items-center gap-1.5">
+                                                  <span className="w-4 h-4 rounded-full bg-purple-600 text-white text-[10px] flex items-center justify-center font-bold">1</span>
+                                                  <span>外部AI向け推論解説プロンプトを出力</span>
+                                                </div>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleCopyInferencePrompt(link)}
+                                                  className="px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-md shadow flex items-center gap-1.5 cursor-pointer transition-all"
+                                                >
+                                                  {isCopied ? (
+                                                    <>
+                                                      <Check className="w-3.5 h-3.5 text-emerald-300" />
+                                                      <span>コピー完了！</span>
+                                                    </>
+                                                  ) : (
+                                                    <>
+                                                      <Copy className="w-3.5 h-3.5" />
+                                                      <span>📋 プロンプトをコピー</span>
+                                                    </>
+                                                  )}
+                                                </button>
+                                              </div>
+                                              <p className="text-[11px] text-[var(--muted)] leading-relaxed">
+                                                外部AI（Gemini/ChatGPT/Claude等）に「1. 核心ロジック」「2. ステップ別因果チェーン図解」「3. 前提条件・媒介変数」を視覚的に分かりやすく出力させるプロンプトです。長文にならず直感的に理解できる形式を指定しています。
+                                              </p>
+                                            </div>
+
+                                            {/* STEP 2: 回答取り込みフィールド */}
+                                            <div className="p-2.5 bg-[#161b22] border border-[var(--border2)] rounded-lg space-y-1.5">
+                                              <div className="text-xs text-[var(--bright)] font-semibold flex items-center gap-1.5">
+                                                <span className="w-4 h-4 rounded-full bg-blue-600 text-white text-[10px] flex items-center justify-center font-bold">2</span>
+                                                <span>AIの回答を取り込む</span>
+                                              </div>
+                                              <textarea
+                                                rows={5}
+                                                value={pastedInferenceMap[link.id] !== undefined ? pastedInferenceMap[link.id] : (link.detailedInference || "")}
+                                                onChange={e => setPastedInferenceMap(prev => ({ ...prev, [link.id]: e.target.value }))}
+                                                placeholder="外部AIが生成した因果推論の論理ステップ・図解（テキスト）をここに貼り付けてください..."
+                                                className="w-full bg-[#0d1117] border border-[var(--border2)] rounded-lg p-2.5 text-xs text-[var(--bright)] placeholder:text-gray-500 focus:outline-none focus:border-purple-500 leading-relaxed font-sans"
+                                              />
+                                            </div>
+
+                                            {/* STEP 3: スプレッドシートへ保管 */}
+                                            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[var(--border2)]">
+                                              <span className="text-[11px] text-[var(--muted)] flex items-center gap-1">
+                                                <span>📊</span>
+                                                <span>Googleスプレッドシートの <b>CausalLinks</b> シートに保管されます</span>
+                                              </span>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleSaveInferenceToSpreadsheet(link)}
+                                                disabled={isSaving}
+                                                className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs rounded-md shadow flex items-center gap-1.5 cursor-pointer transition-all"
+                                              >
+                                                {isSaving ? (
+                                                  <>
+                                                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                                    <span>スプレッドシートに保存中...</span>
+                                                  </>
+                                                ) : (
+                                                  <>
+                                                    <Download className="w-3.5 h-3.5" />
+                                                    <span>💾 スプレッドシートに保存・更新</span>
+                                                  </>
+                                                )}
+                                              </button>
+                                            </div>
+                                          </div>
+                                        </div>
                                       )}
-                                      <span className="font-bold text-xs text-blue-300 bg-blue-950/40 px-2 py-0.5 rounded border border-blue-500/30">
-                                        {link.source}
-                                      </span>
-                                      <ArrowRight className="w-3.5 h-3.5 text-[var(--muted)] shrink-0" />
-                                      <span className="font-bold text-xs text-emerald-300 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/30">
-                                        {link.target}
-                                      </span>
-                                      <span className="text-xs text-[var(--muted)] truncate max-w-sm">
-                                        ({link.reason})
-                                      </span>
                                     </div>
-                                    <div className="flex items-center gap-2 shrink-0">
-                                      <span className="text-[10px] text-[var(--subtle)] truncate max-w-[140px]" title={link.articleTitle}>
-                                        {link.articleTitle}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleDeleteLink(link.id)}
-                                        className="text-[var(--muted)] hover:text-red-400 p-1 cursor-pointer transition-colors"
-                                        title="削除"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </div>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             </div>
                           ))}
@@ -858,7 +1111,17 @@ export default function CausalDiffModal({ isOpen, onClose, notes }: CausalDiffMo
         )}
 
         {/* Tab 5: Lag correlation */}
-        {activeTab === "lag" && <CausalLagPanel links={links} notes={notes} />}
+        {activeTab === "lag" && (
+          <CausalLagPanel
+            links={links}
+            notes={notes}
+            apiPost={apiPost}
+            onToast={onToast}
+            onUpdateLink={(updatedLink) => {
+              setLinks(prev => prev.map(l => l.id === updatedLink.id ? updatedLink : l));
+            }}
+          />
+        )}
 
         {/* Tab 4: External AI */}
         {activeTab === "external" && (
