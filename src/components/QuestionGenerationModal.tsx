@@ -1920,16 +1920,23 @@ export default function QuestionGenerationModal({
                               <span>ランダム</span>
                             </span>
                           )}
-                          {isCurrentQMastered ? (
-                            <span className="text-[10px] px-2 py-0.5 rounded bg-purple-950/70 text-purple-300 border border-purple-500/40 font-bold flex items-center gap-1">
-                              <Award className="w-3 h-3 text-purple-400" />
-                              <span>★ 習得済み（出題停止中）</span>
-                            </span>
-                          ) : (
-                            <span className="text-[10px] px-2 py-0.5 rounded bg-sky-950/50 text-sky-300 border border-sky-500/30 font-medium">
-                              復習対象
-                            </span>
-                          )}
+                          {(() => {
+                            const st = reviewStates[currentQ.id];
+                            if (!st || !st.lastReviewedAt) {
+                              return (
+                                <span className="text-[10px] px-2 py-0.5 rounded bg-gray-800/80 text-gray-400 font-medium">
+                                  前回: 未解答（新規）
+                                </span>
+                              );
+                            }
+                            const dt = new Date(st.lastReviewedAt);
+                            const dateStr = `${dt.getFullYear()}/${String(dt.getMonth() + 1).padStart(2, "0")}/${String(dt.getDate()).padStart(2, "0")} ${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
+                            return (
+                              <span className="text-[10px] px-2 py-0.5 rounded bg-gray-800/90 text-gray-300 font-medium border border-gray-700/60" title={`前回の解答日時: ${dateStr} (累計復習回数: ${st.totalReviews || 0}回)`}>
+                                前回: {dateStr} {st.totalReviews ? `(計${st.totalReviews}回)` : ""}
+                              </span>
+                            );
+                          })()}
                         </div>
 
                         <div className="flex items-center gap-2">
