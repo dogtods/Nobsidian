@@ -2175,10 +2175,10 @@ export default function QuestionGenerationModal({
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
                                 <span className="font-bold text-indigo-300 flex items-center gap-1.5">
-                                  <span>🤖 外部AIに図解解説を依頼 ＆ スプレッドシート保存</span>
+                                  <span>🤖 外部AIに解説・図解を依頼 ＆ スプレッドシート保存</span>
                                 </span>
                                 <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-900/40 text-indigo-200 border border-indigo-500/30">
-                                  図解特化プロンプト
+                                  図解 ＆ 本質・着眼点(5行)
                                 </span>
                               </div>
                               <button
@@ -2186,7 +2186,7 @@ export default function QuestionGenerationModal({
                                 onClick={() => setShowExternalAiPromptBox(!showExternalAiPromptBox)}
                                 className="text-xs text-indigo-300 hover:text-white bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/40 px-3 py-1 rounded-lg cursor-pointer transition flex items-center gap-1 font-semibold"
                               >
-                                {showExternalAiPromptBox ? "閉じる ▲" : "図解を依頼・保存する ▼"}
+                                {showExternalAiPromptBox ? "閉じる ▲" : "外部AI用解説を依頼・保存する ▼"}
                               </button>
                             </div>
 
@@ -2197,12 +2197,12 @@ export default function QuestionGenerationModal({
                                   <div className="flex items-center justify-between">
                                     <span className="font-bold text-gray-200 text-xs flex items-center gap-1.5">
                                       <span className="w-4 h-4 rounded-full bg-indigo-600 text-white text-[10px] flex items-center justify-center font-bold">1</span>
-                                      <span>外部AI用プロンプトの作成（視覚的図解・短文指定）</span>
+                                      <span>外部AI用プロンプトの作成（図解 または 本質・着眼点5行要約）</span>
                                     </span>
-                                    <span className="text-[10px] text-gray-400">長文防止 / 図解・フローチャート指定</span>
+                                    <span className="text-[10px] text-gray-400">短文・本質抽出・図解指定</span>
                                   </div>
                                   <p className="text-gray-300 text-[11px] leading-relaxed">
-                                    質問や特に知りたい論点があれば入力し、「プロンプトをコピー」を押してChatGPT、Claude、Gemini等の外部AIに貼り付けてください。
+                                    質問や特に知りたい論点があれば入力し、目的に応じてプロンプトをコピーしてChatGPT、Claude、Gemini等の外部AIに貼り付けてください。
                                   </p>
                                   <textarea
                                     rows={2}
@@ -2211,7 +2211,8 @@ export default function QuestionGenerationModal({
                                     placeholder="例: 正解と選択肢Bの概念の違いを対比させてください。矢印を使った因果フローで図解してください。"
                                     className="w-full p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-xs text-white outline-none focus:border-indigo-500 leading-relaxed placeholder:text-gray-600"
                                   />
-                                  <div className="flex justify-end">
+                                  <div className="flex flex-wrap items-center justify-end gap-2">
+                                    {/* Button 1: Visual Diagram Prompt */}
                                     <button
                                       type="button"
                                       onClick={() => {
@@ -2257,8 +2258,54 @@ ${externalAiQuestionInput.trim() || "なぜこの解答になるのかのロジ�
                                         onSaveToast("✓ 外部AI用の視覚的図解プロンプトをコピーしました！ChatGPTやClaudeに貼り付けて解説を生成してください。");
                                       }}
                                       className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition cursor-pointer flex items-center gap-1.5 shadow"
+                                      title="関係図や矢印フローを中心とした視覚的図解プロンプトをコピー"
                                     >
-                                      <span>📋 視覚的図解プロンプトをコピー</span>
+                                      <span>📊 視覚的図解プロンプトをコピー</span>
+                                    </button>
+
+                                    {/* Button 2: Essence & Viewpoint 5-Line Explanation Prompt */}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const promptText = `あなたは物事の本質を瞬時に見抜き、鋭い着眼点を的確に伝えるプロの教育メンターです。
+以下の学習問題について、ありきたりな教科書通りの説明や既存解説の繰り返しは【一切不要】です。
+
+この問題の「本質（なぜこの問いが重要なのか・背後にある核心メカニズム）」と「一瞬で見抜く着眼点（どこに着目すれば解けるのか）」に特化し、
+【合計5行程度】の極めて簡潔で腹落ちする新しい解説を出力してください。
+
+【対象ノート】
+タイトル: ${currentQ.noteTitle || "学習ノート"}
+
+【問題】
+${currentQ.question}
+
+${currentQ.choices ? `【選択肢】\n${currentQ.choices.map(c => `${c.label}: ${c.text}${c.isCorrect ? " (正解)" : ""}`).join("\n")}` : ""}
+
+【模範解答】
+${currentQ.correctAnswer}
+
+${currentQ.evidence?.quote ? `【出題根拠引用】\n「${currentQ.evidence.quote}」` : ""}
+
+【ユーザーの関心・知りたい点】
+${externalAiQuestionInput.trim() || "表面的な知識ではなく、この問題の本質と解くための核心的な着眼点を知りたいです。"}
+
+────────────────────────
+【出力形式の指定（厳格に5行程度・既存解説の流用禁止）】
+長文や前置き・挨拶は一切省き、以下の5行構成でズバリ出力してください。
+
+1行目: 🎯【問題の本質】（背後にある核心メカニズム・なぜこの問いが重要なのかを1行で）
+2行目: 👁️【着眼点】（問題のどこに最初に着目して見抜くべきかを1行で）
+3行目: 💡【核心ロジック】（正解に至る決定的な因果関係を1行で）
+4行目: ⚡【選択肢の盲点】（誤答選択肢が作られている罠・違いを1行で）
+5行目: 📌【一言要約】（この問題から持ち帰るべき教訓・標語を1行で）`;
+
+                                        navigator.clipboard.writeText(promptText);
+                                        onSaveToast("✓ 問題の本質・着眼点を5行で解説させるプロンプトをコピーしました！外部AIに貼り付けてください。");
+                                      }}
+                                      className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white transition cursor-pointer flex items-center gap-1.5 shadow"
+                                      title="既存の解説に頼らず、問題の本質と着眼点を5行程度で解説させるプロンプトをコピー"
+                                    >
+                                      <span>🎯 本質・着眼点プロンプト (約5行)</span>
                                     </button>
                                   </div>
                                 </div>
