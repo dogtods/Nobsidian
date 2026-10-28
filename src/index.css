@@ -26,8 +26,111 @@
 body {
   font-family: 'Noto Sans JP', sans-serif;
   background: #0d1117;
-  color: var(--text);
+  color: #f0f6fc;
   -webkit-tap-highlight-color: transparent;
+}
+
+/* ===== NOVEL PAPER THEME (Scoped to .novel-paper-theme) ===== */
+body.novel-paper-theme,
+.novel-paper-theme {
+  font-family: "Meiryo", "Klee One", "Yu Gothic", "Hiragino Kaku Gothic ProN", sans-serif !important;
+  background-color: #f4ecd8 !important;
+  color: #2c2621 !important;
+  --bg: #f4ecd8;
+  --surface: #faf6ed;
+  --border: #e2d5be;
+  --border2: #d1c2a8;
+  --muted: #7a6e65;
+  --subtle: #4a4038;
+  --text: #2c2621;
+  --bright: #1a1613;
+  --blue: #1d6fa5;
+  --green: #2b7a3d;
+  --orange: #b85a14;
+  --red: #c93b32;
+  --purple: #7848c4;
+}
+
+body.novel-paper-theme .bg-\[\#0d1117\], 
+body.novel-paper-theme [class*="bg-[#0d1117]"],
+.novel-paper-theme .bg-\[\#0d1117\],
+.novel-paper-theme [class*="bg-[#0d1117]"] {
+  background-color: #f4ecd8 !important;
+}
+
+body.novel-paper-theme .bg-\[\#161b22\], 
+body.novel-paper-theme [class*="bg-[#161b22]"],
+.novel-paper-theme .bg-\[\#161b22\],
+.novel-paper-theme [class*="bg-[#161b22]"] {
+  background-color: #faf6ed !important;
+}
+
+body.novel-paper-theme .bg-\[\#1c2128\], 
+body.novel-paper-theme [class*="bg-[#1c2128]"],
+.novel-paper-theme .bg-\[\#1c2128\],
+.novel-paper-theme [class*="bg-[#1c2128]"] {
+  background-color: #f5efe6 !important;
+}
+
+body.novel-paper-theme .bg-\[\#12161c\], 
+body.novel-paper-theme [class*="bg-[#12161c]"],
+.novel-paper-theme .bg-\[\#12161c\],
+.novel-paper-theme [class*="bg-[#12161c]"] {
+  background-color: #f2ecdf !important;
+}
+
+body.novel-paper-theme .bg-\[\#11141a\], 
+body.novel-paper-theme [class*="bg-[#11141a]"],
+.novel-paper-theme .bg-\[\#11141a\],
+.novel-paper-theme [class*="bg-[#11141a]"] {
+  background-color: #f2ecdf !important;
+}
+
+body.novel-paper-theme .bg-\[\#21262d\], 
+body.novel-paper-theme [class*="bg-[#21262d]"],
+.novel-paper-theme .bg-\[\#21262d\],
+.novel-paper-theme [class*="bg-[#21262d]"] {
+  background-color: #e8decb !important;
+}
+
+body.novel-paper-theme .border-\[\#30363d\], 
+body.novel-paper-theme [class*="border-[#30363d]"],
+.novel-paper-theme .border-\[\#30363d\],
+.novel-paper-theme [class*="border-[#30363d]"] {
+  border-color: #e2d5be !important;
+}
+
+body.novel-paper-theme .border-\[\#21262d\], 
+body.novel-paper-theme [class*="border-[#21262d]"],
+.novel-paper-theme .border-\[\#21262d\],
+.novel-paper-theme [class*="border-[#21262d]"] {
+  border-color: #ebdcc4 !important;
+}
+
+body.novel-paper-theme .text-white, 
+body.novel-paper-theme .text-gray-100, 
+body.novel-paper-theme .text-gray-200,
+.novel-paper-theme .text-white,
+.novel-paper-theme .text-gray-100,
+.novel-paper-theme .text-gray-200 {
+  color: #2c2621 !important;
+}
+
+body.novel-paper-theme .text-gray-300, 
+body.novel-paper-theme .text-gray-400,
+.novel-paper-theme .text-gray-300,
+.novel-paper-theme .text-gray-400 {
+  color: #6b5e54 !important;
+}
+
+body.novel-paper-theme .text-gray-500,
+.novel-paper-theme .text-gray-500 {
+  color: #8c7d71 !important;
+}
+
+body.novel-paper-theme #preview, 
+body.novel-paper-theme #preview * {
+  font-family: "Meiryo", "Klee One", "Yu Gothic", sans-serif !important;
 }
 
 /* ===== SCROLLBARS ===== */
@@ -352,10 +455,9 @@ body {
   .no-print { display: none !important; }
   .page-break { page-break-before: always; }
 
-  /* Ensure preview has proper margins for printing */
   #preview {
     width: 100% !important;
-    max-width: 170mm !important; /* 210mm (A4) - 40mm (margin) */
+    max-width: 170mm !important;
     margin: 0 auto !important;
     font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
   }
@@ -369,7 +471,6 @@ body {
     color: #1a1a1a !important;
   }
   
-  /* Mermaid Diagram Printing */
   .mermaid-container {
     page-break-inside: avoid;
     break-inside: avoid;

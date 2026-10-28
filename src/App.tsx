@@ -1191,6 +1191,35 @@ export default function App() {
   }, [activeImgToolbarKey]);
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  const [themeMode, setThemeMode] = useState<"novel" | "dark">(() => {
+    try {
+      return (localStorage.getItem("cn_theme_mode") as "novel" | "dark") || "novel";
+    } catch {
+      return "novel";
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("cn_theme_mode", themeMode);
+    } catch {}
+    if (themeMode === "novel") {
+      document.body.classList.add("novel-paper-theme");
+      document.body.classList.remove("dark-theme");
+      document.documentElement.classList.add("novel-paper-theme");
+      document.documentElement.classList.remove("dark-theme");
+      document.documentElement.style.backgroundColor = "#f4ecd8";
+      document.body.style.backgroundColor = "#f4ecd8";
+    } else {
+      document.body.classList.remove("novel-paper-theme");
+      document.body.classList.add("dark-theme");
+      document.documentElement.classList.remove("novel-paper-theme");
+      document.documentElement.classList.add("dark-theme");
+      document.documentElement.style.backgroundColor = "#0d1117";
+      document.body.style.backgroundColor = "#0d1117";
+    }
+  }, [themeMode]);
+
   const [folderColumnSource, setFolderColumnSource] = useState<"D" | "N">(() => {
     try {
       return (localStorage.getItem("cn_folder_column_source") as "D" | "N") || "D";
@@ -6958,7 +6987,7 @@ const renderMarkdownToElements = (contentStr: string) => {
   return (
     <div className={`flex h-screen overflow-hidden bg-[#0d1117] text-[var(--text)] text-sm font-sans select-none antialiased print:block print:h-auto print:overflow-visible print:bg-white print:text-black print:p-0 print:m-0 ${
       isFullScreen ? "p-0 gap-0" : "p-2 md:p-3 gap-2 md:gap-3"
-    }`}>
+    } ${themeMode === "novel" ? "novel-paper-theme" : "dark-theme"}`}>
       
       {/* SIDEBAR CANVASES */}
       <div
@@ -7043,6 +7072,17 @@ const renderMarkdownToElements = (contentStr: string) => {
               title="学習問題生成・クイズ復習"
             >
               🎓
+            </button>
+            <button
+              onClick={() => {
+                const next = themeMode === "novel" ? "dark" : "novel";
+                setThemeMode(next);
+                toast(next === "novel" ? "📖 小説風ペーパーモードに切り替えました ✦" : "🌙 ダークモードに切り替えました ✦");
+              }}
+              className="p-2 px-2.5 bg-transparent border border-[var(--border2)] text-amber-300 text-xs rounded-lg hover:bg-amber-500/20 cursor-pointer transition-colors flex items-center justify-center font-bold"
+              title={themeMode === "novel" ? "ダークモードへ切り替え" : "小説風ペーパーモードへ切り替え"}
+            >
+              {themeMode === "novel" ? "🌙" : "📖"}
             </button>
             <button
               onClick={() => setIsSettingsOpen(true)}
@@ -7655,6 +7695,19 @@ const renderMarkdownToElements = (contentStr: string) => {
                   >
                     {isFullScreen ? <Minimize2 className="w-3.5 h-3.5 text-blue-400 shrink-0" /> : <Maximize2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
                     <span className="portrait:hidden hidden sm:inline">{isFullScreen ? "全画面解除" : "全画面"}</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      const next = themeMode === "novel" ? "dark" : "novel";
+                      setThemeMode(next);
+                      toast(next === "novel" ? "📖 小説風ペーパーモードに切り替えました ✦" : "🌙 ダークモードに切り替えました ✦");
+                    }}
+                    className="p-1 px-2.5 portrait:px-2 bg-transparent border border-[var(--border2)] text-xs font-semibold rounded-md text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] flex items-center gap-1.5 portrait:gap-0 transition-all cursor-pointer"
+                    title={themeMode === "novel" ? "ダークモードへ切り替え" : "小説風ペーパーモードへ切り替え"}
+                  >
+                    <span>{themeMode === "novel" ? "🌙" : "📖"}</span>
+                    <span className="portrait:hidden hidden sm:inline">{themeMode === "novel" ? "ダーク" : "小説風"}</span>
                   </button>
 
                   <a
@@ -8806,6 +8859,22 @@ const renderMarkdownToElements = (contentStr: string) => {
                 >
                   <BookOpen className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">問題生成・復習</span>
+                </button>
+                <button
+                  onClick={() => {
+                    const next = themeMode === "novel" ? "dark" : "novel";
+                    setThemeMode(next);
+                    toast(next === "novel" ? "📖 小説風ペーパーモードに切り替えました ✦" : "🌙 ダークモードに切り替えました ✦");
+                  }}
+                  className={`p-2 px-3 border text-xs font-semibold rounded-lg cursor-pointer transition-all flex items-center gap-1.5 shadow-sm active:scale-95 ${
+                    themeMode === "novel"
+                      ? "bg-amber-100/80 border-amber-300 text-amber-900 hover:bg-amber-200/80"
+                      : "bg-[#21262d] border-[#30363d] text-gray-200 hover:bg-[#30363d] hover:text-white"
+                  }`}
+                  title={themeMode === "novel" ? "ダークモードへ切り替え" : "小説風ペーパーモードへ切り替え"}
+                >
+                  <span className="text-sm">{themeMode === "novel" ? "🌙" : "📖"}</span>
+                  <span className="font-bold">{themeMode === "novel" ? "ダーク表示へ" : "小説風表示へ"}</span>
                 </button>
                 <button
                   onClick={() => setIsSettingsOpen(true)}
