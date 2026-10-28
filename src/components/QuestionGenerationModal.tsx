@@ -29,7 +29,8 @@ import {
   CheckCheck,
   Award,
   Undo2,
-  Shuffle
+  Shuffle,
+  TrendingUp
 } from "lucide-react";
 import {
   Note,
@@ -66,8 +67,8 @@ export default function QuestionGenerationModal({
   onSaveToast,
   onOpenSettings
 }: QuestionGenerationModalProps) {
-  // タブ: 'generate' | 'approval' | 'quiz' | 'settings'
-  const [activeTab, setActiveTab] = useState<"generate" | "approval" | "quiz" | "settings">("generate");
+  // タブ: 'generate' | 'approval' | 'quiz' | 'analytics' | 'settings'
+  const [activeTab, setActiveTab] = useState<"generate" | "approval" | "quiz" | "analytics" | "settings">("generate");
 
   // 生成設定
   const [selectedNoteId, setSelectedNoteId] = useState<string>(() => (activeNote ? activeNote.id : (notes[0]?.id || "")));
@@ -178,6 +179,56 @@ export default function QuestionGenerationModal({
       return state.nextReviewDate <= todayStr;
     }).length;
   }, [savedQuestions, reviewStates, todayStr]);
+
+  // 学習分析ダッシュボード用集計データ
+  const analyticsStats = useMemo(() => {
+    const totalQ = savedQuestions.length;
+    const masteredQ = savedQuestions.filter(q => q.status === "mastered" || reviewStates[q.id]?.masteryLevel === "mastered").length;
+    const learningQ = savedQuestions.filter(q => {
+      const st = reviewStates[q.id]?.masteryLevel;
+      return st === "learning" || st === "review" || (!st && q.status !== "mastered");
+    }).length;
+
+    let totalReviewsSum = 0;
+    let correctCountSum = 0;
+    for (const st of Object.values(reviewStates)) {
+      totalReviewsSum += st.totalReviews || 0;
+      correctCountSum += st.correctCount || 0;
+    }
+    const accuracy = totalReviewsSum > 0 ? Math.round((correctCountSum / totalReviewsSum) * 100) : 0;
+
+    // Group by noteTitle
+    const noteMap: Record<string, { title: string; total: number; mastered: number; correct: number; reviews: number }> = {};
+    for (const q of savedQuestions) {
+      const title = q.noteTitle || "未分類ノート";
+      if (!noteMap[title]) {
+        noteMap[title] = { title, total: 0, mastered: 0, correct: 0, reviews: 0 };
+      }
+      noteMap[title].total += 1;
+      const isMastered = q.status === "mastered" || reviewStates[q.id]?.masteryLevel === "mastered";
+      if (isMastered) noteMap[title].mastered += 1;
+      const st = reviewStates[q.id];
+      if (st) {
+        noteMap[title].reviews += st.totalReviews || 0;
+        noteMap[title].correct += st.correctCount || 0;
+      }
+    }
+
+    const notePerformances = Object.values(noteMap).map(n => {
+      const masteryRate = n.total > 0 ? Math.round((n.mastered / n.total) * 100) : 0;
+      const acc = n.reviews > 0 ? Math.round((n.correct / n.reviews) * 100) : 0;
+      return { ...n, masteryRate, acc };
+    }).sort((a, b) => b.masteryRate - a.masteryRate);
+
+    return {
+      totalQ,
+      masteredQ,
+      learningQ,
+      totalReviewsSum,
+      accuracy,
+      notePerformances
+    };
+  }, [savedQuestions, reviewStates]);
 
   // ランダム（シャッフル）出題設定（ローカルストレージに永続化）
   const [isQuizShuffled, setIsQuizShuffled] = useState<boolean>(() => {
@@ -898,6 +949,29 @@ export default function QuestionGenerationModal({
 
             <button
               type="button"
+              onClick={() => setActiveTab("analytics")}
+              className={`min-h-[38px] px-3.5 py-2 text-xs font-bold rounded-xl flex items-center gap-1.5 shrink-0 transition-all cursor-pointer whitespace-nowrap active:scale-[0.98] ${
+                activeTab === "analytics"
+                  ? "bg-sky-600 text-white shadow-md shadow-sky-950/40 border border-sky-400/50"
+                  : "bg-[#161b22] text-gray-300 hover:text-white hover:bg-[#21262d] border border-[#30363d]"
+              }`}
+              title="クイズ結果・習得状況のビジュアル分析・ダッシュボード"
+            >
+              <TrendingUp className="w-3.5 h-3.5 text-sky-300" />
+              <span>4. 学習分析</span>
+              {analyticsStats.totalQ > 0 && (
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-extrabold ${
+                  activeTab === "analytics"
+                    ? "bg-black/30 text-sky-100 border border-white/20"
+                    : "bg-sky-500/20 text-sky-300 border border-sky-500/40"
+                }`}>
+                  {analyticsStats.masteredQ}/{analyticsStats.totalQ}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
               onClick={() => setActiveTab("settings")}
               className={`min-h-[38px] px-3.5 py-2 text-xs font-bold rounded-xl flex items-center gap-1.5 shrink-0 transition-all cursor-pointer whitespace-nowrap active:scale-[0.98] ${
                 activeTab === "settings"
@@ -907,7 +981,7 @@ export default function QuestionGenerationModal({
               title="学習用スプレッドシート（5タブ）のURL設定と検証"
             >
               <FileSpreadsheet className="w-3.5 h-3.5 text-purple-300" />
-              <span>4. シート設定</span>
+              <span>5. シート設定</span>
             </button>
           </div>
         </div>
@@ -2346,7 +2420,173 @@ ${externalAiQuestionInput.trim() || "なぜこの解答になるのかのロジ�
             </div>
           )}
 
-          {/* TAB 4: SPREADSHEET STORAGE FOUNDATION SETTINGS */}
+          {/* TAB 4: LEARNING ANALYTICS & DASHBOARD */}
+          {activeTab === "analytics" && (
+            <div className="space-y-4">
+              {/* Top Summary Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="bg-[#1c2128] border border-[#30363d] rounded-xl p-3.5 space-y-1">
+                  <div className="text-[11px] text-gray-400 flex items-center gap-1">
+                    <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>登録問題総数</span>
+                  </div>
+                  <div className="text-xl font-bold text-white">
+                    {analyticsStats.totalQ} <span className="text-xs font-normal text-gray-400">問</span>
+                  </div>
+                </div>
+
+                <div className="bg-[#1c2128] border border-emerald-500/30 rounded-xl p-3.5 space-y-1">
+                  <div className="text-[11px] text-emerald-300 flex items-center gap-1">
+                    <Award className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>完全習得・卒業</span>
+                  </div>
+                  <div className="text-xl font-bold text-emerald-400">
+                    {analyticsStats.masteredQ} <span className="text-xs font-normal text-emerald-300/80">問</span>
+                  </div>
+                </div>
+
+                <div className="bg-[#1c2128] border border-sky-500/30 rounded-xl p-3.5 space-y-1">
+                  <div className="text-[11px] text-sky-300 flex items-center gap-1">
+                    <Zap className="w-3.5 h-3.5 text-sky-400" />
+                    <span>学習・復習中</span>
+                  </div>
+                  <div className="text-xl font-bold text-sky-400">
+                    {analyticsStats.learningQ} <span className="text-xs font-normal text-sky-300/80">問</span>
+                  </div>
+                </div>
+
+                <div className="bg-[#1c2128] border border-purple-500/30 rounded-xl p-3.5 space-y-1">
+                  <div className="text-[11px] text-purple-300 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-purple-400" />
+                    <span>総合正解率</span>
+                  </div>
+                  <div className="text-xl font-bold text-purple-300">
+                    {analyticsStats.accuracy}% <span className="text-xs font-normal text-purple-300/80">({analyticsStats.totalReviewsSum}回解答)</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Mastery Progress Visual Bar */}
+              <div className="bg-[#1c2128] border border-[#30363d] rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <TrendingUp className="w-4 h-4 text-sky-400" />
+                    <span>習熟度の分布状況</span>
+                  </h4>
+                  <span className="text-[10px] text-gray-400">
+                    マスター: {analyticsStats.masteredQ}問 / 学習中: {analyticsStats.learningQ}問
+                  </span>
+                </div>
+                {/* Visual Stacked Bar */}
+                <div className="w-full h-3 bg-[#0d1117] rounded-full overflow-hidden flex border border-[#30363d]">
+                  {analyticsStats.totalQ > 0 ? (
+                    <>
+                      <div
+                        style={{ width: `${Math.round((analyticsStats.masteredQ / analyticsStats.totalQ) * 100)}%` }}
+                        className="bg-emerald-500 transition-all duration-500"
+                        title={`習得済み: ${analyticsStats.masteredQ}問`}
+                      />
+                      <div
+                        style={{ width: `${Math.round((analyticsStats.learningQ / analyticsStats.totalQ) * 100)}%` }}
+                        className="bg-sky-500 transition-all duration-500"
+                        title={`学習・復習中: ${analyticsStats.learningQ}問`}
+                      />
+                    </>
+                  ) : (
+                    <div className="w-full bg-gray-700" />
+                  )}
+                </div>
+                <div className="flex items-center justify-between text-[11px] text-gray-400 pt-1">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
+                    <span>完全習得済み ({analyticsStats.totalQ > 0 ? Math.round((analyticsStats.masteredQ / analyticsStats.totalQ) * 100) : 0}%)</span>
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-sky-500 inline-block" />
+                    <span>学習・復習中 ({analyticsStats.totalQ > 0 ? Math.round((analyticsStats.learningQ / analyticsStats.totalQ) * 100) : 0}%)</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Note / Category Wise Strengths and Weaknesses */}
+              <div className="bg-[#1c2128] border border-[#30363d] rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span>📚 ノート別 得意・不得意分析 (ランキング)</span>
+                  </h4>
+                  <span className="text-[10px] text-gray-400">習熟度順</span>
+                </div>
+
+                {analyticsStats.notePerformances.length === 0 ? (
+                  <div className="text-center py-8 text-gray-400 text-xs">
+                    まだ問題が登録されていません。「問題生成」タブからノートを選択して問題を作成してください。
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1">
+                    {analyticsStats.notePerformances.map((np, idx) => {
+                      const isStrong = np.masteryRate >= 70;
+                      const isWeak = np.masteryRate < 40 && np.total >= 2;
+                      return (
+                        <div key={idx} className="bg-[#12161c] border border-[#30363d] rounded-xl p-3 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-white text-xs truncate max-w-[280px]">
+                                {np.title}
+                              </span>
+                              {isStrong && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/60 text-emerald-300 border border-emerald-500/30 font-bold">
+                                  ✨ 得意分野
+                                </span>
+                              )}
+                              {isWeak && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-950/60 text-amber-300 border border-amber-500/30 font-bold">
+                                  💡 重点復習推奨
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs font-mono font-bold text-gray-300">
+                              習得率: <span className={isStrong ? "text-emerald-400" : isWeak ? "text-amber-400" : "text-sky-400"}>{np.masteryRate}%</span> ({np.mastered}/{np.total}問)
+                            </div>
+                          </div>
+
+                          {/* Progress bar per note */}
+                          <div className="w-full h-2 bg-[#0d1117] rounded-full overflow-hidden flex border border-[#30363d]/60">
+                            <div
+                              style={{ width: `${np.masteryRate}%` }}
+                              className={`h-full transition-all duration-300 ${isStrong ? "bg-emerald-500" : isWeak ? "bg-amber-500" : "bg-sky-500"}`}
+                            />
+                          </div>
+
+                          <div className="flex items-center justify-between text-[10px] text-gray-400 pt-0.5">
+                            <span>解答回数: {np.reviews}回 (正解率: {np.acc}%)</span>
+                            <span>未習得: {np.total - np.mastered}問</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Actionable Insights */}
+              <div className="bg-[#0f141c] border border-sky-500/30 rounded-xl p-3.5 space-y-1.5">
+                <div className="text-xs font-bold text-sky-300 flex items-center gap-1.5">
+                  <span>💡 学習アドバイス</span>
+                </div>
+                <p className="text-[11px] text-gray-300 leading-relaxed">
+                  {analyticsStats.totalQ === 0
+                    ? "まずはノートから学習問題を生成し、クイズを解いてみましょう。あなたの得意不得意がここでビジュアル化されます。"
+                    : analyticsStats.masteredQ === 0
+                    ? "まだ完全習得済みの問題はありません。クイズを継続して解き、自己評価アンケートで「簡単」や「習得済みにする」を選ぶとマスター数が増えます。"
+                    : analyticsStats.accuracy >= 80
+                    ? "素晴らしい正解率です！知識がしっかりと定着しています。さらに深いノートを追加して知識のネットワークを広げましょう。"
+                    : "こまめに「3. クイズ・復習」タブから期限を迎えた問題の復習を行うことで、記憶の定着率が飛躍的に高まります。"}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: SPREADSHEET STORAGE FOUNDATION SETTINGS */}
           {activeTab === "settings" && (
             <div className="space-y-4">
               <div className="bg-[#1c2128] border border-purple-500/30 rounded-xl p-5 space-y-4">
