@@ -30,7 +30,13 @@ import {
   Award,
   Undo2,
   Shuffle,
-  TrendingUp
+  TrendingUp,
+  Folder,
+  Calendar,
+  Clock,
+  ArrowUpDown,
+  BarChart2,
+  Activity
 } from "lucide-react";
 import {
   Note,
@@ -47,6 +53,7 @@ import {
   calculateSM2Review,
   shuffleArray
 } from "../utils/questionUtils";
+import { getFolderFromKeywords } from "../utils/graphDataParser";
 
 interface QuestionGenerationModalProps {
   isOpen: boolean;
@@ -180,7 +187,11 @@ export default function QuestionGenerationModal({
     }).length;
   }, [savedQuestions, reviewStates, todayStr]);
 
-  // 学習分析ダッシュボード用集計データ
+  // 学習分析の表示モード ('folders' | 'timeline' | 'schedule') とソート順
+  const [analyticsViewMode, setAnalyticsViewMode] = useState<"folders" | "timeline" | "schedule">("folders");
+  const [folderSortBy, setFolderSortBy] = useState<"timeline" | "due" | "mastery" | "count">("timeline");
+
+  // 学習分析ダッシュボード用集計データ（D列フォルダ別・各分野の状態＆時系列推移）
   const analyticsStats = useMemo(() => {
     const totalQ = savedQuestions.length;
     const masteredQ = savedQuestions.filter(q => q.status === "mastered" || reviewStates[q.id]?.masteryLevel === "mastered").length;
@@ -197,28 +208,242 @@ export default function QuestionGenerationModal({
     }
     const accuracy = totalReviewsSum > 0 ? Math.round((correctCountSum / totalReviewsSum) * 100) : 0;
 
-    // Group by noteTitle
-    const noteMap: Record<string, { title: string; total: number; mastered: number; correct: number; reviews: number }> = {};
+    // ノートID/タイトルから D列（keywords）に基づくフォルダ名（分野名）を取得するマップを作成
+    const noteFolderMap = new Map<string, string>();
+    for (const n of notes) {
+      const fName = n.keywords ? getFolderFromKeywords(n.keywords) : "未分類";
+      noteFolderMap.set(n.id, fName);
+      if (n.title) noteFolderMap.set(n.title, fName);
+    }
+
+    const today = new Date().toISOString().split("T")[0];
+
+    // 直近14日間の日付リストを生成（時系列アクティビティ用）
+    const recentDays: { dateStr: string; label: string; dayOfWeek: string; count: number; byFolder: Record<string, number> }[] = [];
+    const dayNames = ["日", "月", "火", "水", "木", "金", "土"];
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split("T")[0];
+      const label = `${d.getMonth() + 1}/${d.getDate()}`;
+      const dayOfWeek = dayNames[d.getDay()];
+      recentDays.push({ dateStr, label, dayOfWeek, count: 0, byFolder: {} });
+    }
+    const recentDaysMap = new Map(recentDays.map(item => [item.dateStr, item]));
+
+    // 今後7日間の復習期日スケジュール
+    const upcomingSchedule: { dateStr: string; label: string; count: number; byFolder: Record<string, { total: number; questions: string[] }> }[] = [];
+    for (let i = 0; i <= 6; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() + i);
+      const dateStr = d.toISOString().split("T")[0];
+      const label = i === 0 ? "今日" : i === 1 ? "明日" : `${d.getMonth() + 1}/${d.getDate()} (${dayNames[d.getDay()]})`;
+      upcomingSchedule.push({ dateStr, label, count: 0, byFolder: {} });
+    }
+    const upcomingMap = new Map(upcomingSchedule.map(item => [item.dateStr, item]));
+
+    // Group by Folder (D列: カテゴリ・分野)
+    interface FolderRecord {
+      folderName: string;
+      total: number;
+      mastered: number;
+      learning: number;
+      unlearned: number;
+      correct: number;
+      reviews: number;
+      lastReviewedAt: number;
+      nextReviewDate: string;
+      dueTodayCount: number;
+      noteTitlesSet: Set<string>;
+      dailyReviews: Record<string, number>;
+    }
+
+    const folderMap: Record<string, FolderRecord> = {};
+
     for (const q of savedQuestions) {
-      const title = q.noteTitle || "未分類ノート";
-      if (!noteMap[title]) {
-        noteMap[title] = { title, total: 0, mastered: 0, correct: 0, reviews: 0 };
+      // D列によるフォルダ特定
+      const fName = noteFolderMap.get(q.noteId) || (q.noteTitle ? noteFolderMap.get(q.noteTitle) : null) || "未分類";
+
+      if (!folderMap[fName]) {
+        folderMap[fName] = {
+          folderName: fName,
+          total: 0,
+          mastered: 0,
+          learning: 0,
+          unlearned: 0,
+          correct: 0,
+          reviews: 0,
+          lastReviewedAt: 0,
+          nextReviewDate: "",
+          dueTodayCount: 0,
+          noteTitlesSet: new Set(),
+          dailyReviews: {}
+        };
       }
-      noteMap[title].total += 1;
+
+      const fRec = folderMap[fName];
+      fRec.total += 1;
+      if (q.noteTitle) fRec.noteTitlesSet.add(q.noteTitle);
+
       const isMastered = q.status === "mastered" || reviewStates[q.id]?.masteryLevel === "mastered";
-      if (isMastered) noteMap[title].mastered += 1;
       const st = reviewStates[q.id];
+
+      if (isMastered) {
+        fRec.mastered += 1;
+      } else if (st && (st.totalReviews || 0) > 0) {
+        fRec.learning += 1;
+      } else {
+        fRec.unlearned += 1;
+      }
+
       if (st) {
-        noteMap[title].reviews += st.totalReviews || 0;
-        noteMap[title].correct += st.correctCount || 0;
+        const revs = st.totalReviews || 0;
+        fRec.reviews += revs;
+        fRec.correct += st.correctCount || 0;
+
+        if (st.lastReviewedAt && st.lastReviewedAt > fRec.lastReviewedAt) {
+          fRec.lastReviewedAt = st.lastReviewedAt;
+        }
+
+        // 時系列アクティビティの集計 (lastReviewedAtから日付を抽出)
+        if (st.lastReviewedAt && st.lastReviewedAt > 0) {
+          const revDateStr = new Date(st.lastReviewedAt).toISOString().split("T")[0];
+          fRec.dailyReviews[revDateStr] = (fRec.dailyReviews[revDateStr] || 0) + 1;
+          const daySlot = recentDaysMap.get(revDateStr);
+          if (daySlot) {
+            daySlot.count += 1;
+            daySlot.byFolder[fName] = (daySlot.byFolder[fName] || 0) + 1;
+          }
+        }
+
+        // 次回復習期日の集計
+        if (!isMastered && st.nextReviewDate) {
+          if (!fRec.nextReviewDate || st.nextReviewDate < fRec.nextReviewDate) {
+            fRec.nextReviewDate = st.nextReviewDate;
+          }
+          if (st.nextReviewDate <= today) {
+            fRec.dueTodayCount += 1;
+          }
+          const upSlot = upcomingMap.get(st.nextReviewDate);
+          if (upSlot) {
+            upSlot.count += 1;
+            if (!upSlot.byFolder[fName]) {
+              upSlot.byFolder[fName] = { total: 0, questions: [] };
+            }
+            upSlot.byFolder[fName].total += 1;
+            if (upSlot.byFolder[fName].questions.length < 3) {
+              upSlot.byFolder[fName].questions.push(q.question);
+            }
+          }
+        }
       }
     }
 
-    const notePerformances = Object.values(noteMap).map(n => {
-      const masteryRate = n.total > 0 ? Math.round((n.mastered / n.total) * 100) : 0;
-      const acc = n.reviews > 0 ? Math.round((n.correct / n.reviews) * 100) : 0;
-      return { ...n, masteryRate, acc };
-    }).sort((a, b) => b.masteryRate - a.masteryRate);
+    // 各分野のステータスと時系列表示用データを整形
+    const nowTime = Date.now();
+    const folderPerformances = Object.values(folderMap).map(f => {
+      const masteryRate = f.total > 0 ? Math.round((f.mastered / f.total) * 100) : 0;
+      const acc = f.reviews > 0 ? Math.round((f.correct / f.reviews) * 100) : 0;
+
+      // 最終学習日時の人間用ラベル
+      let lastReviewedDisplay = "未学習";
+      if (f.lastReviewedAt > 0) {
+        const diffDays = Math.floor((nowTime - f.lastReviewedAt) / (1000 * 60 * 60 * 24));
+        if (diffDays === 0) lastReviewedDisplay = "今日";
+        else if (diffDays === 1) lastReviewedDisplay = "昨日";
+        else if (diffDays < 7) lastReviewedDisplay = `${diffDays}日前`;
+        else {
+          const d = new Date(f.lastReviewedAt);
+          lastReviewedDisplay = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+        }
+      }
+
+      // 次回復習ステータス
+      let dueStatus: "due" | "future" | "completed" | "unstarted" = "unstarted";
+      let nextReviewDisplay = "未設定";
+      if (masteryRate === 100 && f.total > 0) {
+        dueStatus = "completed";
+        nextReviewDisplay = "全問習得済";
+      } else if (f.dueTodayCount > 0) {
+        dueStatus = "due";
+        nextReviewDisplay = `本日復習あり (${f.dueTodayCount}問)`;
+      } else if (f.nextReviewDate) {
+        dueStatus = "future";
+        nextReviewDisplay = f.nextReviewDate;
+      } else if (f.reviews > 0) {
+        dueStatus = "future";
+        nextReviewDisplay = "スケジュール中";
+      }
+
+      // 状態バッジ
+      let statusBadge: { label: string; color: string; border: string; bg: string } = {
+        label: "🌱 未着手",
+        color: "text-gray-400",
+        border: "border-gray-500/30",
+        bg: "bg-gray-800/40"
+      };
+
+      if (masteryRate === 100 && f.total > 0) {
+        statusBadge = {
+          label: "✨ 完全習得",
+          color: "text-emerald-300",
+          border: "border-emerald-500/30",
+          bg: "bg-emerald-950/60"
+        };
+      } else if (f.dueTodayCount > 0) {
+        statusBadge = {
+          label: `⚠️ 要復習 (${f.dueTodayCount}問)`,
+          color: "text-amber-300",
+          border: "border-amber-500/40",
+          bg: "bg-amber-950/60"
+        };
+      } else if (masteryRate >= 60) {
+        statusBadge = {
+          label: "📈 習熟進展中",
+          color: "text-sky-300",
+          border: "border-sky-500/30",
+          bg: "bg-sky-950/60"
+        };
+      } else if (f.reviews > 0) {
+        statusBadge = {
+          label: "🔄 学習・定着中",
+          color: "text-purple-300",
+          border: "border-purple-500/30",
+          bg: "bg-purple-950/60"
+        };
+      }
+
+      return {
+        ...f,
+        noteCount: f.noteTitlesSet.size,
+        masteryRate,
+        acc,
+        lastReviewedDisplay,
+        nextReviewDisplay,
+        dueStatus,
+        statusBadge
+      };
+    });
+
+    // ソート順の適用
+    folderPerformances.sort((a, b) => {
+      if (folderSortBy === "timeline") {
+        // 最近学習した順（lastReviewedAt 降順、未学習は末尾）
+        return b.lastReviewedAt - a.lastReviewedAt;
+      } else if (folderSortBy === "due") {
+        // 要復習優先 -> 期日が近い順
+        if (b.dueTodayCount !== a.dueTodayCount) return b.dueTodayCount - a.dueTodayCount;
+        if (a.nextReviewDate && b.nextReviewDate) return a.nextReviewDate.localeCompare(b.nextReviewDate);
+        if (a.nextReviewDate) return -1;
+        if (b.nextReviewDate) return 1;
+        return 0;
+      } else if (folderSortBy === "mastery") {
+        return b.masteryRate - a.masteryRate;
+      } else {
+        // count: 問題数順
+        return b.total - a.total;
+      }
+    });
 
     return {
       totalQ,
@@ -226,9 +451,11 @@ export default function QuestionGenerationModal({
       learningQ,
       totalReviewsSum,
       accuracy,
-      notePerformances
+      folderPerformances,
+      recentDays,
+      upcomingSchedule
     };
-  }, [savedQuestions, reviewStates]);
+  }, [savedQuestions, reviewStates, notes, folderSortBy]);
 
   // ランダム（シャッフル）出題設定（ローカルストレージに永続化）
   const [isQuizShuffled, setIsQuizShuffled] = useState<boolean>(() => {
@@ -2555,79 +2782,421 @@ ${externalAiQuestionInput.trim() || "表面的な知識ではなく、この問�
                 </div>
               </div>
 
-              {/* Note / Category Wise Strengths and Weaknesses */}
-              <div className="bg-[#1c2128] border border-[#30363d] rounded-xl p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <span>📚 ノート別 得意・不得意分析 (ランキング)</span>
-                  </h4>
-                  <span className="text-[10px] text-gray-400">習熟度順</span>
+              {/* Folder (Column D) Status & Timeline Analysis */}
+              <div className="bg-[#1c2128] border border-[#30363d] rounded-xl p-4 space-y-3.5">
+                {/* Header & Controls */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-[#30363d]">
+                  <div>
+                    <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <Folder className="w-4 h-4 text-sky-400" />
+                      <span>各分野（D列フォルダ別）の状態 ＆ 時系列推移</span>
+                    </h4>
+                    <p className="text-[10px] text-gray-400 mt-0.5">
+                      ノートのD列（カテゴリ・タグ）に基づく分野ごとの習得進捗と学習タイムライン
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-auto">
+                    {/* View Switcher Tabs */}
+                    <div className="flex bg-[#0d1117] p-0.5 rounded-lg border border-[#30363d] text-[10px]">
+                      <button
+                        type="button"
+                        onClick={() => setAnalyticsViewMode("folders")}
+                        className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 font-semibold ${
+                          analyticsViewMode === "folders"
+                            ? "bg-sky-600 text-white shadow-sm"
+                            : "text-gray-400 hover:text-white"
+                        }`}
+                        title="分野ごとの状態と進捗一覧"
+                      >
+                        <Folder className="w-3 h-3" />
+                        <span>分野別状態</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setAnalyticsViewMode("timeline")}
+                        className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 font-semibold ${
+                          analyticsViewMode === "timeline"
+                            ? "bg-sky-600 text-white shadow-sm"
+                            : "text-gray-400 hover:text-white"
+                        }`}
+                        title="直近14日間の時系列アクティビティ推移"
+                      >
+                        <Activity className="w-3 h-3" />
+                        <span>時系列推移</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setAnalyticsViewMode("schedule")}
+                        className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 font-semibold ${
+                          analyticsViewMode === "schedule"
+                            ? "bg-sky-600 text-white shadow-sm"
+                            : "text-gray-400 hover:text-white"
+                        }`}
+                        title="今後の次回復習期日スケジュール"
+                      >
+                        <Calendar className="w-3 h-3" />
+                        <span>復習期日</span>
+                      </button>
+                    </div>
+
+                    {/* Sort Dropdown (for folders view) */}
+                    {analyticsViewMode === "folders" && (
+                      <div className="flex items-center gap-1 bg-[#0d1117] px-2 py-1 rounded-lg border border-[#30363d] text-[10px]">
+                        <ArrowUpDown className="w-3 h-3 text-gray-400 shrink-0" />
+                        <select
+                          value={folderSortBy}
+                          onChange={(e) => setFolderSortBy(e.target.value as any)}
+                          className="bg-transparent text-gray-300 outline-none cursor-pointer pr-1"
+                          title="分野の並び順"
+                        >
+                          <option value="timeline" className="bg-[#161b22] text-white">最近学習順 (時系列)</option>
+                          <option value="due" className="bg-[#161b22] text-white">要復習期日順</option>
+                          <option value="mastery" className="bg-[#161b22] text-white">習得率順</option>
+                          <option value="count" className="bg-[#161b22] text-white">問題数順</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                {analyticsStats.notePerformances.length === 0 ? (
+                {analyticsStats.folderPerformances.length === 0 ? (
                   <div className="text-center py-8 text-gray-400 text-xs">
                     まだ問題が登録されていません。「問題生成」タブからノートを選択して問題を作成してください。
                   </div>
                 ) : (
-                  <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1">
-                    {analyticsStats.notePerformances.map((np, idx) => {
-                      const isStrong = np.masteryRate >= 70;
-                      const isWeak = np.masteryRate < 40 && np.total >= 2;
-                      return (
-                        <div key={idx} className="bg-[#12161c] border border-[#30363d] rounded-xl p-3 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-white text-xs truncate max-w-[280px]">
-                                {np.title}
-                              </span>
-                              {isStrong && (
-                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/60 text-emerald-300 border border-emerald-500/30 font-bold">
-                                  ✨ 得意分野
-                                </span>
-                              )}
-                              {isWeak && (
-                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-950/60 text-amber-300 border border-amber-500/30 font-bold">
-                                  💡 重点復習推奨
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-xs font-mono font-bold text-gray-300">
-                              習得率: <span className={isStrong ? "text-emerald-400" : isWeak ? "text-amber-400" : "text-sky-400"}>{np.masteryRate}%</span> ({np.mastered}/{np.total}問)
-                            </div>
-                          </div>
+                  <>
+                    {/* VIEW 1: 分野別 状態一覧 */}
+                    {analyticsViewMode === "folders" && (
+                      <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
+                        {analyticsStats.folderPerformances.map((f, idx) => {
+                          const isAllMastered = f.masteryRate === 100 && f.total > 0;
+                          const hasDueToday = f.dueTodayCount > 0;
 
-                          {/* Progress bar per note */}
-                          <div className="w-full h-2 bg-[#0d1117] rounded-full overflow-hidden flex border border-[#30363d]/60">
+                          return (
                             <div
-                              style={{ width: `${np.masteryRate}%` }}
-                              className={`h-full transition-all duration-300 ${isStrong ? "bg-emerald-500" : isWeak ? "bg-amber-500" : "bg-sky-500"}`}
-                            />
+                              key={idx}
+                              className={`bg-[#12161c] border rounded-xl p-3.5 space-y-2.5 transition-all ${
+                                hasDueToday
+                                  ? "border-amber-500/40 bg-amber-950/10"
+                                  : isAllMastered
+                                  ? "border-emerald-500/30"
+                                  : "border-[#30363d]"
+                              }`}
+                            >
+                              {/* Top Row: Folder Name + Badge + Mastery % */}
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <Folder className="w-4 h-4 text-sky-400 shrink-0" />
+                                  <span className="font-bold text-white text-xs truncate max-w-[240px] sm:max-w-[320px]">
+                                    {f.folderName}
+                                  </span>
+                                  <span
+                                    className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold shrink-0 ${f.statusBadge.bg} ${f.statusBadge.color} ${f.statusBadge.border}`}
+                                  >
+                                    {f.statusBadge.label}
+                                  </span>
+                                </div>
+                                <div className="text-xs font-mono font-bold text-gray-300 shrink-0">
+                                  習得率:{" "}
+                                  <span
+                                    className={
+                                      isAllMastered
+                                        ? "text-emerald-400"
+                                        : f.masteryRate >= 60
+                                        ? "text-sky-400"
+                                        : "text-amber-400"
+                                    }
+                                  >
+                                    {f.masteryRate}%
+                                  </span>{" "}
+                                  <span className="text-gray-400 text-[11px] font-normal">
+                                    ({f.mastered}/{f.total}問)
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Progress bar (Mastered / Learning / Unlearned) */}
+                              <div className="w-full h-2.5 bg-[#0d1117] rounded-full overflow-hidden flex border border-[#30363d]/60">
+                                {f.mastered > 0 && (
+                                  <div
+                                    style={{ width: `${Math.round((f.mastered / f.total) * 100)}%` }}
+                                    className="bg-emerald-500 h-full transition-all duration-300"
+                                    title={`完全習得: ${f.mastered}問`}
+                                  />
+                                )}
+                                {f.learning > 0 && (
+                                  <div
+                                    style={{ width: `${Math.round((f.learning / f.total) * 100)}%` }}
+                                    className="bg-sky-500 h-full transition-all duration-300"
+                                    title={`学習・復習中: ${f.learning}問`}
+                                  />
+                                )}
+                                {f.unlearned > 0 && (
+                                  <div
+                                    style={{ width: `${Math.round((f.unlearned / f.total) * 100)}%` }}
+                                    className="bg-gray-700 h-full transition-all duration-300"
+                                    title={`未着手: ${f.unlearned}問`}
+                                  />
+                                )}
+                              </div>
+
+                              {/* Details & Timeline Meta Grid */}
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-[11px] border-t border-[#30363d]/40">
+                                <div className="flex items-center gap-1.5 text-gray-300">
+                                  <Clock className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                                  <div>
+                                    <span className="text-[10px] text-gray-500 block leading-none">最終学習</span>
+                                    <span className="font-medium text-gray-200">{f.lastReviewedDisplay}</span>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 text-gray-300">
+                                  <Calendar className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                                  <div>
+                                    <span className="text-[10px] text-gray-500 block leading-none">次回復習</span>
+                                    <span
+                                      className={`font-medium ${
+                                        f.dueTodayCount > 0
+                                          ? "text-amber-400 font-bold"
+                                          : f.dueStatus === "completed"
+                                          ? "text-emerald-400"
+                                          : "text-gray-200"
+                                      }`}
+                                    >
+                                      {f.nextReviewDisplay}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 text-gray-300">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                  <div>
+                                    <span className="text-[10px] text-gray-500 block leading-none">解答・正解率</span>
+                                    <span className="font-medium text-gray-200">
+                                      {f.acc}% <span className="text-[10px] text-gray-500">({f.reviews}回)</span>
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 text-gray-300">
+                                  <BookOpen className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                                  <div>
+                                    <span className="text-[10px] text-gray-500 block leading-none">対象ノート</span>
+                                    <span className="font-medium text-gray-200">{f.noteCount} 記事</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* VIEW 2: 時系列アクティビティ推移 (直近14日間) */}
+                    {analyticsViewMode === "timeline" && (
+                      <div className="space-y-3 animate-in fade-in duration-200">
+                        <div className="bg-[#12161c] border border-[#30363d] rounded-xl p-3.5 space-y-3">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-bold text-gray-200 flex items-center gap-1.5">
+                              <Activity className="w-3.5 h-3.5 text-sky-400" />
+                              <span>直近14日間の日別学習アクティビティ推移</span>
+                            </span>
+                            <span className="text-[10px] text-gray-400">日付ごとの解答問題数</span>
                           </div>
 
-                          <div className="flex items-center justify-between text-[10px] text-gray-400 pt-0.5">
-                            <span>解答回数: {np.reviews}回 (正解率: {np.acc}%)</span>
-                            <span>未習得: {np.total - np.mastered}問</span>
+                          {/* 14-day Activity Bar Chart */}
+                          <div className="pt-2 pb-1">
+                            {(() => {
+                              const maxDaily = Math.max(1, ...analyticsStats.recentDays.map(d => d.count));
+                              return (
+                                <div className="flex items-end justify-between gap-1.5 h-28 px-1">
+                                  {analyticsStats.recentDays.map((day, dIdx) => {
+                                    const heightPct = day.count > 0 ? Math.max(16, Math.round((day.count / maxDaily) * 100)) : 6;
+                                    const hasActivity = day.count > 0;
+                                    const isToday = dIdx === analyticsStats.recentDays.length - 1;
+
+                                    return (
+                                      <div key={dIdx} className="flex-1 flex flex-col items-center gap-1 h-full justify-end group">
+                                        <div className="text-[9px] font-mono text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                                          {day.count}
+                                        </div>
+                                        <div
+                                          style={{ height: `${heightPct}%` }}
+                                          className={`w-full max-w-[24px] rounded-t transition-all ${
+                                            hasActivity
+                                              ? isToday
+                                                ? "bg-sky-400 shadow-sm shadow-sky-500/50"
+                                                : "bg-sky-600 hover:bg-sky-500"
+                                              : "bg-gray-800/40"
+                                          }`}
+                                          title={`${day.dateStr} (${day.dayOfWeek}): ${day.count}問解答\n${Object.entries(day.byFolder).map(([fn, c]) => `・${fn}: ${c}問`).join("\n")}`}
+                                        />
+                                        <div
+                                          className={`text-[9px] font-mono truncate ${
+                                            isToday ? "text-sky-300 font-bold" : "text-gray-500"
+                                          }`}
+                                        >
+                                          {day.label}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })()}
+                          </div>
+
+                          <div className="flex items-center justify-between text-[10px] text-gray-400 border-t border-[#30363d]/50 pt-2">
+                            <span>※ 棒グラフにマウスを重ねると各分野の内訳が表示されます</span>
+                            <span className="flex items-center gap-2">
+                              <span className="flex items-center gap-1">
+                                <span className="w-2 h-2 rounded-xs bg-sky-600 inline-block" />
+                                <span>学習日</span>
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <span className="w-2 h-2 rounded-xs bg-sky-400 inline-block" />
+                                <span>今日</span>
+                              </span>
+                            </span>
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
+
+                        {/* Recent Activity by Folder Timeline List */}
+                        <div className="bg-[#12161c] border border-[#30363d] rounded-xl p-3.5 space-y-2">
+                          <span className="text-xs font-bold text-gray-200 block mb-1">
+                            📅 直近のアクティビティ履歴（分野別）
+                          </span>
+                          <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                            {analyticsStats.recentDays
+                              .filter(d => d.count > 0)
+                              .reverse()
+                              .map((day, idx) => (
+                                <div
+                                  key={idx}
+                                  className="p-2 rounded-lg bg-[#0d1117] border border-[#30363d]/60 flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px]"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono text-sky-400 font-bold">{day.dateStr} ({day.dayOfWeek})</span>
+                                    <span className="text-gray-300 font-medium">{day.count}問 解答</span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {Object.entries(day.byFolder).map(([fName, count], fIdx) => (
+                                      <span
+                                        key={fIdx}
+                                        className="text-[10px] px-1.5 py-0.5 rounded bg-sky-950/60 text-sky-300 border border-sky-500/30"
+                                      >
+                                        📁 {fName}: {count}問
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            {analyticsStats.recentDays.filter(d => d.count > 0).length === 0 && (
+                              <div className="text-center py-4 text-gray-500 text-xs">
+                                直近14日間の解答履歴はまだありません。クイズを解くと日別アクティビティが記録されます。
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* VIEW 3: 復習期日スケジュール */}
+                    {analyticsViewMode === "schedule" && (
+                      <div className="space-y-3 animate-in fade-in duration-200">
+                        <div className="bg-[#12161c] border border-[#30363d] rounded-xl p-3.5 space-y-3">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-bold text-gray-200 flex items-center gap-1.5">
+                              <Calendar className="w-3.5 h-3.5 text-purple-400" />
+                              <span>今後7日間の復習期日スケジュール（時間軸）</span>
+                            </span>
+                            <span className="text-[10px] text-gray-400">SRSアルゴリズムに基づく出題予定</span>
+                          </div>
+
+                          <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                            {analyticsStats.upcomingSchedule.map((slot, sIdx) => {
+                              const isToday = sIdx === 0;
+                              const hasDue = slot.count > 0;
+                              const folderEntries = Object.entries(slot.byFolder);
+
+                              return (
+                                <div
+                                  key={sIdx}
+                                  className={`p-2.5 rounded-lg border flex flex-col gap-1.5 text-xs transition-all ${
+                                    isToday && hasDue
+                                      ? "bg-amber-950/20 border-amber-500/40"
+                                      : hasDue
+                                      ? "bg-[#0d1117] border-purple-500/30"
+                                      : "bg-[#0d1117]/60 border-[#30363d]/40 opacity-70"
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <span
+                                        className={`font-bold font-mono text-[11px] ${
+                                          isToday ? "text-amber-400" : "text-purple-300"
+                                        }`}
+                                      >
+                                        {slot.label} ({slot.dateStr})
+                                      </span>
+                                      {isToday && hasDue && (
+                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold animate-pulse">
+                                          本日復習対象
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span
+                                      className={`font-mono text-xs font-bold ${
+                                        hasDue ? "text-white" : "text-gray-500"
+                                      }`}
+                                    >
+                                      {slot.count > 0 ? `${slot.count}問` : "予定なし"}
+                                    </span>
+                                  </div>
+
+                                  {folderEntries.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 pt-0.5">
+                                      {folderEntries.map(([fName, fInfo], fIdx) => (
+                                        <span
+                                          key={fIdx}
+                                          className={`text-[10px] px-2 py-0.5 rounded border ${
+                                            isToday
+                                              ? "bg-amber-950/50 text-amber-300 border-amber-500/30"
+                                              : "bg-purple-950/40 text-purple-300 border-purple-500/30"
+                                          }`}
+                                        >
+                                          📁 {fName}: {fInfo.total}問
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
 
               {/* Actionable Insights */}
               <div className="bg-[#0f141c] border border-sky-500/30 rounded-xl p-3.5 space-y-1.5">
                 <div className="text-xs font-bold text-sky-300 flex items-center gap-1.5">
-                  <span>💡 学習アドバイス</span>
+                  <span>💡 分野別・時系列の学習アドバイス</span>
                 </div>
                 <p className="text-[11px] text-gray-300 leading-relaxed">
                   {analyticsStats.totalQ === 0
-                    ? "まずはノートから学習問題を生成し、クイズを解いてみましょう。あなたの得意不得意がここでビジュアル化されます。"
-                    : analyticsStats.masteredQ === 0
-                    ? "まだ完全習得済みの問題はありません。クイズを継続して解き、自己評価アンケートで「簡単」や「習得済みにする」を選ぶとマスター数が増えます。"
-                    : analyticsStats.accuracy >= 80
-                    ? "素晴らしい正解率です！知識がしっかりと定着しています。さらに深いノートを追加して知識のネットワークを広げましょう。"
-                    : "こまめに「3. クイズ・復習」タブから期限を迎えた問題の復習を行うことで、記憶の定着率が飛躍的に高まります。"}
+                    ? "まずはノートから学習問題を生成し、クイズを解いてみましょう。あなたのD列分野ごとの習得状態と学習推移がここで可視化されます。"
+                    : analyticsStats.folderPerformances.some(f => f.dueTodayCount > 0)
+                    ? `⚠️ 本日期日を迎えている分野があります（${analyticsStats.folderPerformances.filter(f => f.dueTodayCount > 0).map(f => f.folderName).join("、")}）。「3. クイズ・復習」タブから本日の復習を実施しましょう。`
+                    : analyticsStats.masteredQ === analyticsStats.totalQ && analyticsStats.totalQ > 0
+                    ? "🎉 すべての分野で完全習得を達成しています！新しいノートを追加してさらに知識体系を広げましょう。"
+                    : "直近の時系列推移を確認しながら、学習が空いている分野や次回復習期日に合わせて学習を進めると、忘却曲線に沿った効率的な記憶定着が可能です。"}
                 </p>
               </div>
             </div>
