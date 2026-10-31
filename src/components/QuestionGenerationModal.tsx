@@ -55,6 +55,37 @@ import {
 } from "../utils/questionUtils";
 import { getFolderFromKeywords } from "../utils/graphDataParser";
 
+export const FOLDER_COLOR_PALETTE = [
+  { bg: "bg-sky-500", text: "text-sky-400", border: "border-sky-500/40", hex: "#0ea5e9", badgeBg: "bg-sky-950/60" },
+  { bg: "bg-emerald-500", text: "text-emerald-400", border: "border-emerald-500/40", hex: "#10b981", badgeBg: "bg-emerald-950/60" },
+  { bg: "bg-purple-500", text: "text-purple-400", border: "border-purple-500/40", hex: "#a855f7", badgeBg: "bg-purple-950/60" },
+  { bg: "bg-amber-500", text: "text-amber-400", border: "border-amber-500/40", hex: "#f59e0b", badgeBg: "bg-amber-950/60" },
+  { bg: "bg-rose-500", text: "text-rose-400", border: "border-rose-500/40", hex: "#f43f5e", badgeBg: "bg-rose-950/60" },
+  { bg: "bg-cyan-500", text: "text-cyan-400", border: "border-cyan-500/40", hex: "#06b6d4", badgeBg: "bg-cyan-950/60" },
+  { bg: "bg-indigo-500", text: "text-indigo-400", border: "border-indigo-500/40", hex: "#6366f1", badgeBg: "bg-indigo-950/60" },
+  { bg: "bg-teal-500", text: "text-teal-400", border: "border-teal-500/40", hex: "#14b8a6", badgeBg: "bg-teal-950/60" },
+  { bg: "bg-orange-500", text: "text-orange-400", border: "border-orange-500/40", hex: "#f97316", badgeBg: "bg-orange-950/60" },
+  { bg: "bg-pink-500", text: "text-pink-400", border: "border-pink-500/40", hex: "#ec4899", badgeBg: "bg-pink-950/60" },
+  { bg: "bg-lime-500", text: "text-lime-400", border: "border-lime-500/40", hex: "#84cc16", badgeBg: "bg-lime-950/60" },
+  { bg: "bg-blue-600", text: "text-blue-400", border: "border-blue-500/40", hex: "#2563eb", badgeBg: "bg-blue-950/60" },
+];
+
+export const getFolderColor = (folderName: string, allFolderList?: string[]) => {
+  if (allFolderList && allFolderList.length > 0) {
+    const idx = allFolderList.indexOf(folderName);
+    if (idx !== -1) {
+      return FOLDER_COLOR_PALETTE[idx % FOLDER_COLOR_PALETTE.length];
+    }
+  }
+  let hash = 0;
+  for (let i = 0; i < folderName.length; i++) {
+    hash = (hash << 5) - hash + folderName.charCodeAt(i);
+    hash |= 0;
+  }
+  const colorIndex = Math.abs(hash) % FOLDER_COLOR_PALETTE.length;
+  return FOLDER_COLOR_PALETTE[colorIndex];
+};
+
 interface QuestionGenerationModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -1073,27 +1104,27 @@ export default function QuestionGenerationModal({
   const approvedCount = candidateQuestions.filter(q => q.isApproved !== false).length;
 
   return (
-    <div className="fixed inset-0 z-[350] flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs">
+    <div className="fixed inset-0 z-[350] flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-xs overflow-hidden">
       <div
         className="fixed inset-0"
         onClick={() => !isGeneratingApi && !isSavingToSheet && onClose()}
       />
 
-      <div className="bg-[#161b22] border border-[#30363d] rounded-2xl w-[860px] max-w-full shadow-2xl relative z-[351] flex flex-col max-h-[92vh] overflow-hidden text-gray-200">
+      <div className="bg-[#161b22] border border-[#30363d] rounded-2xl w-full max-w-[860px] shadow-2xl relative z-[351] flex flex-col max-h-[92vh] sm:max-h-[88vh] overflow-hidden text-gray-200 min-w-0">
         {/* Header */}
-        <div className="shrink-0 px-5 py-4 border-b border-[#30363d] flex items-center justify-between bg-[#1c2128]">
-          <div className="flex items-center gap-2.5">
+        <div className="shrink-0 px-4 sm:px-5 py-3 sm:py-4 border-b border-[#30363d] flex items-center justify-between bg-[#1c2128] min-w-0 gap-2">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
             <span className="p-2 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 shrink-0">
               <BookOpen className="w-5 h-5" />
             </span>
-            <div>
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm sm:text-base font-bold text-white flex flex-wrap items-center gap-1.5 sm:gap-2">
                 <span>学習問題生成 ＆ 復習管理</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-normal border border-indigo-500/30">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-normal border border-indigo-500/30 whitespace-nowrap">
                   Active Recall / SRS
                 </span>
               </h3>
-              <p className="text-[11px] text-gray-400 mt-0.5">
+              <p className="text-[10px] sm:text-[11px] text-gray-400 mt-0.5 truncate sm:whitespace-normal">
                 ノートから良問を作成し、承認した問題を学習専用スプレッドシート（5タブ）へ同期します。
               </p>
             </div>
@@ -1109,8 +1140,8 @@ export default function QuestionGenerationModal({
         </div>
 
         {/* Tab Navigation */}
-        <div className="shrink-0 border-b border-[#30363d] bg-[#12161c] px-4 py-2.5">
-          <div className="flex items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden py-0.5">
+        <div className="shrink-0 border-b border-[#30363d] bg-[#12161c] px-3 sm:px-4 py-2 min-w-0 w-full overflow-hidden">
+          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden py-0.5 min-w-0 w-full">
             <button
               type="button"
               onClick={() => setActiveTab("generate")}
@@ -1214,7 +1245,7 @@ export default function QuestionGenerationModal({
         </div>
 
         {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-3.5 sm:p-5 space-y-4 min-w-0 w-full">
 
           {/* TAB 1: GENERATE */}
           {activeTab === "generate" && (
@@ -2696,58 +2727,58 @@ ${externalAiQuestionInput.trim() || "表面的な知識ではなく、この問�
 
           {/* TAB 4: LEARNING ANALYTICS & DASHBOARD */}
           {activeTab === "analytics" && (
-            <div className="space-y-4">
+            <div className="space-y-4 min-w-0">
               {/* Top Summary Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="bg-[#1c2128] border border-[#30363d] rounded-xl p-3.5 space-y-1">
-                  <div className="text-[11px] text-gray-400 flex items-center gap-1">
-                    <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>登録問題総数</span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 min-w-0">
+                <div className="bg-[#1c2128] border border-[#30363d] rounded-xl p-3 sm:p-3.5 space-y-1 min-w-0 overflow-hidden">
+                  <div className="text-[11px] text-gray-400 flex items-center gap-1 truncate">
+                    <BookOpen className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                    <span className="truncate">登録問題総数</span>
                   </div>
-                  <div className="text-xl font-bold text-white">
+                  <div className="text-lg sm:text-xl font-bold text-white truncate">
                     {analyticsStats.totalQ} <span className="text-xs font-normal text-gray-400">問</span>
                   </div>
                 </div>
 
-                <div className="bg-[#1c2128] border border-emerald-500/30 rounded-xl p-3.5 space-y-1">
-                  <div className="text-[11px] text-emerald-300 flex items-center gap-1">
-                    <Award className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>完全習得・卒業</span>
+                <div className="bg-[#1c2128] border border-emerald-500/30 rounded-xl p-3 sm:p-3.5 space-y-1 min-w-0 overflow-hidden">
+                  <div className="text-[11px] text-emerald-300 flex items-center gap-1 truncate">
+                    <Award className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span className="truncate">完全習得・卒業</span>
                   </div>
-                  <div className="text-xl font-bold text-emerald-400">
+                  <div className="text-lg sm:text-xl font-bold text-emerald-400 truncate">
                     {analyticsStats.masteredQ} <span className="text-xs font-normal text-emerald-300/80">問</span>
                   </div>
                 </div>
 
-                <div className="bg-[#1c2128] border border-sky-500/30 rounded-xl p-3.5 space-y-1">
-                  <div className="text-[11px] text-sky-300 flex items-center gap-1">
-                    <Zap className="w-3.5 h-3.5 text-sky-400" />
-                    <span>学習・復習中</span>
+                <div className="bg-[#1c2128] border border-sky-500/30 rounded-xl p-3 sm:p-3.5 space-y-1 min-w-0 overflow-hidden">
+                  <div className="text-[11px] text-sky-300 flex items-center gap-1 truncate">
+                    <Zap className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                    <span className="truncate">学習・復習中</span>
                   </div>
-                  <div className="text-xl font-bold text-sky-400">
+                  <div className="text-lg sm:text-xl font-bold text-sky-400 truncate">
                     {analyticsStats.learningQ} <span className="text-xs font-normal text-sky-300/80">問</span>
                   </div>
                 </div>
 
-                <div className="bg-[#1c2128] border border-purple-500/30 rounded-xl p-3.5 space-y-1">
-                  <div className="text-[11px] text-purple-300 flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-purple-400" />
-                    <span>総合正解率</span>
+                <div className="bg-[#1c2128] border border-purple-500/30 rounded-xl p-3 sm:p-3.5 space-y-1 min-w-0 overflow-hidden">
+                  <div className="text-[11px] text-purple-300 flex items-center gap-1 truncate">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                    <span className="truncate">総合正解率</span>
                   </div>
-                  <div className="text-xl font-bold text-purple-300">
-                    {analyticsStats.accuracy}% <span className="text-xs font-normal text-purple-300/80">({analyticsStats.totalReviewsSum}回解答)</span>
+                  <div className="text-lg sm:text-xl font-bold text-purple-300 truncate">
+                    {analyticsStats.accuracy}% <span className="text-[10px] sm:text-xs font-normal text-purple-300/80">({analyticsStats.totalReviewsSum}回)</span>
                   </div>
                 </div>
               </div>
 
               {/* Mastery Progress Visual Bar */}
-              <div className="bg-[#1c2128] border border-[#30363d] rounded-xl p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <TrendingUp className="w-4 h-4 text-sky-400" />
-                    <span>習熟度の分布状況</span>
+              <div className="bg-[#1c2128] border border-[#30363d] rounded-xl p-3.5 sm:p-4 space-y-3 min-w-0 overflow-hidden">
+                <div className="flex items-center justify-between min-w-0 gap-2">
+                  <h4 className="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+                    <TrendingUp className="w-4 h-4 text-sky-400 shrink-0" />
+                    <span className="truncate">習熟度の分布状況</span>
                   </h4>
-                  <span className="text-[10px] text-gray-400">
+                  <span className="text-[10px] text-gray-400 shrink-0">
                     マスター: {analyticsStats.masteredQ}問 / 学習中: {analyticsStats.learningQ}問
                   </span>
                 </div>
@@ -2770,81 +2801,81 @@ ${externalAiQuestionInput.trim() || "表面的な知識ではなく、この問�
                     <div className="w-full bg-gray-700" />
                   )}
                 </div>
-                <div className="flex items-center justify-between text-[11px] text-gray-400 pt-1">
+                <div className="flex flex-wrap items-center justify-between text-[11px] text-gray-400 pt-1 gap-1">
                   <span className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block shrink-0" />
                     <span>完全習得済み ({analyticsStats.totalQ > 0 ? Math.round((analyticsStats.masteredQ / analyticsStats.totalQ) * 100) : 0}%)</span>
                   </span>
                   <span className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-sky-500 inline-block" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-sky-500 inline-block shrink-0" />
                     <span>学習・復習中 ({analyticsStats.totalQ > 0 ? Math.round((analyticsStats.learningQ / analyticsStats.totalQ) * 100) : 0}%)</span>
                   </span>
                 </div>
               </div>
 
               {/* Folder (Column D) Status & Timeline Analysis */}
-              <div className="bg-[#1c2128] border border-[#30363d] rounded-xl p-4 space-y-3.5">
+              <div className="bg-[#1c2128] border border-[#30363d] rounded-xl p-3 sm:p-4 space-y-3.5 min-w-0 overflow-hidden">
                 {/* Header & Controls */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-[#30363d]">
-                  <div>
-                    <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <Folder className="w-4 h-4 text-sky-400" />
-                      <span>各分野（D列フォルダ別）の状態 ＆ 時系列推移</span>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-[#30363d] min-w-0">
+                  <div className="min-w-0">
+                    <h4 className="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+                      <Folder className="w-4 h-4 text-sky-400 shrink-0" />
+                      <span className="truncate">各分野（D列フォルダ別）の状態 ＆ 時系列推移</span>
                     </h4>
-                    <p className="text-[10px] text-gray-400 mt-0.5">
+                    <p className="text-[10px] text-gray-400 mt-0.5 truncate sm:whitespace-normal">
                       ノートのD列（カテゴリ・タグ）に基づく分野ごとの習得進捗と学習タイムライン
                     </p>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-auto">
+                  <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-auto shrink-0 max-w-full">
                     {/* View Switcher Tabs */}
-                    <div className="flex bg-[#0d1117] p-0.5 rounded-lg border border-[#30363d] text-[10px]">
+                    <div className="flex bg-[#0d1117] p-0.5 rounded-lg border border-[#30363d] text-[10px] max-w-full overflow-x-auto">
                       <button
                         type="button"
                         onClick={() => setAnalyticsViewMode("folders")}
-                        className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 font-semibold ${
+                        className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 font-semibold whitespace-nowrap ${
                           analyticsViewMode === "folders"
                             ? "bg-sky-600 text-white shadow-sm"
                             : "text-gray-400 hover:text-white"
                         }`}
                         title="分野ごとの状態と進捗一覧"
                       >
-                        <Folder className="w-3 h-3" />
+                        <Folder className="w-3 h-3 shrink-0" />
                         <span>分野別状態</span>
                       </button>
 
                       <button
                         type="button"
                         onClick={() => setAnalyticsViewMode("timeline")}
-                        className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 font-semibold ${
+                        className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 font-semibold whitespace-nowrap ${
                           analyticsViewMode === "timeline"
                             ? "bg-sky-600 text-white shadow-sm"
                             : "text-gray-400 hover:text-white"
                         }`}
                         title="直近14日間の時系列アクティビティ推移"
                       >
-                        <Activity className="w-3 h-3" />
+                        <Activity className="w-3 h-3 shrink-0" />
                         <span>時系列推移</span>
                       </button>
 
                       <button
                         type="button"
                         onClick={() => setAnalyticsViewMode("schedule")}
-                        className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 font-semibold ${
+                        className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 font-semibold whitespace-nowrap ${
                           analyticsViewMode === "schedule"
                             ? "bg-sky-600 text-white shadow-sm"
                             : "text-gray-400 hover:text-white"
                         }`}
                         title="今後の次回復習期日スケジュール"
                       >
-                        <Calendar className="w-3 h-3" />
+                        <Calendar className="w-3 h-3 shrink-0" />
                         <span>復習期日</span>
                       </button>
                     </div>
 
                     {/* Sort Dropdown (for folders view) */}
                     {analyticsViewMode === "folders" && (
-                      <div className="flex items-center gap-1 bg-[#0d1117] px-2 py-1 rounded-lg border border-[#30363d] text-[10px]">
+                      <div className="flex items-center gap-1 bg-[#0d1117] px-2 py-1 rounded-lg border border-[#30363d] text-[10px] shrink-0">
                         <ArrowUpDown className="w-3 h-3 text-gray-400 shrink-0" />
                         <select
                           value={folderSortBy}
@@ -2870,15 +2901,17 @@ ${externalAiQuestionInput.trim() || "表面的な知識ではなく、この問�
                   <>
                     {/* VIEW 1: 分野別 状態一覧 */}
                     {analyticsViewMode === "folders" && (
-                      <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
+                      <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1 min-w-0">
                         {analyticsStats.folderPerformances.map((f, idx) => {
                           const isAllMastered = f.masteryRate === 100 && f.total > 0;
                           const hasDueToday = f.dueTodayCount > 0;
+                          const allFolderNames = analyticsStats.folderPerformances.map(item => item.folderName);
+                          const col = getFolderColor(f.folderName, allFolderNames);
 
                           return (
                             <div
                               key={idx}
-                              className={`bg-[#12161c] border rounded-xl p-3.5 space-y-2.5 transition-all ${
+                              className={`bg-[#12161c] border rounded-xl p-3 sm:p-3.5 space-y-2.5 transition-all min-w-0 overflow-hidden ${
                                 hasDueToday
                                   ? "border-amber-500/40 bg-amber-950/10"
                                   : isAllMastered
@@ -2886,11 +2919,12 @@ ${externalAiQuestionInput.trim() || "表面的な知識ではなく、この問�
                                   : "border-[#30363d]"
                               }`}
                             >
-                              {/* Top Row: Folder Name + Badge + Mastery % */}
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-2 min-w-0">
+                              {/* Top Row: Folder Name + Color Indicator + Badge + Mastery % */}
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-2 min-w-0">
+                                <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                                  <span className={`w-2.5 h-2.5 rounded-xs ${col.bg} shrink-0`} />
                                   <Folder className="w-4 h-4 text-sky-400 shrink-0" />
-                                  <span className="font-bold text-white text-xs truncate max-w-[240px] sm:max-w-[320px]">
+                                  <span className="font-bold text-white text-xs truncate max-w-[200px] sm:max-w-[280px]" title={f.folderName}>
                                     {f.folderName}
                                   </span>
                                   <span
@@ -2899,7 +2933,7 @@ ${externalAiQuestionInput.trim() || "表面的な知識ではなく、この問�
                                     {f.statusBadge.label}
                                   </span>
                                 </div>
-                                <div className="text-xs font-mono font-bold text-gray-300 shrink-0">
+                                <div className="text-xs font-mono font-bold text-gray-300 shrink-0 self-end sm:self-auto">
                                   習得率:{" "}
                                   <span
                                     className={
@@ -2945,20 +2979,20 @@ ${externalAiQuestionInput.trim() || "表面的な知識ではなく、この問�
 
                               {/* Details & Timeline Meta Grid */}
                               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-[11px] border-t border-[#30363d]/40">
-                                <div className="flex items-center gap-1.5 text-gray-300">
+                                <div className="flex items-center gap-1.5 text-gray-300 min-w-0">
                                   <Clock className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                                  <div>
+                                  <div className="min-w-0">
                                     <span className="text-[10px] text-gray-500 block leading-none">最終学習</span>
-                                    <span className="font-medium text-gray-200">{f.lastReviewedDisplay}</span>
+                                    <span className="font-medium text-gray-200 truncate block">{f.lastReviewedDisplay}</span>
                                   </div>
                                 </div>
 
-                                <div className="flex items-center gap-1.5 text-gray-300">
+                                <div className="flex items-center gap-1.5 text-gray-300 min-w-0">
                                   <Calendar className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                                  <div>
+                                  <div className="min-w-0">
                                     <span className="text-[10px] text-gray-500 block leading-none">次回復習</span>
                                     <span
-                                      className={`font-medium ${
+                                      className={`font-medium truncate block ${
                                         f.dueTodayCount > 0
                                           ? "text-amber-400 font-bold"
                                           : f.dueStatus === "completed"
@@ -2971,21 +3005,21 @@ ${externalAiQuestionInput.trim() || "表面的な知識ではなく、この問�
                                   </div>
                                 </div>
 
-                                <div className="flex items-center gap-1.5 text-gray-300">
+                                <div className="flex items-center gap-1.5 text-gray-300 min-w-0">
                                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                                  <div>
+                                  <div className="min-w-0">
                                     <span className="text-[10px] text-gray-500 block leading-none">解答・正解率</span>
-                                    <span className="font-medium text-gray-200">
+                                    <span className="font-medium text-gray-200 truncate block">
                                       {f.acc}% <span className="text-[10px] text-gray-500">({f.reviews}回)</span>
                                     </span>
                                   </div>
                                 </div>
 
-                                <div className="flex items-center gap-1.5 text-gray-300">
+                                <div className="flex items-center gap-1.5 text-gray-300 min-w-0">
                                   <BookOpen className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                                  <div>
+                                  <div className="min-w-0">
                                     <span className="text-[10px] text-gray-500 block leading-none">対象ノート</span>
-                                    <span className="font-medium text-gray-200">{f.noteCount} 記事</span>
+                                    <span className="font-medium text-gray-200 truncate block">{f.noteCount} 記事</span>
                                   </div>
                                 </div>
                               </div>
@@ -2995,105 +3029,181 @@ ${externalAiQuestionInput.trim() || "表面的な知識ではなく、この問�
                       </div>
                     )}
 
-                    {/* VIEW 2: 時系列アクティビティ推移 (直近14日間) */}
+                    {/* VIEW 2: 時系列アクティビティ推移 (直近14日間・分野別 積み上げ棒グラフ) */}
                     {analyticsViewMode === "timeline" && (
-                      <div className="space-y-3 animate-in fade-in duration-200">
-                        <div className="bg-[#12161c] border border-[#30363d] rounded-xl p-3.5 space-y-3">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="font-bold text-gray-200 flex items-center gap-1.5">
-                              <Activity className="w-3.5 h-3.5 text-sky-400" />
-                              <span>直近14日間の日別学習アクティビティ推移</span>
+                      <div className="space-y-3 animate-in fade-in duration-200 min-w-0">
+                        <div className="bg-[#12161c] border border-[#30363d] rounded-xl p-3 sm:p-3.5 space-y-3 min-w-0 overflow-hidden">
+                          <div className="flex items-center justify-between text-xs min-w-0 gap-2">
+                            <span className="font-bold text-gray-200 flex items-center gap-1.5 truncate">
+                              <Activity className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                              <span className="truncate">直近14日間の日別学習アクティビティ推移（分野別 積み上げ棒グラフ）</span>
                             </span>
-                            <span className="text-[10px] text-gray-400">日付ごとの解答問題数</span>
+                            <span className="text-[10px] text-gray-400 shrink-0 hidden sm:inline">分野ごとの内訳と解答数</span>
                           </div>
 
-                          {/* 14-day Activity Bar Chart */}
-                          <div className="pt-2 pb-1">
+                          {/* 14-day Activity Stacked Bar Chart with Responsive Horizontal Container */}
+                          <div className="pt-2 pb-1 min-w-0 w-full">
                             {(() => {
                               const maxDaily = Math.max(1, ...analyticsStats.recentDays.map(d => d.count));
-                              return (
-                                <div className="flex items-end justify-between gap-1.5 h-28 px-1">
-                                  {analyticsStats.recentDays.map((day, dIdx) => {
-                                    const heightPct = day.count > 0 ? Math.max(16, Math.round((day.count / maxDaily) * 100)) : 6;
-                                    const hasActivity = day.count > 0;
-                                    const isToday = dIdx === analyticsStats.recentDays.length - 1;
+                              const allFolderNames = analyticsStats.folderPerformances.map(f => f.folderName);
+                              const totalActivityReviews = analyticsStats.recentDays.reduce((acc, d) => acc + d.count, 0);
 
-                                    return (
-                                      <div key={dIdx} className="flex-1 flex flex-col items-center gap-1 h-full justify-end group">
-                                        <div className="text-[9px] font-mono text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                                          {day.count}
+                              return (
+                                <div className="space-y-3 min-w-0">
+                                  {/* Chart Bars Container - scroll horizontally if viewport is narrow, full width on desktop */}
+                                  <div className="w-full min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden py-1">
+                                    <div className="min-w-[420px] sm:min-w-0 flex items-end justify-between gap-1 sm:gap-2 h-32 px-1">
+                                      {analyticsStats.recentDays.map((day, dIdx) => {
+                                        const heightPct = day.count > 0 ? Math.max(18, Math.round((day.count / maxDaily) * 100)) : 6;
+                                        const hasActivity = day.count > 0;
+                                        const isToday = dIdx === analyticsStats.recentDays.length - 1;
+                                        const folderEntries = Object.entries(day.byFolder);
+
+                                        return (
+                                          <div
+                                            key={dIdx}
+                                            className="flex-1 min-w-[20px] max-w-[38px] flex flex-col items-center gap-1 h-full justify-end group min-w-0"
+                                          >
+                                            {/* Hover count indicator above bar */}
+                                            <div className="text-[9px] font-mono text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity truncate h-3">
+                                              {day.count > 0 ? `${day.count}` : ""}
+                                            </div>
+
+                                            {/* Stacked Vertical Bar */}
+                                            <div
+                                              style={{ height: `${heightPct}%` }}
+                                              className={`w-full rounded-t transition-all duration-300 flex flex-col-reverse overflow-hidden ${
+                                                hasActivity
+                                                  ? isToday
+                                                    ? "ring-2 ring-sky-400 shadow-sm shadow-sky-500/30"
+                                                    : "hover:ring-1 hover:ring-white/40"
+                                                  : "bg-gray-800/40"
+                                              }`}
+                                              title={`${day.dateStr} (${day.dayOfWeek}): 合計 ${day.count}問 解答\n${
+                                                folderEntries.length > 0
+                                                  ? folderEntries.map(([fn, c]) => `・${fn}: ${c}問 (${Math.round((c / day.count) * 100)}%)`).join("\n")
+                                                  : "学習記録なし"
+                                              }`}
+                                            >
+                                              {hasActivity ? (
+                                                folderEntries.map(([fName, fCount], fIdx) => {
+                                                  const segPct = (fCount / day.count) * 100;
+                                                  const col = getFolderColor(fName, allFolderNames);
+                                                  return (
+                                                    <div
+                                                      key={fIdx}
+                                                      style={{ height: `${segPct}%` }}
+                                                      className={`w-full ${col.bg} transition-all hover:brightness-125 ${
+                                                        fIdx > 0 ? "border-t border-black/30" : ""
+                                                      }`}
+                                                      title={`${fName}: ${fCount}問 (${Math.round(segPct)}%)`}
+                                                    />
+                                                  );
+                                                })
+                                              ) : (
+                                                <div className="w-full h-full bg-gray-800/40" />
+                                              )}
+                                            </div>
+
+                                            {/* Date Label */}
+                                            <div
+                                              className={`text-[9px] font-mono w-full text-center truncate ${
+                                                isToday ? "text-sky-300 font-bold" : "text-gray-400"
+                                              }`}
+                                              title={`${day.dateStr} (${day.dayOfWeek})`}
+                                            >
+                                              {day.label}
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+
+                                  {/* Chart Footnote & Legend */}
+                                  <div className="border-t border-[#30363d]/60 pt-2.5 space-y-2">
+                                    <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-gray-400">
+                                      <span>💡 各バーの上にマウスを乗せると分野別の解答内訳が表示されます</span>
+                                      <div className="flex items-center gap-2">
+                                        <span className="flex items-center gap-1">
+                                          <span className="w-2 h-2 rounded-xs ring-1 ring-sky-400 bg-sky-500 inline-block" />
+                                          <span className="text-sky-300">本日</span>
+                                        </span>
+                                        <span className="text-gray-600">|</span>
+                                        <span>直近14日間合計: <strong className="text-white font-mono">{totalActivityReviews}問</strong></span>
+                                      </div>
+                                    </div>
+
+                                    {/* Folder Color Legend (分野別 凡例) */}
+                                    {analyticsStats.folderPerformances.length > 0 && (
+                                      <div className="bg-[#0d1117]/80 rounded-lg p-2.5 border border-[#30363d]/50 space-y-1.5">
+                                        <div className="text-[10px] text-gray-400 font-semibold flex items-center justify-between">
+                                          <span className="flex items-center gap-1 text-gray-300">
+                                            <Folder className="w-3 h-3 text-sky-400" />
+                                            <span>分野別カラー凡例（積み上げバーの内訳色）:</span>
+                                          </span>
+                                          <span className="text-[9px] text-gray-500 font-mono">全 {analyticsStats.folderPerformances.length} 分野</span>
                                         </div>
-                                        <div
-                                          style={{ height: `${heightPct}%` }}
-                                          className={`w-full max-w-[24px] rounded-t transition-all ${
-                                            hasActivity
-                                              ? isToday
-                                                ? "bg-sky-400 shadow-sm shadow-sky-500/50"
-                                                : "bg-sky-600 hover:bg-sky-500"
-                                              : "bg-gray-800/40"
-                                          }`}
-                                          title={`${day.dateStr} (${day.dayOfWeek}): ${day.count}問解答\n${Object.entries(day.byFolder).map(([fn, c]) => `・${fn}: ${c}問`).join("\n")}`}
-                                        />
-                                        <div
-                                          className={`text-[9px] font-mono truncate ${
-                                            isToday ? "text-sky-300 font-bold" : "text-gray-500"
-                                          }`}
-                                        >
-                                          {day.label}
+                                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 max-h-[72px] overflow-y-auto pr-1">
+                                          {analyticsStats.folderPerformances.map((f, fIdx) => {
+                                            const col = getFolderColor(f.folderName, allFolderNames);
+                                            return (
+                                              <div key={fIdx} className="flex items-center gap-1.5 text-[10px]">
+                                                <span className={`w-2.5 h-2.5 rounded-xs ${col.bg} inline-block shrink-0 shadow-xs`} />
+                                                <span className="text-gray-200 font-medium truncate max-w-[130px]" title={f.folderName}>
+                                                  {f.folderName}
+                                                </span>
+                                                <span className="text-gray-400 font-mono text-[9px]">({f.total}問)</span>
+                                              </div>
+                                            );
+                                          })}
                                         </div>
                                       </div>
-                                    );
-                                  })}
+                                    )}
+                                  </div>
                                 </div>
                               );
                             })()}
                           </div>
-
-                          <div className="flex items-center justify-between text-[10px] text-gray-400 border-t border-[#30363d]/50 pt-2">
-                            <span>※ 棒グラフにマウスを重ねると各分野の内訳が表示されます</span>
-                            <span className="flex items-center gap-2">
-                              <span className="flex items-center gap-1">
-                                <span className="w-2 h-2 rounded-xs bg-sky-600 inline-block" />
-                                <span>学習日</span>
-                              </span>
-                              <span className="flex items-center gap-1">
-                                <span className="w-2 h-2 rounded-xs bg-sky-400 inline-block" />
-                                <span>今日</span>
-                              </span>
-                            </span>
-                          </div>
                         </div>
 
                         {/* Recent Activity by Folder Timeline List */}
-                        <div className="bg-[#12161c] border border-[#30363d] rounded-xl p-3.5 space-y-2">
+                        <div className="bg-[#12161c] border border-[#30363d] rounded-xl p-3 sm:p-3.5 space-y-2 min-w-0 overflow-hidden">
                           <span className="text-xs font-bold text-gray-200 block mb-1">
                             📅 直近のアクティビティ履歴（分野別）
                           </span>
-                          <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                          <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1 min-w-0">
                             {analyticsStats.recentDays
                               .filter(d => d.count > 0)
                               .reverse()
-                              .map((day, idx) => (
-                                <div
-                                  key={idx}
-                                  className="p-2 rounded-lg bg-[#0d1117] border border-[#30363d]/60 flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px]"
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-mono text-sky-400 font-bold">{day.dateStr} ({day.dayOfWeek})</span>
-                                    <span className="text-gray-300 font-medium">{day.count}問 解答</span>
+                              .map((day, idx) => {
+                                const allFolderNames = analyticsStats.folderPerformances.map(f => f.folderName);
+                                return (
+                                  <div
+                                    key={idx}
+                                    className="p-2 sm:p-2.5 rounded-lg bg-[#0d1117] border border-[#30363d]/60 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-[11px] min-w-0"
+                                  >
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <span className="font-mono text-sky-400 font-bold">{day.dateStr} ({day.dayOfWeek})</span>
+                                      <span className="text-gray-300 font-medium">{day.count}問 解答</span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1 min-w-0">
+                                      {Object.entries(day.byFolder).map(([fName, count], fIdx) => {
+                                        const col = getFolderColor(fName, allFolderNames);
+                                        return (
+                                          <span
+                                            key={fIdx}
+                                            className={`text-[10px] px-2 py-0.5 rounded ${col.badgeBg} ${col.text} border ${col.border} font-medium flex items-center gap-1`}
+                                          >
+                                            <span className={`w-1.5 h-1.5 rounded-full ${col.bg} inline-block shrink-0`} />
+                                            <span>{fName}: {count}問</span>
+                                          </span>
+                                        );
+                                      })}
+                                    </div>
                                   </div>
-                                  <div className="flex flex-wrap gap-1">
-                                    {Object.entries(day.byFolder).map(([fName, count], fIdx) => (
-                                      <span
-                                        key={fIdx}
-                                        className="text-[10px] px-1.5 py-0.5 rounded bg-sky-950/60 text-sky-300 border border-sky-500/30"
-                                      >
-                                        📁 {fName}: {count}問
-                                      </span>
-                                    ))}
-                                  </div>
-                                </div>
-                              ))}
+                                );
+                              })}
                             {analyticsStats.recentDays.filter(d => d.count > 0).length === 0 && (
                               <div className="text-center py-4 text-gray-500 text-xs">
                                 直近14日間の解答履歴はまだありません。クイズを解くと日別アクティビティが記録されます。
@@ -3106,26 +3216,27 @@ ${externalAiQuestionInput.trim() || "表面的な知識ではなく、この問�
 
                     {/* VIEW 3: 復習期日スケジュール */}
                     {analyticsViewMode === "schedule" && (
-                      <div className="space-y-3 animate-in fade-in duration-200">
-                        <div className="bg-[#12161c] border border-[#30363d] rounded-xl p-3.5 space-y-3">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="font-bold text-gray-200 flex items-center gap-1.5">
-                              <Calendar className="w-3.5 h-3.5 text-purple-400" />
-                              <span>今後7日間の復習期日スケジュール（時間軸）</span>
+                      <div className="space-y-3 animate-in fade-in duration-200 min-w-0">
+                        <div className="bg-[#12161c] border border-[#30363d] rounded-xl p-3 sm:p-3.5 space-y-3 min-w-0 overflow-hidden">
+                          <div className="flex items-center justify-between text-xs min-w-0 gap-2">
+                            <span className="font-bold text-gray-200 flex items-center gap-1.5 truncate">
+                              <Calendar className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                              <span className="truncate">今後7日間の復習期日スケジュール（時間軸）</span>
                             </span>
-                            <span className="text-[10px] text-gray-400">SRSアルゴリズムに基づく出題予定</span>
+                            <span className="text-[10px] text-gray-400 shrink-0 hidden sm:inline">SRSアルゴリズムに基づく出題予定</span>
                           </div>
 
-                          <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                          <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 min-w-0">
                             {analyticsStats.upcomingSchedule.map((slot, sIdx) => {
                               const isToday = sIdx === 0;
                               const hasDue = slot.count > 0;
                               const folderEntries = Object.entries(slot.byFolder);
+                              const allFolderNames = analyticsStats.folderPerformances.map(f => f.folderName);
 
                               return (
                                 <div
                                   key={sIdx}
-                                  className={`p-2.5 rounded-lg border flex flex-col gap-1.5 text-xs transition-all ${
+                                  className={`p-2.5 rounded-lg border flex flex-col gap-1.5 text-xs transition-all min-w-0 overflow-hidden ${
                                     isToday && hasDue
                                       ? "bg-amber-950/20 border-amber-500/40"
                                       : hasDue
@@ -3133,23 +3244,23 @@ ${externalAiQuestionInput.trim() || "表面的な知識ではなく、この問�
                                       : "bg-[#0d1117]/60 border-[#30363d]/40 opacity-70"
                                   }`}
                                 >
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
+                                  <div className="flex items-center justify-between min-w-0 gap-2">
+                                    <div className="flex items-center gap-2 min-w-0">
                                       <span
-                                        className={`font-bold font-mono text-[11px] ${
+                                        className={`font-bold font-mono text-[11px] truncate ${
                                           isToday ? "text-amber-400" : "text-purple-300"
                                         }`}
                                       >
                                         {slot.label} ({slot.dateStr})
                                       </span>
                                       {isToday && hasDue && (
-                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold animate-pulse">
+                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold animate-pulse shrink-0">
                                           本日復習対象
                                         </span>
                                       )}
                                     </div>
                                     <span
-                                      className={`font-mono text-xs font-bold ${
+                                      className={`font-mono text-xs font-bold shrink-0 ${
                                         hasDue ? "text-white" : "text-gray-500"
                                       }`}
                                     >
@@ -3158,19 +3269,19 @@ ${externalAiQuestionInput.trim() || "表面的な知識ではなく、この問�
                                   </div>
 
                                   {folderEntries.length > 0 && (
-                                    <div className="flex flex-wrap gap-1 pt-0.5">
-                                      {folderEntries.map(([fName, fInfo], fIdx) => (
-                                        <span
-                                          key={fIdx}
-                                          className={`text-[10px] px-2 py-0.5 rounded border ${
-                                            isToday
-                                              ? "bg-amber-950/50 text-amber-300 border-amber-500/30"
-                                              : "bg-purple-950/40 text-purple-300 border-purple-500/30"
-                                          }`}
-                                        >
-                                          📁 {fName}: {fInfo.total}問
-                                        </span>
-                                      ))}
+                                    <div className="flex flex-wrap gap-1 pt-0.5 min-w-0">
+                                      {folderEntries.map(([fName, fInfo], fIdx) => {
+                                        const col = getFolderColor(fName, allFolderNames);
+                                        return (
+                                          <span
+                                            key={fIdx}
+                                            className={`text-[10px] px-2 py-0.5 rounded border ${col.badgeBg} ${col.text} ${col.border} flex items-center gap-1`}
+                                          >
+                                            <span className={`w-1.5 h-1.5 rounded-full ${col.bg} inline-block shrink-0`} />
+                                            <span>{fName}: {fInfo.total}問</span>
+                                          </span>
+                                        );
+                                      })}
                                     </div>
                                   )}
                                 </div>

@@ -1780,10 +1780,7 @@ export default function App() {
           if (data && data.notes && Array.isArray(data.notes) && data.notes.length > 0) {
             loadedNotes = data.notes.map(normalizeNoteItem);
             setNotes(loadedNotes);
-            const targetId = lastActiveId || data.activeId;
-            if (targetId && loadedNotes.some(n => n.id === targetId)) {
-              setActiveId(targetId);
-            }
+            // 初期画面はダッシュボード（activeId: null）
           }
         }
       } catch (e) {}
@@ -1791,16 +1788,12 @@ export default function App() {
       // 2. Asynchronous check in IndexedDB (primary source with no 5MB quota limit)
       try {
         const idbData = await loadNotesLocally();
-        const lastActiveId = localStorage.getItem("cn_last_active_id");
         if (isMounted && idbData && idbData.notes && Array.isArray(idbData.notes) && idbData.notes.length > 0) {
           if (loadedNotes.length === 0 || idbData.notes.length >= loadedNotes.length) {
             const normalized = idbData.notes.map(normalizeNoteItem);
             setNotes(normalized);
             loadedNotes = normalized;
-            const targetId = lastActiveId || idbData.activeId;
-            if (targetId && normalized.some(n => n.id === targetId)) {
-              setActiveId(targetId);
-            }
+            // 初期画面はダッシュボード（activeId: null）
           }
         }
       } catch (e) {}
@@ -1853,8 +1846,8 @@ $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$
           updatedAt: Date.now(),
         };
         setNotes([sampleNote]);
-        setActiveId(sampleNote.id);
-        triggerLocalSave([sampleNote], sampleNote.id);
+        // 初期画面はダッシュボード（activeId: null）
+        triggerLocalSave([sampleNote], null);
       }
 
       // 3. Ensure autoSync state is synchronized from IndexedDB if localStorage was cleared on mobile
@@ -2118,6 +2111,17 @@ $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$
     setGuideLineIndex(0);
     if (id) {
       try { localStorage.setItem("cn_last_active_id", id); } catch {}
+      // ノート選択時はそのノートが属するフォルダを展開
+      const targetNote = (notesRef.current && notesRef.current.length > 0 ? notesRef.current : notes).find(n => n.id === id);
+      if (targetNote) {
+        const folder = getFolder(targetNote);
+        if (folder) {
+          setCollapsedFolders(prev => ({
+            ...prev,
+            [folder]: false
+          }));
+        }
+      }
     } else {
       try { localStorage.removeItem("cn_last_active_id"); } catch {}
     }
@@ -4628,7 +4632,9 @@ const renderMarkdownToElements = (contentStr: string) => {
 
   const toggleFolderCollapse = (folderName: string) => {
     setCollapsedFolders(prev => {
-      const current = prev[folderName] ?? false;
+      const isSearching = searchQuery.trim().length > 0;
+      const defaultCollapsed = isSearching ? false : true;
+      const current = prev[folderName] ?? defaultCollapsed;
       return {
         ...prev,
         [folderName]: !current
@@ -7322,7 +7328,8 @@ const renderMarkdownToElements = (contentStr: string) => {
         <div className="flex-1 overflow-y-auto py-2">
           {sortedFolders.map(folderName => {
             const groupList = categorizedGroups[folderName] || [];
-            const isCollapsed = collapsedFolders[folderName] ?? false;
+            const isSearching = searchQuery.trim().length > 0;
+            const isCollapsed = isSearching ? (collapsedFolders[folderName] ?? false) : (collapsedFolders[folderName] ?? true);
 
             return (
               <div key={folderName} className="mb-0.5">
