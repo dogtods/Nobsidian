@@ -891,3 +891,53 @@ ${questionsText}
 3. 🗺️【次に取るべき具体的な学習ステップ】
    どの順序でノートを見直し、どのような問題演習を行えばよいかの処方箋。`;
 }
+
+export function buildMisunderstandingDiagnosisPrompt(
+  question: string,
+  choices?: (QuestionChoice | { label?: string; text: string; isCorrect?: boolean })[],
+  correctAnswer?: string,
+  userAnswer?: string,
+  isCorrect?: boolean,
+  checkedUnmasteredTerms?: string[],
+  noteTitle?: string,
+  explanation?: string
+): string {
+  const formattedChoices = choices && choices.length > 0
+    ? choices.map(c => `${c.label || ""}: ${c.text}${c.isCorrect ? " (正解)" : ""}`).join("\n")
+    : "（選択肢なし）";
+
+  const checkedTermsText = checkedUnmasteredTerms && checkedUnmasteredTerms.length > 0
+    ? checkedUnmasteredTerms.join("、")
+    : "（特になし / 正解であっても理解に不安がある単語）";
+
+  return `あなたはメタ認知とつまずき分析の専門家であるプロの教育メンターです。
+以下の学習問題において、ユーザーが【間違えてしまった理由】、あるいは【正解はできたもののチェックを入れて「よく分かっていない」と自己申告した単語】をもとに、ユーザーの知識のどこに穴や誤解があるのか、どんな前提概念が理解できていないと推測されるのかを深く診断・解説してください。
+
+【対象ノート】
+タイトル: ${noteTitle || "学習ノート"}
+
+【クイズ問題】
+${question}
+
+【選択肢と正解】
+${formattedChoices}
+模範解答: ${correctAnswer}
+
+【ユーザーの解答状況】
+- 判定: ${isCorrect ? "正解（ただし不安・未理解単語あり）" : "不正解"}
+- ユーザーがチェックした「わからない単語」: ${checkedTermsText}
+- 既存の解説: ${explanation || "（なし）"}
+
+────────────────────────
+【出力形式の指定（厳守）】
+前置きや挨拶は一切省き、以下の構成でわかりやすく分析してください。
+
+1. 🔍【間違えた・つまずいた根本原因の分析】
+   なぜこの問題で失点したのか、あるいは正解していてもどの罠にハマりかけていたのかの心理的・知識的メカニズム。
+
+2. 🧩【不足している前提概念・理解できていないポイント】
+   この問題を完全に自分のものにするために、ユーザーが現在把握できていない核心概念や定義のギャップ。
+
+3. 🚀【次に立ち返るべき学習アクション】
+   ノートのどこを読み返すべきか、どのような思考法に切り替えるべきかの具体的なアドバイス。`;
+}

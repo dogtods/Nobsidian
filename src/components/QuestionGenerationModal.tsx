@@ -54,7 +54,8 @@ import {
   shuffleArray,
   buildTop5LifeTermsPrompt,
   extractTopQuizKeywords,
-  buildFolderWeaknessPrompt
+  buildFolderWeaknessPrompt,
+  buildMisunderstandingDiagnosisPrompt
 } from "../utils/questionUtils";
 import { getFolderFromKeywords } from "../utils/graphDataParser";
 
@@ -2480,7 +2481,20 @@ export default function QuestionGenerationModal({
                         </div>
                       )}
 
-                      {/* Top 5 Frequent Terms & Everyday Life Analogy Prompt Bar (Below answer choices) */}
+                      {/* Check Answer Button (Directly below choices/input) */}
+                      {!isQuizAnswerRevealed && (
+                        <div className="pt-2.5 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => setIsQuizAnswerRevealed(true)}
+                            className="px-5 py-2 rounded-lg text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white transition cursor-pointer shadow-md"
+                          >
+                            解答を確認する →
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Top 5 Frequent Terms & Everyday Life Analogy Prompt Bar (Below check answer button) */}
                       <div className="bg-[#12161c] border border-amber-500/35 rounded-xl p-3.5 space-y-2.5 my-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="flex items-center gap-1.5 flex-wrap">
@@ -2554,19 +2568,8 @@ export default function QuestionGenerationModal({
                         )}
                       </div>
 
-                      {/* Check Answer Button */}
-                      {!isQuizAnswerRevealed ? (
-                        <div className="pt-2 flex justify-end">
-                          <button
-                            type="button"
-                            onClick={() => setIsQuizAnswerRevealed(true)}
-                            className="px-5 py-2 rounded-lg text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white transition cursor-pointer shadow-md"
-                          >
-                            解答を確認する →
-                          </button>
-                        </div>
-                      ) : (
-                        /* Revealed explanation & self evaluation */
+                      {/* Revealed explanation & self evaluation */}
+                      {isQuizAnswerRevealed && (
                         <div className="space-y-3 pt-3 border-t border-[#30363d] animate-[fadeIn_0.15s_ease-out]">
                           <div className="bg-[#0d1117] border border-[#30363d] rounded-xl p-3.5 space-y-2.5 text-xs">
                             <div className="flex items-center justify-between">
@@ -2746,6 +2749,30 @@ ${externalAiQuestionInput.trim() || "表面的な知識ではなく、この問�
                                       title="問題と4つの選択肢から頻出する単語TOP5を抽出し、身近な日常生活に例えてわかりやすく解説させるプロンプトをコピー"
                                     >
                                       <span>🍳 頻出単語TOP5 生活解説プロンプト</span>
+                                    </button>
+
+                                    {/* Button 4: Misunderstanding Diagnosis Prompt */}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const checkedNames = Object.keys(unmasteredWords).filter(w => unmasteredWords[w]);
+                                        const promptText = buildMisunderstandingDiagnosisPrompt(
+                                          currentQ.question,
+                                          currentQ.choices,
+                                          currentQ.correctAnswer,
+                                          currentQ.type === "multiple_choice" ? selectedQuizChoices.join(", ") : (selectedQuizChoices[0] || essayAnswer || ""),
+                                          false,
+                                          checkedNames,
+                                          currentQ.noteTitle,
+                                          currentQ.explanation
+                                        );
+                                        navigator.clipboard.writeText(promptText);
+                                        onSaveToast("✓ 理解不足・前提概念の欠落診断プロンプトをコピーしました！外部AIに貼り付けて分析してもらってください。");
+                                      }}
+                                      className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white transition cursor-pointer flex items-center gap-1.5 shadow active:scale-95"
+                                      title="間違えた理由や、わからないとチェックした単語から何が理解できていないかを外部AIに診断してもらうプロンプトをコピー"
+                                    >
+                                      <span>🧩 理解不足・前提概念の欠落診断プロンプト</span>
                                     </button>
                                   </div>
                                 </div>
