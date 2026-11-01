@@ -845,3 +845,40 @@ ${userQuestion && userQuestion.trim() ? `\n【ユーザーの関心・知りた�
 }
 
 
+
+export function buildFolderWeaknessPrompt(
+  folderName: string,
+  masteryRate: number,
+  accuracy: number,
+  unmasteredTerms: string[],
+  weakQuestions: Array<{ questionText: string; rating: number }>
+): string {
+  const termsText = unmasteredTerms.length > 0 ? unmasteredTerms.join("、") : "（登録された未理解単語なし）";
+  const questionsText = weakQuestions.length > 0
+    ? weakQuestions.map((q, idx) => `${idx + 1}. [評価:${q.rating === 1 ? "もう一度" : q.rating === 2 ? "難しい" : "不正解"}] ${q.questionText}`).join("\n")
+    : "（記録された不正解・要復習問題なし）";
+
+  return `あなたは学習分析とメタ認知指導のエキスパートです。
+以下の学習データ（分野名、習得率、未理解としてチェックされた単語、間違えた／難しいと判定された問題）を深く分析し、ユーザーが「なぜこの分野を理解できていないのか」「何と何を混同しているのか」の根本原因を突き止め、マスターするために必要な核心概念と学習方針を教えてください。
+
+【対象分野（フォルダ）】: ${folderName}
+- 習得率: ${masteryRate}%
+- 正解率: ${accuracy}%
+
+【ユーザーが未理解としてチェックした単語】
+${termsText}
+
+【ユーザーが間違えた・難しいと感じた問題（SRS記録）】
+${questionsText}
+
+────────────────────────
+【出力形式の指定（厳守）】
+1. 🔍【理解のつまずきポイント（なぜ引っかかっているか）】
+   ユーザーがどのような誤った前提や概念の混同に陥っているかを端的に分析。
+
+2. 🧩【マスターするために不可欠な核心概念】
+   この分野を腑に落ちさせるために真っ上に理解すべき大前提の仕組みや原則。
+
+3. 🗺️【次に取るべき具体的な学習ステップ】
+   どの順序でノートを見直し、どのような問題演習を行えばよいかの処方箋。`;
+}

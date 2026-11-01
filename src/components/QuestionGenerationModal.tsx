@@ -53,7 +53,8 @@ import {
   calculateSM2Review,
   shuffleArray,
   buildTop5LifeTermsPrompt,
-  extractTopQuizKeywords
+  extractTopQuizKeywords,
+  buildFolderWeaknessPrompt
 } from "../utils/questionUtils";
 import { getFolderFromKeywords } from "../utils/graphDataParser";
 
@@ -175,6 +176,55 @@ export default function QuestionGenerationModal({
   const [isSavingExplanationToSheet, setIsSavingExplanationToSheet] = useState<boolean>(false);
   const [isSessionCompleted, setIsSessionCompleted] = useState<boolean>(false);
   const [showTopTermsPromptModal, setShowTopTermsPromptModal] = useState<boolean>(false);
+
+  // 未理解単語のチェック状態 (localStorage: cn_learning_unmastered_words)
+  const [unmasteredWords, setUnmasteredWords] = useState<Record<string, boolean>>(() => {
+    try {
+      const cached = localStorage.getItem("cn_learning_unmastered_words");
+      return cached ? JSON.parse(cached) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // 不正解または「もう一度」「難しい」と評価した問題の記録 (localStorage: cn_learning_incorrect_or_hard_questions)
+  const [incorrectOrHardQuestions, setIncorrectOrHardQuestions] = useState<Array<{
+    questionId: string;
+    questionText: string;
+    noteTitle: string;
+    folder: string;
+    rating: number;
+    isCorrect: boolean;
+    reviewedAt: number;
+  }>>(() => {
+    try {
+      const cached = localStorage.getItem("cn_learning_incorrect_or_hard_questions");
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return {};
+    }
+  });
+
+  const [folderWeaknessModalData, setFolderWeaknessModalData] = useState<{
+    folderName: string;
+    promptText: string;
+  } | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("cn_learning_unmastered_words", JSON.stringify(unmasteredWords));
+    } catch (e) {
+      console.warn("Failed to cache unmasteredWords:", e);
+    }
+  }, [unmasteredWords]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("cn_learning_incorrect_or_hard_questions", JSON.stringify(incorrectOrHardQuestions));
+    } catch (e) {
+      console.warn("Failed to cache incorrectOrHardQuestions:", e);
+    }
+  }, [incorrectOrHardQuestions]);
 
   // ローカルキャッシュの永続化 (変更時に即時一時記憶)
   useEffect(() => {
@@ -1057,6 +1107,30 @@ export default function QuestionGenerationModal({
       onSaveToast(`「${currentQ.question.slice(0, 16)}...」を習得済み（出題停止）に設定しました ✦`);
     } else {
       onSaveToast(`自己評価を記録しました（次回出題: ${nextState.intervalDays}日後）✦`);
+    }
+
+    // 誤答または「もう一度」「難しい」と評価された場合、弱点記録として保存
+    if (!isCorrect || rating === 1 || rating === 2) {
+      const noteFolderMap = new Map<string, string>();
+      for (const n of notes) {
+        const fName = n.keywords ? getFolderFromKeywords(n.keywords) : "未分類";
+        noteFolderMap.set(n.id, fName);
+        if (n.title) noteFolderMap.set(n.title, fName);
+      }
+      const folderName = noteFolderMap.get(currentQ.noteId) || (currentQ.noteTitle ? noteFolderMap.get(currentQ.noteTitle) : null) || "未分類";
+
+      setIncorrectOrHardQuestions(prev => {
+        const filtered = prev.filter(item => item.questionId !== currentQ.id);
+        return [{
+          questionId: currentQ.id,
+          questionText: currentQ.question,
+          noteTitle: currentQ.noteTitle || "無題のノート",
+          folder: folderName,
+          rating,
+          isCorrect,
+          reviewedAt: Date.now()
+        }, ...filtered];
+      });
     }
 
     // 2. 【即時画面遷移 (0ms)】解答済みの問題をキューから即時除外し、次回復習期日まで非表示にする（スワイプ再表示防止）
@@ -2325,58 +2399,7 @@ export default function QuestionGenerationModal({
                         {currentQ.question}
                       </h4>
 
-                      {/* Top 5 Frequent Terms & Everyday Life Analogy Prompt Bar */}
-                      <div className="bg-[#12161c] border border-amber-500/35 rounded-xl p-3 space-y-2">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-bold text-amber-300 text-xs flex items-center gap-1">
-                              <span>💡 頻出単語TOP5 生活解説</span>
-                            </span>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950/60 text-amber-200 border border-amber-500/30 font-medium">
-                              身近な日常に例えて理解
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setShowTopTermsPromptModal(true)}
-                              className="text-[11px] text-gray-300 hover:text-white bg-[#1c2128] hover:bg-[#252c37] border border-[#30363d] px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1 font-medium"
-                              title="抽出された頻出5単語とプロンプト全文を確認する"
-                            >
-                              <span>👁️ プロンプト確認</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleCopyTop5LifeTermsPrompt()}
-                              className="text-[11px] font-bold text-white bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 px-3 py-1 rounded-lg transition cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-95"
-                              title="問題と4つの回答から頻出する単語TOP5を抽出し、身近な日常生活に例えてわかりやすく解説させるプロンプトをコピー"
-                            >
-                              <Copy className="w-3 h-3" />
-                              <span>🍳 頻出単語TOP5 生活解説プロンプト</span>
-                            </button>
-                          </div>
-                        </div>
 
-                        {/* Extracted 5 words chips */}
-                        {topQuizWords.length > 0 && (
-                          <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-[#30363d]/50 text-[11px]">
-                            <span className="text-gray-400 text-[10px] shrink-0 font-medium">頻出語:</span>
-                            {topQuizWords.map((term, tIdx) => (
-                              <span
-                                key={tIdx}
-                                className="px-2 py-0.5 rounded-full bg-amber-950/40 text-amber-200 border border-amber-500/25 text-[10px] flex items-center gap-1"
-                                title={`クイズ内出現: ${term.count}回`}
-                              >
-                                <span className="font-semibold">{tIdx + 1}. {term.word}</span>
-                                <span className="text-[9px] text-amber-400/70 font-mono">({term.count}回)</span>
-                              </span>
-                            ))}
-                            <span className="text-[10px] text-gray-400 ml-auto hidden sm:inline">
-                              ※わからない単語を身近な生活の具体例でAIに解説させられます
-                            </span>
-                          </div>
-                        )}
-                      </div>
 
                       {/* Choices or Input */}
                       {currentQ.choices && currentQ.choices.length > 0 ? (
@@ -2454,6 +2477,80 @@ export default function QuestionGenerationModal({
                           />
                         </div>
                       )}
+
+                      {/* Top 5 Frequent Terms & Everyday Life Analogy Prompt Bar (Below answer choices) */}
+                      <div className="bg-[#12161c] border border-amber-500/35 rounded-xl p-3.5 space-y-2.5 my-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-amber-300 text-xs flex items-center gap-1">
+                              <span>💡 頻出単語TOP5 生活解説＆未理解チェック</span>
+                            </span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950/60 text-amber-200 border border-amber-500/30 font-medium">
+                              チェックボックスで苦手単語を登録
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setShowTopTermsPromptModal(true)}
+                              className="text-[11px] text-gray-300 hover:text-white bg-[#1c2128] hover:bg-[#252c37] border border-[#30363d] px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1 font-medium"
+                            >
+                              <span>👁️ プロンプト確認</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyTop5LifeTermsPrompt()}
+                              className="text-[11px] font-bold text-white bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 px-3 py-1 rounded-lg transition cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-95"
+                            >
+                              <Copy className="w-3 h-3" />
+                              <span>🍳 生活解説プロンプトをコピー</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Extracted 5 words with Checkboxes */}
+                        {topQuizWords.length > 0 && (
+                          <div className="space-y-1.5 pt-1 border-t border-[#30363d]/60 text-[11px]">
+                            <div className="text-[10px] text-gray-400 font-medium">
+                              わからない単語にチェックを入れるとデータベース（未理解単語）に登録され、学習分析の弱点診断に反映されます:
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                              {topQuizWords.map((term, tIdx) => {
+                                const isChecked = !!unmasteredWords[term.word];
+                                return (
+                                  <label
+                                    key={tIdx}
+                                    className={`p-2 rounded-lg border flex items-center justify-between cursor-pointer transition ${
+                                      isChecked
+                                        ? "bg-amber-950/40 border-amber-500/60 text-amber-200"
+                                        : "bg-[#0d1117] border-[#30363d] text-gray-300 hover:border-gray-500"
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={(e) => {
+                                          const checked = e.target.checked;
+                                          setUnmasteredWords(prev => ({ ...prev, [term.word]: checked }));
+                                          onSaveToast(checked ? `「${term.word}」を未理解単語としてデータベースに登録しました ✦` : `「${term.word}」の未理解登録を解除しました`);
+                                        }}
+                                        className="accent-amber-500 w-3.5 h-3.5 shrink-0 cursor-pointer"
+                                      />
+                                      <span className="font-bold truncate" title={term.word}>
+                                        {tIdx + 1}. {term.word}
+                                      </span>
+                                    </div>
+                                    <span className="text-[10px] text-amber-400/80 font-mono shrink-0 ml-1">
+                                      {term.count}回出現
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
 
                       {/* Check Answer Button */}
                       {!isQuizAnswerRevealed ? (
@@ -3240,6 +3337,34 @@ ${externalAiQuestionInput.trim() || "表面的な知識ではなく、この問�
                                   </div>
                                 </div>
                               </div>
+
+                               {/* Folder Weakness Diagnosis AI Prompt Button */}
+                               <div className="pt-2 mt-1 border-t border-[#30363d]/40 flex items-center justify-between">
+                                 <span className="text-[10px] text-gray-400">
+                                   未理解単語・苦手問題に基づく分析:
+                                 </span>
+                                 <button
+                                   type="button"
+                                   onClick={() => {
+                                     const checkedTerms = Object.keys(unmasteredWords).filter(w => unmasteredWords[w]);
+                                     const folderWeakQ = incorrectOrHardQuestions.filter(q => q.folder === f.folderName);
+                                     const promptText = buildFolderWeaknessPrompt(
+                                       f.folderName,
+                                       f.masteryRate,
+                                       f.acc,
+                                       checkedTerms,
+                                       folderWeakQ
+                                     );
+                                     navigator.clipboard.writeText(promptText);
+                                     setFolderWeaknessModalData({ folderName: f.folderName, promptText });
+                                     onSaveToast(`✓ 「${f.folderName}」分野の弱点診断・理解不足分析プロンプトをコピーしました！外部AIに貼り付けてください。`);
+                                   }}
+                                   className="text-[11px] font-bold text-sky-300 hover:text-white bg-sky-950/60 hover:bg-sky-900 border border-sky-500/40 px-3 py-1 rounded-lg transition cursor-pointer flex items-center gap-1.5 shadow-xs active:scale-95"
+                                   title="この分野でユーザーが理解できていない原因や必要な核心概念をAIに分析させるプロンプトを作成します"
+                                 >
+                                   <span>🧠 弱点診断＆理解必要概念プロンプト作成</span>
+                                 </button>
+                               </div>
                             </div>
                           );
                         })}
@@ -3655,6 +3780,80 @@ ${externalAiQuestionInput.trim() || "表面的な知識ではなく、この問�
             閉じる
           </button>
         </div>
+      {/* Folder Weakness Diagnosis Prompt Preview Modal */}
+      {folderWeaknessModalData && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-[fadeIn_0.15s_ease-out]">
+          <div className="bg-[#161b22] border border-sky-500/40 rounded-2xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            <div className="p-4 bg-gradient-to-r from-sky-950/50 via-[#1c2128] to-[#1c2128] border-b border-[#30363d] flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center text-sm font-bold border border-sky-500/30">
+                  🧠
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span>「{folderWeaknessModalData.folderName}」分野の弱点診断プロンプト</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-sky-950/80 text-sky-300 border border-sky-500/30 font-medium">
+                      未理解単語・苦手問題連動
+                    </span>
+                  </h4>
+                  <p className="text-[11px] text-gray-400">
+                    クリップボードにコピーされました。ChatGPTやClaude、Geminiに貼り付けて、理解不足の原因と必要な核心概念を診断させてください。
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFolderWeaknessModalData(null)}
+                className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-gray-800 transition cursor-pointer text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto space-y-3 text-xs">
+              <div className="bg-[#0d1117] border border-[#30363d] rounded-xl p-3 font-mono text-[11px] text-gray-200 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto selection:bg-sky-500/30">
+                {folderWeaknessModalData.promptText}
+              </div>
+
+              <div className="bg-sky-950/20 border border-sky-500/20 rounded-xl p-3 text-[11px] text-sky-200/90 leading-relaxed space-y-1">
+                <div className="font-bold flex items-center gap-1.5 text-sky-300">
+                  <span>💡 活用法</span>
+                </div>
+                <p>
+                  1. クイズで「わからない単語」にチェックを入れたり、「もう一度」「難しい」と評価した苦手問題が自動的に反映されています。<br />
+                  2. 外部AIにこのプロンプトを送信することで、あなたが何に躓いているか・どの前提概念を理解すべきかが明確になります。
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-[#12161c] border-t border-[#30363d] flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setFolderWeaknessModalData(null)}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-gray-800 transition cursor-pointer"
+              >
+                閉じる
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(folderWeaknessModalData.promptText);
+                    onSaveToast("プロンプトをクリップボードに再コピーしました ✦");
+                  } catch {
+                    onSaveToast("コピーに失敗しました。");
+                  }
+                }}
+                className="px-4 py-2 rounded-lg text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white transition cursor-pointer flex items-center gap-1.5 shadow-md active:scale-95"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>プロンプトを再度コピーする</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       </div>
     </div>
   );
