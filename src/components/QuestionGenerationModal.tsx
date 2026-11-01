@@ -179,11 +179,17 @@ export default function QuestionGenerationModal({
   const [showTopTermsPromptModal, setShowTopTermsPromptModal] = useState<boolean>(false);
   const [customUnknownWordInput, setCustomUnknownWordInput] = useState<string>("");
 
-  // 未理解単語のチェック状態 (localStorage: cn_learning_unmastered_words)
-  const [unmasteredWords, setUnmasteredWords] = useState<Record<string, boolean>>(() => {
+  // 分野別未理解単語の管理 (localStorage: cn_learning_folder_unmastered_words)
+  const [folderUnmasteredWords, setFolderUnmasteredWords] = useState<Record<string, Record<string, boolean>>>(() => {
     try {
-      const cached = localStorage.getItem("cn_learning_unmastered_words");
-      return cached ? JSON.parse(cached) : {};
+      const cached = localStorage.getItem("cn_learning_folder_unmastered_words");
+      if (cached) return JSON.parse(cached);
+      const oldCached = localStorage.getItem("cn_learning_unmastered_words");
+      if (oldCached) {
+        const parsedOld = JSON.parse(oldCached);
+        return { "未分類": parsedOld };
+      }
+      return {};
     } catch {
       return {};
     }
@@ -214,11 +220,11 @@ export default function QuestionGenerationModal({
 
   useEffect(() => {
     try {
-      localStorage.setItem("cn_learning_unmastered_words", JSON.stringify(unmasteredWords));
+      localStorage.setItem("cn_learning_folder_unmastered_words", JSON.stringify(folderUnmasteredWords));
     } catch (e) {
-      console.warn("Failed to cache unmasteredWords:", e);
+      console.warn("Failed to cache folderUnmasteredWords:", e);
     }
-  }, [unmasteredWords]);
+  }, [folderUnmasteredWords]);
 
   useEffect(() => {
     try {
@@ -2198,9 +2204,20 @@ export default function QuestionGenerationModal({
                   // クイズ問題＋4つの回答から頻出単語TOP5を自動抽出
                   const topQuizWords = extractTopQuizKeywords(currentQ.question, currentQ.choices, 5);
 
+                  // 現在の問題のフォルダ（D列分野）を特定
+                  const noteFolderMap = new Map<string, string>();
+                  for (const n of notes) {
+                    const fName = n.keywords ? getFolderFromKeywords(n.keywords) : "未分類";
+                    noteFolderMap.set(n.id, fName);
+                    if (n.title) noteFolderMap.set(n.title, fName);
+                  }
+                  const currentFolder = noteFolderMap.get(currentQ.noteId) || (currentQ.noteTitle ? noteFolderMap.get(currentQ.noteTitle) : null) || "未分類";
+                  const currentFolderUnmastered = folderUnmasteredWords[currentFolder] || {};
+                  const unmasteredWords = currentFolderUnmastered;
+
                   // 頻出単語TOP5生活解説プロンプトのコピーハンドラー
                   const handleCopyTop5LifeTermsPrompt = (customInput?: string) => {
-                    const checkedNames = Object.keys(unmasteredWords).filter(w => unmasteredWords[w]);
+                    const checkedNames = Object.keys(currentFolderUnmastered).filter(w => currentFolderUnmastered[w]);
                     const promptText = buildTop5LifeTermsPrompt(
                       currentQ.question,
                       currentQ.choices,
@@ -2211,7 +2228,7 @@ export default function QuestionGenerationModal({
                     );
                     navigator.clipboard.writeText(promptText);
                     const wordsList = checkedNames.length > 0 ? checkedNames.join("・") : topQuizWords.map(w => w.word).join("・");
-                    onSaveToast(`✓ チェック入れた単語（${wordsList || "重要単語"}）の「身近な生活解説プロンプト」をコピーしました！外部AIに貼り付けてください。`);
+                    onSaveToast(`✓ 「${currentFolder}」分野のチェック単語（${wordsList || "重要単語"}）の「身近な生活解説プロンプト」をコピーしました！`);
                   };
 
                   // タッチスワイプハンドラー
@@ -2533,7 +2550,7 @@ export default function QuestionGenerationModal({
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                               {topQuizWords.map((term, tIdx) => {
-                                const isChecked = !!unmasteredWords[term.word];
+                                const isChecked = !!currentFolderUnmastered[term.word];
                                 return (
                                   <label
                                     key={tIdx}
@@ -2549,8 +2566,14 @@ export default function QuestionGenerationModal({
                                         checked={isChecked}
                                         onChange={(e) => {
                                           const checked = e.target.checked;
-                                          setUnmasteredWords(prev => ({ ...prev, [term.word]: checked }));
-                                          onSaveToast(checked ? `「${term.word}」を未理解単語としてデータベースに登録しました ✦` : `「${term.word}」の未理解登録を解除しました`);
+                                          setFolderUnmasteredWords(prev => ({
+                                            ...prev,
+                                            [currentFolder]: {
+                                              ...(prev[currentFolder] || {}),
+                                              [term.word]: checked
+                                            }
+                                          }));
+                                          onSaveToast(checked ? `「${term.word}」を「${currentFolder}」分野の未理解単語として登録しました ✦` : `「${term.word}」の未理解登録を解除しました`);
                                         }}
                                         className="accent-amber-500 w-3.5 h-3.5 shrink-0 cursor-pointer"
                                       />
@@ -2568,10 +2591,10 @@ export default function QuestionGenerationModal({
                           </div>
                         )}
 
-                        {/* Custom Unknown Word Input (For words not automatically extracted) */}
+                        {/* Custom Unknown Word Input (Assigned to current folder) */}
                         <div className="pt-2.5 mt-2 border-t border-[#30363d]/60 space-y-1.5 text-[11px]">
                           <div className="text-[10px] text-gray-400 font-medium">
-                            📝 出てきていない不明な単語を直接記入して未理解単語に登録:
+                            📝 出てきていない不明な単語を「{currentFolder}」分野の未理解単語として直接記入して登録:
                           </div>
                           <div className="flex items-center gap-2">
                             <input
@@ -2583,9 +2606,15 @@ export default function QuestionGenerationModal({
                                 if (e.key === "Enter" && customUnknownWordInput.trim()) {
                                   e.preventDefault();
                                   const word = customUnknownWordInput.trim();
-                                  setUnmasteredWords(prev => ({ ...prev, [word]: true }));
+                                  setFolderUnmasteredWords(prev => ({
+                                    ...prev,
+                                    [currentFolder]: {
+                                      ...(prev[currentFolder] || {}),
+                                      [word]: true
+                                    }
+                                  }));
                                   setCustomUnknownWordInput("");
-                                  onSaveToast(`「${word}」を未理解単語として追加・登録しました ✦`);
+                                  onSaveToast(`「${word}」を「${currentFolder}」分野の未理解単語として追加・登録しました ✦`);
                                 }
                               }}
                               className="flex-1 p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-xs text-white outline-none focus:border-amber-500 placeholder:text-gray-500"
@@ -2596,38 +2625,21 @@ export default function QuestionGenerationModal({
                               onClick={() => {
                                 const word = customUnknownWordInput.trim();
                                 if (!word) return;
-                                setUnmasteredWords(prev => ({ ...prev, [word]: true }));
+                                setFolderUnmasteredWords(prev => ({
+                                  ...prev,
+                                  [currentFolder]: {
+                                    ...(prev[currentFolder] || {}),
+                                    [word]: true
+                                  }
+                                }));
                                 setCustomUnknownWordInput("");
-                                onSaveToast(`「${word}」を未理解単語として追加・登録しました ✦`);
+                                onSaveToast(`「${word}」を「${currentFolder}」分野の未理解単語として追加・登録しました ✦`);
                               }}
                               className="px-3 py-2 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white transition cursor-pointer disabled:opacity-50 shrink-0"
                             >
                               + 追加して登録
                             </button>
                           </div>
-
-                          {/* Currently registered custom unmastered words list */}
-                          {Object.keys(unmasteredWords).filter(w => unmasteredWords[w] && !topQuizWords.some(t => t.word === w)).length > 0 && (
-                            <div className="pt-1.5 flex flex-wrap items-center gap-1.5">
-                              <span className="text-[10px] text-gray-400">手動追加した未理解単語:</span>
-                              {Object.keys(unmasteredWords).filter(w => unmasteredWords[w] && !topQuizWords.some(t => t.word === w)).map((w, wIdx) => (
-                                <span key={wIdx} className="px-2 py-0.5 rounded-md bg-amber-950/60 text-amber-200 border border-amber-500/40 font-bold flex items-center gap-1 text-[10px]">
-                                  <span>{w}</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setUnmasteredWords(prev => ({ ...prev, [w]: false }));
-                                      onSaveToast(`「${w}」の未理解登録を解除しました`);
-                                    }}
-                                    className="text-amber-400 hover:text-white cursor-pointer ml-0.5"
-                                    title="解除"
-                                  >
-                                    ✕
-                                  </button>
-                                </span>
-                              ))}
-                            </div>
-                          )}
                         </div>
                       </div>
 
@@ -2818,7 +2830,7 @@ ${externalAiQuestionInput.trim() || "表面的な知識ではなく、この問�
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        const checkedNames = Object.keys(unmasteredWords).filter(w => unmasteredWords[w]);
+                                        const checkedNames = Object.keys(currentFolderUnmastered).filter(w => currentFolderUnmastered[w]);
                                         const promptText = buildMisunderstandingDiagnosisPrompt(
                                           currentQ.question,
                                           currentQ.choices,
@@ -3314,6 +3326,7 @@ ${externalAiQuestionInput.trim() || "表面的な知識ではなく、この問�
                           const hasDueToday = f.dueTodayCount > 0;
                           const allFolderNames = analyticsStats.folderPerformances.map(item => item.folderName);
                           const col = getFolderColor(f.folderName, allFolderNames);
+                          const unmasteredWords = folderUnmasteredWords[f.folderName] || {};
 
                           return (
                             <div
@@ -3582,6 +3595,7 @@ ${externalAiQuestionInput.trim() || "表面的な知識ではなく、この問�
                                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 max-h-[72px] overflow-y-auto pr-1">
                                           {analyticsStats.folderPerformances.map((f, fIdx) => {
                                             const col = getFolderColor(f.folderName, allFolderNames);
+                           const unmasteredWords = folderUnmasteredWords[f.folderName] || {};
                                             return (
                                               <div key={fIdx} className="flex items-center gap-1.5 text-[10px]">
                                                 <span className={`w-2.5 h-2.5 rounded-xs ${col.bg} inline-block shrink-0 shadow-xs`} />
