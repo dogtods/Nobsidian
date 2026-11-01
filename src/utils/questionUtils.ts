@@ -670,4 +670,178 @@ export function shuffleChoicesAndSyncAnswer(
   return { choices: shuffled, correctAnswer: newAnswer };
 }
 
+export interface ExtractedTerm {
+  word: string;
+  count: number;
+}
+
+/**
+ * クイズの問題文および4つの選択肢テキストから頻出・重要単語を抽出する
+ */
+export function extractTopQuizKeywords(
+  question: string,
+  choices?: (QuestionChoice | { label?: string; text: string })[],
+  limit: number = 5
+): ExtractedTerm[] {
+  const choiceTexts = (choices || []).map(c => c.text || "").join(" ");
+  const fullText = `${question || ""} ${choiceTexts}`;
+
+  const stopWords = new Set([
+    "これ", "それ", "あれ", "どれ", "この", "その", "あの", "どの",
+    "ここ", "そこ", "あそこ", "どこ", "こと", "もの", "ため", "よう",
+    "わけ", "はず", "とき", "ところ", "ほう", "など", "ほか", "あと",
+    "から", "まで", "より", "ほど", "くらい", "ばかり", "だけ", "しか",
+    "でも", "なら", "たら", "ても", "ので", "のに", "ば", "と", "や",
+    "か", "ね", "よ", "わ", "ぞ", "ぜ", "さ", "な", "に", "へ", "で",
+    "を", "は", "が", "の", "も", "連", "選", "問", "次", "下", "上",
+    "問題", "選択肢", "解答", "正解", "不正解", "誤り", "適切", "不適切",
+    "最も", "理由", "記述", "内容", "場合", "関係", "状態", "結果", "比較",
+    "説明", "以下", "一つ", "二つ", "三つ", "四つ", "全て", "どれか", "選べ",
+    "正しい", "誤っている", "適切なもの", "ある", "いる", "する", "なる",
+    "いう", "みる", "おく", "いく", "くる", "しまう", "について", "における",
+    "による", "によって", "として", "とともに", "に対する", "に対して",
+    "および", "ならびに", "または", "もしくは", "ただし", "しかし",
+    "なぜ", "どう", "何", "どうなる", "どのような", "どれ", "どちら"
+  ]);
+
+  const wordCounts = new Map<string, number>();
+
+  const registerWord = (w: string, weight: number = 1) => {
+    const word = (w || "").trim();
+    if (!word || word.length < 2) return;
+    if (stopWords.has(word)) return;
+    if (/^\d+$/.test(word)) return;
+    if (/^[a-zA-Z]$/.test(word)) return;
+
+    wordCounts.set(word, (wordCounts.get(word) || 0) + weight);
+  };
+
+  // 1. カタカナ語の抽出 (2文字以上)
+  const katakanaMatches: string[] = fullText.match(/[\u30A1-\u30FA\u30FC]{2,}/g) || [];
+  katakanaMatches.forEach((w: string) => registerWord(w, 1));
+
+  // 2. アルファベット・英数字技術用語 (2文字以上)
+  const alphaMatches: string[] = fullText.match(/[A-Za-z0-9_]{2,}/g) || [];
+  alphaMatches.forEach((w: string) => registerWord(w.toUpperCase(), 1));
+
+  // 3. 漢字の連続（熟語）抽出 (2文字以上)
+  const kanjiMatches: string[] = fullText.match(/[\u4E00-\u9FAF]{2,}/g) || [];
+  kanjiMatches.forEach((k: string) => {
+    registerWord(k, 1);
+  });
+
+  // 問題文に登場する単語には+1の重み付け（問題の本質に直結するため）
+  if (question) {
+    const qKatakana: string[] = question.match(/[\u30A1-\u30FA\u30FC]{2,}/g) || [];
+    qKatakana.forEach((w: string) => registerWord(w, 1));
+
+    const qAlpha: string[] = question.match(/[A-Za-z0-9_]{2,}/g) || [];
+    qAlpha.forEach((w: string) => registerWord(w.toUpperCase(), 1));
+
+    const qKanji: string[] = question.match(/[\u4E00-\u9FAF]{2,}/g) || [];
+    qKanji.forEach((k: string) => registerWord(k, 1));
+  }
+
+  // 出現頻度（降順）→ 文字数（降順：より具体的な熟語を優先）でソート
+  const sorted = Array.from(wordCounts.entries())
+    .map(([word, count]) => ({ word, count }))
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return b.word.length - a.word.length;
+    });
+
+  const results: ExtractedTerm[] = [];
+  for (const item of sorted) {
+    if (results.length >= limit) break;
+    // 既に選出されたより長い単語に完全に含まれ、かつ出現回数が同等以下の場合は重複排除
+    const alreadySubsumed = results.some(r => r.word.includes(item.word) && r.count >= item.count);
+    if (!alreadySubsumed) {
+      results.push(item);
+    }
+  }
+
+  // もし重複排除で5語未満になった場合は次点の単語で枠を埋める
+  if (results.length < limit) {
+    for (const item of sorted) {
+      if (results.length >= limit) break;
+      if (!results.some(r => r.word === item.word)) {
+        results.push(item);
+      }
+    }
+  }
+
+  // それでも枠が余る場合（短い文章等）は問題文と選択肢のすべての有効文字から補完
+  if (results.length < limit) {
+    const rawTerms = fullText.match(/[\u4E00-\u9FAF\u30A1-\u30FA\u30FC]{2,}/g) || [];
+    for (const term of rawTerms) {
+      if (results.length >= limit) break;
+      if (!stopWords.has(term) && !results.some(r => r.word === term)) {
+        results.push({ word: term, count: 1 });
+      }
+    }
+  }
+
+  return results.slice(0, limit);
+}
+
+/**
+ * クイズ問題および4つの選択肢の中から抽出した頻出単語TOP5について、
+ * 日常生活の身近な場面に例えたわかりやすい解説を出力させるプロンプトを生成する
+ */
+export function buildTop5LifeTermsPrompt(
+  question: string,
+  choices?: (QuestionChoice | { label?: string; text: string; isCorrect?: boolean })[],
+  noteTitle?: string,
+  topTerms?: ExtractedTerm[],
+  userQuestion?: string
+): string {
+  const terms = (topTerms && topTerms.length > 0)
+    ? topTerms
+    : extractTopQuizKeywords(question, choices, 5);
+
+  const formattedChoices = choices && choices.length > 0
+    ? choices.map(c => `${c.label || ""}: ${c.text}`).join("\n")
+    : "（選択肢なし）";
+
+  const termsListText = terms.length > 0
+    ? terms.map((t, idx) => `${idx + 1}. 【${t.word}】（出現頻度: ${t.count}回）`).join("\n")
+    : "1. （問題文・選択肢から自動抽出された重要単語）";
+
+  return `あなたは専門用語や小難しい概念を、誰にでも直感的に「なるほど！」と腑に落ちさせる天才的な教育メンターです。
+
+以下のクイズ問題および4つの選択肢を分析し、最も頻出・重要となる単語上位5個を抽出しました。
+初学者や中学生でも一瞬でイメージが掴めるように、辞書的な堅苦しい定義や教科書通りの説明は【一切不要】です。
+
+【最重要要件】
+それぞれの単語について、
+【私たちの身近な日常生活（日々の買い物、スーパーやコンビニ、料理・台所、掃除・部屋の整理、スマホアプリ、天気や季節、友達や家族との日常会話など）】に例えた親しみやすい具体例・身近な生活ストーリーを必ず交えてわかりやすく解説してください。
+
+【対象ノート】
+タイトル: ${noteTitle || "学習ノート"}
+
+【クイズ問題】
+${question}
+
+【4つの選択肢】
+${formattedChoices}
+
+【頻出・重要単語TOP5（出現頻度順）】
+${termsListText}
+${userQuestion && userQuestion.trim() ? `\n【ユーザーの関心・知りたい点】\n${userQuestion.trim()}\n` : ""}
+────────────────────────
+【出力形式の指定（厳守）】
+前置きや挨拶は一切省き、抽出された5つの単語について以下のフォーマットで順に出力してください。
+
+### 1. 【単語名】
+- 💡 **超簡単まとめ**: 難しい専門用語を使わず、一言で表すと何か（1〜2行）
+- 🍳 **身近な生活での具体例**: 買い物・料理・スマホ・片付け・天気など、普段の暮らしに例えた具体的なシーン・たとえ話（2〜3行）
+- 🎯 **このクイズでの見分け方**: 問題文や4つの選択肢の中でどういう意味・役割で使われているか、正解を見抜くための着眼点（1〜2行）
+
+（※2番目〜5番目の単語も同様に分かりやすく解説してください）
+
+────────────────────────
+⭐ **生活とクイズを結ぶワンポイント総括**:
+これら5つの言葉が私たちの身の回りの暮らしとどう繋がっており、この問題の正解を見抜くためにどう役立つかを親しみやすい言葉で2〜3行でまとめて締めくくってください。`;
+}
+
 

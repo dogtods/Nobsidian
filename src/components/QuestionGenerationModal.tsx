@@ -51,7 +51,9 @@ import {
   validateQuestionJson,
   generateQuestionsViaGemini,
   calculateSM2Review,
-  shuffleArray
+  shuffleArray,
+  buildTop5LifeTermsPrompt,
+  extractTopQuizKeywords
 } from "../utils/questionUtils";
 import { getFolderFromKeywords } from "../utils/graphDataParser";
 
@@ -172,6 +174,7 @@ export default function QuestionGenerationModal({
   const [pastedExplanation, setPastedExplanation] = useState<string>("");
   const [isSavingExplanationToSheet, setIsSavingExplanationToSheet] = useState<boolean>(false);
   const [isSessionCompleted, setIsSessionCompleted] = useState<boolean>(false);
+  const [showTopTermsPromptModal, setShowTopTermsPromptModal] = useState<boolean>(false);
 
   // ローカルキャッシュの永続化 (変更時に即時一時記憶)
   useEffect(() => {
@@ -2116,6 +2119,23 @@ export default function QuestionGenerationModal({
                   if (!currentQ) return null;
                   const isCurrentQMastered = currentQ.status === "mastered" || reviewStates[currentQ.id]?.masteryLevel === "mastered";
 
+                  // クイズ問題＋4つの回答から頻出単語TOP5を自動抽出
+                  const topQuizWords = extractTopQuizKeywords(currentQ.question, currentQ.choices, 5);
+
+                  // 頻出単語TOP5生活解説プロンプトのコピーハンドラー
+                  const handleCopyTop5LifeTermsPrompt = (customInput?: string) => {
+                    const promptText = buildTop5LifeTermsPrompt(
+                      currentQ.question,
+                      currentQ.choices,
+                      currentQ.noteTitle,
+                      topQuizWords,
+                      customInput !== undefined ? customInput : externalAiQuestionInput
+                    );
+                    navigator.clipboard.writeText(promptText);
+                    const wordsList = topQuizWords.map(w => w.word).join("・");
+                    onSaveToast(`✓ 頻出単語TOP5（${wordsList || "重要単語"}）の「身近な生活解説プロンプト」をコピーしました！外部AIに貼り付けてください。`);
+                  };
+
                   // タッチスワイプハンドラー
                   const handleTouchStart = (e: React.TouchEvent) => {
                     if (e.touches.length > 0) {
@@ -2305,6 +2325,59 @@ export default function QuestionGenerationModal({
                         {currentQ.question}
                       </h4>
 
+                      {/* Top 5 Frequent Terms & Everyday Life Analogy Prompt Bar */}
+                      <div className="bg-[#12161c] border border-amber-500/35 rounded-xl p-3 space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-amber-300 text-xs flex items-center gap-1">
+                              <span>💡 頻出単語TOP5 生活解説</span>
+                            </span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950/60 text-amber-200 border border-amber-500/30 font-medium">
+                              身近な日常に例えて理解
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setShowTopTermsPromptModal(true)}
+                              className="text-[11px] text-gray-300 hover:text-white bg-[#1c2128] hover:bg-[#252c37] border border-[#30363d] px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1 font-medium"
+                              title="抽出された頻出5単語とプロンプト全文を確認する"
+                            >
+                              <span>👁️ プロンプト確認</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyTop5LifeTermsPrompt()}
+                              className="text-[11px] font-bold text-white bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 px-3 py-1 rounded-lg transition cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-95"
+                              title="問題と4つの回答から頻出する単語TOP5を抽出し、身近な日常生活に例えてわかりやすく解説させるプロンプトをコピー"
+                            >
+                              <Copy className="w-3 h-3" />
+                              <span>🍳 頻出単語TOP5 生活解説プロンプト</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Extracted 5 words chips */}
+                        {topQuizWords.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-[#30363d]/50 text-[11px]">
+                            <span className="text-gray-400 text-[10px] shrink-0 font-medium">頻出語:</span>
+                            {topQuizWords.map((term, tIdx) => (
+                              <span
+                                key={tIdx}
+                                className="px-2 py-0.5 rounded-full bg-amber-950/40 text-amber-200 border border-amber-500/25 text-[10px] flex items-center gap-1"
+                                title={`クイズ内出現: ${term.count}回`}
+                              >
+                                <span className="font-semibold">{tIdx + 1}. {term.word}</span>
+                                <span className="text-[9px] text-amber-400/70 font-mono">({term.count}回)</span>
+                              </span>
+                            ))}
+                            <span className="text-[10px] text-gray-400 ml-auto hidden sm:inline">
+                              ※わからない単語を身近な生活の具体例でAIに解説させられます
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
                       {/* Choices or Input */}
                       {currentQ.choices && currentQ.choices.length > 0 ? (
                         <div className="space-y-2 pt-2">
@@ -2436,7 +2509,7 @@ export default function QuestionGenerationModal({
                                   <span>🤖 外部AIに解説・図解を依頼 ＆ スプレッドシート保存</span>
                                 </span>
                                 <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-900/40 text-indigo-200 border border-indigo-500/30">
-                                  図解 ＆ 本質・着眼点(5行)
+                                  図解 ＆ 本質5行 ＆ 頻出単語TOP5生活解説
                                 </span>
                               </div>
                               <button
@@ -2455,7 +2528,7 @@ export default function QuestionGenerationModal({
                                   <div className="flex items-center justify-between">
                                     <span className="font-bold text-gray-200 text-xs flex items-center gap-1.5">
                                       <span className="w-4 h-4 rounded-full bg-indigo-600 text-white text-[10px] flex items-center justify-center font-bold">1</span>
-                                      <span>外部AI用プロンプトの作成（図解 または 本質・着眼点5行要約）</span>
+                                      <span>外部AI用プロンプトの作成（図解 / 本質・着眼点5行要約 / 頻出単語TOP5生活解説）</span>
                                     </span>
                                     <span className="text-[10px] text-gray-400">短文・本質抽出・図解指定</span>
                                   </div>
@@ -2564,6 +2637,16 @@ ${externalAiQuestionInput.trim() || "表面的な知識ではなく、この問�
                                       title="既存の解説に頼らず、問題の本質と着眼点を5行程度で解説させるプロンプトをコピー"
                                     >
                                       <span>🎯 本質・着眼点プロンプト (約5行)</span>
+                                    </button>
+
+                                    {/* Button 3: Top 5 Frequent Terms Life Explanation Prompt */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyTop5LifeTermsPrompt()}
+                                      className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white transition cursor-pointer flex items-center gap-1.5 shadow active:scale-95"
+                                      title="問題と4つの選択肢から頻出する単語TOP5を抽出し、身近な日常生活に例えてわかりやすく解説させるプロンプトをコピー"
+                                    >
+                                      <span>🍳 頻出単語TOP5 生活解説プロンプト</span>
                                     </button>
                                   </div>
                                 </div>
@@ -2714,6 +2797,140 @@ ${externalAiQuestionInput.trim() || "表面的な知識ではなく、この問�
                                   <span>★ 習得済みにする (もう出題しない)</span>
                                 </button>
                               )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Modal for Top 5 Terms Prompt Preview & Copy */}
+                      {showTopTermsPromptModal && (
+                        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-[fadeIn_0.15s_ease-out]">
+                          <div className="bg-[#161b22] border border-amber-500/40 rounded-2xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+                            {/* Modal Header */}
+                            <div className="p-4 bg-gradient-to-r from-amber-950/50 via-[#1c2128] to-[#1c2128] border-b border-[#30363d] flex items-center justify-between">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center text-sm font-bold border border-amber-500/30">
+                                  💡
+                                </div>
+                                <div>
+                                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                                    <span>クイズ頻出単語TOP5 生活解説プロンプト</span>
+                                    <span className="text-[10px] px-2 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-500/30 font-medium">
+                                      身近な日常に例えて理解
+                                    </span>
+                                  </h4>
+                                  <p className="text-[11px] text-gray-400">
+                                    問題文と4つの選択肢の中から頻出単語上位5個を抽出し、身近な日常に例えてAIにわかりやすく解説させます
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setShowTopTermsPromptModal(false)}
+                                className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-gray-800 transition cursor-pointer text-sm"
+                              >
+                                ✕
+                              </button>
+                            </div>
+
+                            {/* Modal Body */}
+                            <div className="p-4 overflow-y-auto space-y-4 text-xs">
+                              {/* Extracted 5 words display */}
+                              <div className="bg-[#0d1117] p-3 rounded-xl border border-[#30363d] space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[11px] font-bold text-amber-300 flex items-center gap-1.5">
+                                    <span>📊 自動抽出された頻出単語TOP5（問題＋4つの回答より）:</span>
+                                  </span>
+                                  <span className="text-[10px] text-gray-400">
+                                    クイズ内出現回数順
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                                  {topQuizWords.map((term, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="bg-[#161b22] border border-amber-500/30 rounded-lg p-2 text-center space-y-0.5"
+                                    >
+                                      <div className="text-[10px] text-amber-400/80 font-bold">第{idx + 1}位</div>
+                                      <div className="font-bold text-white text-xs truncate" title={term.word}>
+                                        {term.word}
+                                      </div>
+                                      <div className="text-[10px] text-gray-400 font-mono">
+                                        {term.count}回出現
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Custom user focus / question */}
+                              <div className="space-y-1">
+                                <span className="font-bold text-gray-300 text-xs">
+                                  特に知りたい論点・日常の疑問（任意）:
+                                </span>
+                                <input
+                                  type="text"
+                                  value={externalAiQuestionInput}
+                                  onChange={(e) => setExternalAiQuestionInput(e.target.value)}
+                                  placeholder="例: 正解の単語と誤答の単語の違いを買い物の場面で例えてほしい"
+                                  className="w-full p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-xs text-white outline-none focus:border-amber-500 leading-relaxed placeholder:text-gray-600"
+                                />
+                              </div>
+
+                              {/* Prompt Content Preview */}
+                              <div className="space-y-1.5">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-bold text-gray-300 text-xs">
+                                    外部AI用プロンプト（ChatGPT / Claude / Gemini用）:
+                                  </span>
+                                  <span className="text-[10px] text-gray-400">
+                                    ワンクリックでコピーできます
+                                  </span>
+                                </div>
+                                <div className="bg-[#0d1117] border border-[#30363d] rounded-xl p-3 font-mono text-[11px] text-gray-200 whitespace-pre-wrap leading-relaxed max-h-56 overflow-y-auto selection:bg-amber-500/30">
+                                  {buildTop5LifeTermsPrompt(
+                                    currentQ.question,
+                                    currentQ.choices,
+                                    currentQ.noteTitle,
+                                    topQuizWords,
+                                    externalAiQuestionInput
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Guidance Note */}
+                              <div className="bg-amber-950/20 border border-amber-500/20 rounded-xl p-3 text-[11px] text-amber-200/90 leading-relaxed space-y-1">
+                                <div className="font-bold flex items-center gap-1.5 text-amber-300">
+                                  <span>💡 使い方</span>
+                                </div>
+                                <p>
+                                  1. 「プロンプトをコピー」を押し、ChatGPTやClaude、Geminiなどに貼り付けて送信します。<br />
+                                  2. 各単語がスーパーでの買い物や料理、スマホ操作など【生活の身近な場面】に例えて解説されます。<br />
+                                  3. 解答確認後の「外部AI用解説を依頼・保存する」欄にAIの回答を貼り付ければ、スプレッドシートに保存して復習時にも再確認できます。
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div className="p-3.5 bg-[#12161c] border-t border-[#30363d] flex items-center justify-between">
+                              <button
+                                type="button"
+                                onClick={() => setShowTopTermsPromptModal(false)}
+                                className="px-3.5 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-gray-800 transition cursor-pointer"
+                              >
+                                閉じる
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleCopyTop5LifeTermsPrompt();
+                                  setShowTopTermsPromptModal(false);
+                                }}
+                                className="px-4 py-2 rounded-lg text-xs font-bold bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white transition cursor-pointer flex items-center gap-1.5 shadow-md active:scale-95"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                                <span>プロンプトをコピーして閉じる</span>
+                              </button>
                             </div>
                           </div>
                         </div>
