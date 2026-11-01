@@ -177,6 +177,7 @@ export default function QuestionGenerationModal({
   const [isSavingExplanationToSheet, setIsSavingExplanationToSheet] = useState<boolean>(false);
   const [isSessionCompleted, setIsSessionCompleted] = useState<boolean>(false);
   const [showTopTermsPromptModal, setShowTopTermsPromptModal] = useState<boolean>(false);
+  const [customUnknownWordInput, setCustomUnknownWordInput] = useState<string>("");
 
   // 未理解単語のチェック状態 (localStorage: cn_learning_unmastered_words)
   const [unmasteredWords, setUnmasteredWords] = useState<Record<string, boolean>>(() => {
@@ -2566,6 +2567,68 @@ export default function QuestionGenerationModal({
                             </div>
                           </div>
                         )}
+
+                        {/* Custom Unknown Word Input (For words not automatically extracted) */}
+                        <div className="pt-2.5 mt-2 border-t border-[#30363d]/60 space-y-1.5 text-[11px]">
+                          <div className="text-[10px] text-gray-400 font-medium">
+                            📝 出てきていない不明な単語を直接記入して未理解単語に登録:
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              placeholder="例: 不明な専門用語や気になる言葉を入力..."
+                              value={customUnknownWordInput}
+                              onChange={(e) => setCustomUnknownWordInput(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && customUnknownWordInput.trim()) {
+                                  e.preventDefault();
+                                  const word = customUnknownWordInput.trim();
+                                  setUnmasteredWords(prev => ({ ...prev, [word]: true }));
+                                  setCustomUnknownWordInput("");
+                                  onSaveToast(`「${word}」を未理解単語として追加・登録しました ✦`);
+                                }
+                              }}
+                              className="flex-1 p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-xs text-white outline-none focus:border-amber-500 placeholder:text-gray-500"
+                            />
+                            <button
+                              type="button"
+                              disabled={!customUnknownWordInput.trim()}
+                              onClick={() => {
+                                const word = customUnknownWordInput.trim();
+                                if (!word) return;
+                                setUnmasteredWords(prev => ({ ...prev, [word]: true }));
+                                setCustomUnknownWordInput("");
+                                onSaveToast(`「${word}」を未理解単語として追加・登録しました ✦`);
+                              }}
+                              className="px-3 py-2 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white transition cursor-pointer disabled:opacity-50 shrink-0"
+                            >
+                              + 追加して登録
+                            </button>
+                          </div>
+
+                          {/* Currently registered custom unmastered words list */}
+                          {Object.keys(unmasteredWords).filter(w => unmasteredWords[w] && !topQuizWords.some(t => t.word === w)).length > 0 && (
+                            <div className="pt-1.5 flex flex-wrap items-center gap-1.5">
+                              <span className="text-[10px] text-gray-400">手動追加した未理解単語:</span>
+                              {Object.keys(unmasteredWords).filter(w => unmasteredWords[w] && !topQuizWords.some(t => t.word === w)).map((w, wIdx) => (
+                                <span key={wIdx} className="px-2 py-0.5 rounded-md bg-amber-950/60 text-amber-200 border border-amber-500/40 font-bold flex items-center gap-1 text-[10px]">
+                                  <span>{w}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setUnmasteredWords(prev => ({ ...prev, [w]: false }));
+                                      onSaveToast(`「${w}」の未理解登録を解除しました`);
+                                    }}
+                                    className="text-amber-400 hover:text-white cursor-pointer ml-0.5"
+                                    title="解除"
+                                  >
+                                    ✕
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       {/* Revealed explanation & self evaluation */}
