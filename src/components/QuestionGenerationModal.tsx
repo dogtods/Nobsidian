@@ -2198,16 +2198,18 @@ export default function QuestionGenerationModal({
 
                   // 頻出単語TOP5生活解説プロンプトのコピーハンドラー
                   const handleCopyTop5LifeTermsPrompt = (customInput?: string) => {
+                    const checkedNames = Object.keys(unmasteredWords).filter(w => unmasteredWords[w]);
                     const promptText = buildTop5LifeTermsPrompt(
                       currentQ.question,
                       currentQ.choices,
                       currentQ.noteTitle,
                       topQuizWords,
-                      customInput !== undefined ? customInput : externalAiQuestionInput
+                      customInput !== undefined ? customInput : externalAiQuestionInput,
+                      checkedNames
                     );
                     navigator.clipboard.writeText(promptText);
-                    const wordsList = topQuizWords.map(w => w.word).join("・");
-                    onSaveToast(`✓ 頻出単語TOP5（${wordsList || "重要単語"}）の「身近な生活解説プロンプト」をコピーしました！外部AIに貼り付けてください。`);
+                    const wordsList = checkedNames.length > 0 ? checkedNames.join("・") : topQuizWords.map(w => w.word).join("・");
+                    onSaveToast(`✓ チェック入れた単語（${wordsList || "重要単語"}）の「身近な生活解説プロンプト」をコピーしました！外部AIに貼り付けてください。`);
                   };
 
                   // タッチスワイプハンドラー
@@ -2990,7 +2992,8 @@ ${externalAiQuestionInput.trim() || "表面的な知識ではなく、この問�
                                     currentQ.choices,
                                     currentQ.noteTitle,
                                     topQuizWords,
-                                    externalAiQuestionInput
+                                    externalAiQuestionInput,
+                                    Object.keys(unmasteredWords).filter(w => unmasteredWords[w])
                                   )}
                                 </div>
                               </div>

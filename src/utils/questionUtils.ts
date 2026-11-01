@@ -793,11 +793,16 @@ export function buildTop5LifeTermsPrompt(
   choices?: (QuestionChoice | { label?: string; text: string; isCorrect?: boolean })[],
   noteTitle?: string,
   topTerms?: ExtractedTerm[],
-  userQuestion?: string
+  userQuestion?: string,
+  checkedTermNames?: string[]
 ): string {
-  const terms = (topTerms && topTerms.length > 0)
+  const allTerms = (topTerms && topTerms.length > 0)
     ? topTerms
     : extractTopQuizKeywords(question, choices, 5);
+
+  const terms = (checkedTermNames && checkedTermNames.length > 0)
+    ? allTerms.filter(t => checkedTermNames.includes(t.word))
+    : allTerms;
 
   const formattedChoices = choices && choices.length > 0
     ? choices.map(c => `${c.label || ""}: ${c.text}`).join("\n")
@@ -805,11 +810,15 @@ export function buildTop5LifeTermsPrompt(
 
   const termsListText = terms.length > 0
     ? terms.map((t, idx) => `${idx + 1}. 【${t.word}】（出現頻度: ${t.count}回）`).join("\n")
-    : "1. （問題文・選択肢から自動抽出された重要単語）";
+    : "1. （チェックされた単語がありません。上のチェックボックスから解説してほしい単語にチェックを入れてください）";
+
+  const targetDescription = (checkedTermNames && checkedTermNames.length > 0)
+    ? `以下のクイズ問題および4つの選択肢の中から、ユーザーがチェックを入れて選択した【特に理解したい重要単語（全${terms.length}語）】を抽出しました。`
+    : `以下のクイズ問題および4つの選択肢を分析し、最も頻出・重要となる単語上位5個を抽出しました。`;
 
   return `あなたは専門用語や小難しい概念を、誰にでも直感的に「なるほど！」と腑に落ちさせる天才的な教育メンターです。
 
-以下のクイズ問題および4つの選択肢を分析し、最も頻出・重要となる単語上位5個を抽出しました。
+${targetDescription}
 初学者や中学生でも一瞬でイメージが掴めるように、辞書的な堅苦しい定義や教科書通りの説明は【一切不要】です。
 
 【最重要要件】
@@ -825,23 +834,23 @@ ${question}
 【4つの選択肢】
 ${formattedChoices}
 
-【頻出・重要単語TOP5（出現頻度順）】
+【対象の重要単語リスト】
 ${termsListText}
 ${userQuestion && userQuestion.trim() ? `\n【ユーザーの関心・知りたい点】\n${userQuestion.trim()}\n` : ""}
 ────────────────────────
 【出力形式の指定（厳守）】
-前置きや挨拶は一切省き、抽出された5つの単語について以下のフォーマットで順に出力してください。
+前置きや挨拶は一切省き、指定された単語について以下のフォーマットで順に出力してください。
 
 ### 1. 【単語名】
 - 💡 **超簡単まとめ**: 難しい専門用語を使わず、一言で表すと何か（1〜2行）
 - 🍳 **身近な生活での具体例**: 買い物・料理・スマホ・片付け・天気など、普段の暮らしに例えた具体的なシーン・たとえ話（2〜3行）
 - 🎯 **このクイズでの見分け方**: 問題文や4つの選択肢の中でどういう意味・役割で使われているか、正解を見抜くための着眼点（1〜2行）
 
-（※2番目〜5番目の単語も同様に分かりやすく解説してください）
+（※2番目以降の単語も同様に分かりやすく解説してください）
 
 ────────────────────────
 ⭐ **生活とクイズを結ぶワンポイント総括**:
-これら5つの言葉が私たちの身の回りの暮らしとどう繋がっており、この問題の正解を見抜くためにどう役立つかを親しみやすい言葉で2〜3行でまとめて締めくくってください。`;
+これら選択された言葉が私たちの身の回りの暮らしとどう繋がっており、この問題の正解を見抜くためにどう役立つかを親しみやすい言葉で2〜3行でまとめて締めくくってください。`;
 }
 
 
