@@ -116,6 +116,9 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
     } catch {}
   };
 
+  // フォルダ対応進捗の絞り込みモード: "all" (すべて) | "covered" (対応済み) | "uncovered" (未対応)
+  const [folderFilterMode, setFolderFilterMode] = useState<"all" | "covered" | "uncovered">("all");
+
   // 📅 週次推移一覧（フォルダ別、デフォルトで畳み込み）
   const [collapsedFolderMap, setCollapsedFolderMap] = useState<Record<string, boolean>>({});
 
@@ -305,6 +308,108 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
     return "未分類";
   }, [notes, folderColumnSource]);
 
+  // 1. 各フォルダのノート件数
+  const folderNotesCountMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    notes.forEach(n => {
+      const f = folderColumnSource === "N" ? getFolderFromColumnN(n) : getFolderFromKeywords(n.keywords);
+      const folder = f || "未分類";
+      map[folder] = (map[folder] || 0) + 1;
+    });
+    return map;
+  }, [notes, folderColumnSource]);
+
+  // 2. 各フォルダの因果リンク件数
+  const folderLinksCountMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    links.forEach(l => {
+      const folder = getLinkFolder(l);
+      map[folder] = (map[folder] || 0) + 1;
+    });
+    return map;
+  }, [links, getLinkFolder]);
+
+  // 3. 全フォルダのユニーク一覧 (ノート由来 + リンク由来)
+  const allFolderNames = useMemo(() => {
+    const set = new Set<string>();
+    notes.forEach(n => {
+      const f = folderColumnSource === "N" ? getFolderFromColumnN(n) : getFolderFromKeywords(n.keywords);
+      if (f) set.add(f);
+    });
+    links.forEach(l => {
+      const f = getLinkFolder(l);
+      if (f) set.add(f);
+    });
+    return Array.from(set).sort();
+  }, [notes, links, folderColumnSource, getLinkFolder]);
+
+  // 4. 全フォルダの対応状況（対応済み vs 未対応、リンク数、ノート数）
+  const allFolderStatusList = useMemo(() => {
+    return allFolderNames.map(folder => {
+      const linksCount = folderLinksCountMap[folder] || 0;
+      const notesCount = folderNotesCountMap[folder] || 0;
+      const isCovered = linksCount > 0;
+      const folderLinks = links.filter(l => getLinkFolder(l) === folder);
+      const newLinksCount = folderLinks.filter(l => l.isNew).length;
+
+      return {
+        folder,
+        linksCount,
+        notesCount,
+        isCovered,
+        newLinksCount
+      };
+    }).sort((a, b) => {
+      // リンク数順、次にノート数順、最後に名前順
+      return b.linksCount - a.linksCount || b.notesCount - a.notesCount || a.folder.localeCompare(b.folder);
+    });
+  }, [allFolderNames, folderLinksCountMap, folderNotesCountMap, links, getLinkFolder]);
+
+  // 5. フォルダ対応カバレッジ統計
+  const folderCoverageStats = useMemo(() => {
+    const total = allFolderNames.length;
+    const covered = allFolderNames.filter(f => (folderLinksCountMap[f] || 0) > 0).length;
+    const uncovered = total - covered;
+    const percentage = total > 0 ? Math.round((covered / total) * 100) : 0;
+    return {
+      total,
+      covered,
+      uncovered,
+      percentage
+    };
+  }, [allFolderNames, folderLinksCountMap]);
+
+  // 6. 未対応フォルダ一覧（検索クエリにも連動）
+  const unhandledFoldersList = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return allFolderStatusList
+      .filter(f => !f.isCovered)
+      .filter(f => {
+        if (!q) return true;
+        return f.folder.toLowerCase().includes(q);
+      });
+  }, [allFolderStatusList, searchQuery]);
+
+  // 7. フォルダごとのプレビュー用ノート取得ヘルパー
+  const getFolderRecentNotes = useCallback((folderName: string, maxNotes: number = 2): Note[] => {
+    return notes
+      .filter(n => {
+        const f = folderColumnSource === "N" ? getFolderFromColumnN(n) : getFolderFromKeywords(n.keywords);
+        return (f || "未分類") === folderName;
+      })
+      .slice(0, maxNotes);
+  }, [notes, folderColumnSource]);
+
+  // 8. 未対応フォルダから外部AIプロンプト作成タブへスムーズに移行するハンドラー
+  const handleSelectFolderForExternalPrompt = useCallback((folderName: string) => {
+    setSelectedFolder(folderName);
+    setActiveTab("external");
+    setTimeout(() => {
+      step1Ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 120);
+    onToast?.(`フォルダ「${folderName}」を選択しました。プロンプトを外部AIに渡して因果リンクを抽出してください。`);
+  }, [onToast]);
+
   const availableFolders = useMemo(() => {
     const set = new Set<string>();
     notes.forEach(n => {
@@ -313,18 +418,6 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
     });
     return Array.from(set).sort();
   }, [notes, folderColumnSource]);
-
-  // 存在するフォルダと件数の集計（週次推移タブのフィルターピル用）
-  const activeFoldersWithCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    links.forEach(l => {
-      const f = getLinkFolder(l);
-      counts[f] = (counts[f] || 0) + 1;
-    });
-    return Object.entries(counts)
-      .map(([folder, count]) => ({ folder, count }))
-      .sort((a, b) => b.count - a.count || a.folder.localeCompare(b.folder));
-  }, [links, getLinkFolder]);
 
   const weeklyGroups = useMemo(() => {
     return computeWeeklyCausalDiffs(links);
@@ -341,7 +434,6 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
       links: g.links.filter(l => l.source.toLowerCase().includes(q) || l.target.toLowerCase().includes(q) || l.reason.toLowerCase().includes(q))
     })).filter(g => g.newLinks.length > 0 || g.continuingLinks.length > 0);
   }, [weeklyGroups, searchQuery]);
-
 
   // フォルダ ➔ 週次推移データ（フォルダ別、週次推移を一覧）
   const folderTimelineGroups = useMemo(() => {
@@ -368,14 +460,16 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
     return Object.entries(folderMap).map(([folder, fLinks]) => {
       const wGroups = computeWeeklyCausalDiffs(fLinks);
       const totalNew = fLinks.filter(l => l.isNew).length;
+      const noteCount = folderNotesCountMap[folder] || 0;
       return {
         folder,
         totalLinks: fLinks.length,
         totalNew,
+        noteCount,
         weeks: wGroups.filter(w => w.links.length > 0)
       };
     }).sort((a, b) => b.totalLinks - a.totalLinks || a.folder.localeCompare(b.folder));
-  }, [links, searchQuery, getLinkFolder]);
+  }, [links, searchQuery, getLinkFolder, folderNotesCountMap]);
 
   const existingTerms = useMemo(() => collectExistingTerms(links), [links]);
 
@@ -728,8 +822,8 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
           style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-x" } as React.CSSProperties}
         >
           {([
-            ["all-weeks", `📅 週次推移一覧 (${links.length})`, "bg-[#388bfd33] text-[#58a6ff] border border-[#388bfd55]"],
-            ["external", "🔌 外部AI連携", "bg-amber-500/20 text-amber-300 border border-amber-500/50"],
+            ["all-weeks", `📅 週次推移一覧 (${folderCoverageStats.covered}/${folderCoverageStats.total}フォルダ・${links.length}件)`, "bg-[#388bfd33] text-[#58a6ff] border border-[#388bfd55]"],
+            ["external", `🔌 外部AI連携${folderCoverageStats.uncovered > 0 ? ` (未対応${folderCoverageStats.uncovered})` : ""}`, "bg-amber-500/20 text-amber-300 border border-amber-500/50"],
             ["lag", "📈 ラグ相関", "bg-purple-500/20 text-purple-300 border border-purple-500/50"]
           ] as const).map(([key, label, activeCls]) => (
             <button
@@ -763,6 +857,157 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
         {/* Tab 2: All Weeks Timeline (週次推移一覧 - フォルダ別、デフォルトで畳み込み) */}
         {activeTab === "all-weeks" && (
           <div className="space-y-4">
+
+            {/* 📊 フォルダ対応進捗（カバレッジ）ダッシュボード */}
+            <div className="bg-gradient-to-r from-[#161b22] to-[#1c2333] border border-[var(--border)] rounded-xl p-4 sm:p-5 space-y-3.5 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <FolderTree className="w-4 h-4 text-emerald-400" />
+                    <span className="font-bold text-sm text-[var(--bright)]">因果リンク フォルダ対応進捗</span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                      folderCoverageStats.percentage === 100
+                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                        : "bg-blue-500/20 text-blue-300 border border-blue-500/40"
+                    }`}>
+                      進捗率 {folderCoverageStats.percentage}%
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[var(--muted)] mt-1">
+                    全 {folderCoverageStats.total} フォルダ中、因果リンクが抽出・登録されているフォルダの割合です
+                  </p>
+                </div>
+
+                {/* 進捗数値バッジ */}
+                <div className="flex items-center gap-2 text-xs flex-wrap">
+                  <span className="px-2.5 py-1 rounded-lg bg-emerald-950/60 text-emerald-300 border border-emerald-500/40 font-bold flex items-center gap-1.5">
+                    <Check className="w-3.5 h-3.5" />
+                    <span>対応済み {folderCoverageStats.covered}</span>
+                  </span>
+                  <span className="px-2.5 py-1 rounded-lg bg-amber-950/60 text-amber-300 border border-amber-500/40 font-bold flex items-center gap-1.5">
+                    <span>⏳</span>
+                    <span>未対応 {folderCoverageStats.uncovered}</span>
+                  </span>
+                  <span className="text-[11px] text-gray-400">
+                    / 全 {folderCoverageStats.total} フォルダ
+                  </span>
+                </div>
+              </div>
+
+              {/* プログレスバー */}
+              <div className="w-full bg-[#0d1117] h-2.5 rounded-full overflow-hidden border border-[var(--border2)]">
+                <div
+                  className="bg-gradient-to-r from-blue-500 to-emerald-500 h-full transition-all duration-500 ease-out rounded-full"
+                  style={{ width: `${folderCoverageStats.percentage}%` }}
+                />
+              </div>
+
+              {/* フィルター切り替え & クイックステータスピル */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[var(--border2)]/60">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[11px] text-[var(--muted)] flex items-center gap-1 mr-1">
+                    <Filter className="w-3 h-3" />
+                    <span>表示絞り込み:</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setFolderFilterMode("all")}
+                    className={`px-2.5 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+                      folderFilterMode === "all"
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "bg-[#21262d] text-gray-400 hover:text-white"
+                    }`}
+                  >
+                    すべて ({folderCoverageStats.total})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFolderFilterMode("covered")}
+                    className={`px-2.5 py-1 rounded text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                      folderFilterMode === "covered"
+                        ? "bg-emerald-600 text-white shadow-sm"
+                        : "bg-[#21262d] text-emerald-400/80 hover:text-emerald-300"
+                    }`}
+                  >
+                    <Check className="w-3 h-3" />
+                    <span>対応済み ({folderCoverageStats.covered})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFolderFilterMode("uncovered")}
+                    className={`px-2.5 py-1 rounded text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                      folderFilterMode === "uncovered"
+                        ? "bg-amber-600 text-white shadow-sm"
+                        : "bg-[#21262d] text-amber-400/80 hover:text-amber-300"
+                    }`}
+                  >
+                    <span>⏳</span>
+                    <span>未対応 ({folderCoverageStats.uncovered})</span>
+                  </button>
+                </div>
+
+                {folderCoverageStats.uncovered > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const firstUncovered = allFolderStatusList.find(f => !f.isCovered);
+                      if (firstUncovered) {
+                        handleSelectFolderForExternalPrompt(firstUncovered.folder);
+                      } else {
+                        setActiveTab("external");
+                      }
+                    }}
+                    className="px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>⚡ 未対応フォルダを抽出する</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+
+              {/* フォルダステータスピル一覧（全体の見取り図） */}
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {allFolderStatusList.map(item => {
+                  const isMatchSearch = !searchQuery || item.folder.toLowerCase().includes(searchQuery.toLowerCase());
+                  if (!isMatchSearch) return null;
+
+                  if (item.isCovered) {
+                    return (
+                      <button
+                        key={item.folder}
+                        type="button"
+                        onClick={() => {
+                          setSearchQuery(item.folder);
+                          setCollapsedFolderMap(prev => ({ ...prev, [`folder-${item.folder}`]: false }));
+                        }}
+                        className="px-2 py-0.5 rounded bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/40 text-emerald-300 text-[11px] font-medium flex items-center gap-1 transition cursor-pointer"
+                        title={`クリックして「${item.folder}」を検索・開く`}
+                      >
+                        <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                        <span className="truncate max-w-[140px]">{item.folder}</span>
+                        <span className="text-[10px] text-emerald-400/80 font-mono">({item.linksCount}件)</span>
+                      </button>
+                    );
+                  } else {
+                    return (
+                      <button
+                        key={item.folder}
+                        type="button"
+                        onClick={() => handleSelectFolderForExternalPrompt(item.folder)}
+                        className="px-2 py-0.5 rounded bg-amber-950/30 hover:bg-amber-900/50 border border-amber-500/30 text-amber-300/90 text-[11px] font-medium flex items-center gap-1 transition cursor-pointer"
+                        title={`クリックして「${item.folder}」の外部AIプロンプトを作成`}
+                      >
+                        <span className="text-[10px]">⏳</span>
+                        <span className="truncate max-w-[140px]">{item.folder}</span>
+                        <span className="text-[10px] text-amber-400/70 font-mono">(ノート{item.notesCount})</span>
+                        <span className="text-[9px] bg-amber-500/20 px-1 rounded text-amber-300 font-bold">抽出へ</span>
+                      </button>
+                    );
+                  }
+                })}
+              </div>
+            </div>
+
             {/* フォルダ基準切り替え & 一括展開/畳み込みバー */}
             <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-3.5 sm:p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -825,13 +1070,13 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
               </div>
             </div>
 
-            {/* Empty state */}
-            {folderTimelineGroups.length === 0 && (
+            {/* Empty state when filtering covered folders */}
+            {folderFilterMode !== "uncovered" && folderTimelineGroups.length === 0 && (
               <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-8 text-center space-y-3">
                 <p className="text-gray-400 text-xs">
                   {searchQuery
-                    ? `検索ワード「${searchQuery}」に一致する因果リンクがありません。`
-                    : "表示できる因果リンクがありません。"}
+                    ? `検索ワード「${searchQuery}」に一致する因果リンク（対応済みフォルダ）がありません。`
+                    : "対応済みの因果リンクがありません。"}
                 </p>
                 {searchQuery && (
                   <button
@@ -845,8 +1090,8 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
               </div>
             )}
 
-            {/* フォルダ別リスト（フォルダは畳み込みがデフォルト） */}
-            {folderTimelineGroups.length > 0 && (
+            {/* フォルダ別リスト（対応済みフォルダの週次推移） */}
+            {folderFilterMode !== "uncovered" && folderTimelineGroups.length > 0 && (
               <div className="space-y-4">
                 {folderTimelineGroups.map(fg => {
                   const isCollapsed = collapsedFolderMap[`folder-${fg.folder}`] ?? true;
@@ -861,7 +1106,7 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
                         onClick={() => toggleFolderCollapse(`folder-${fg.folder}`)}
                         className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] pb-3 cursor-pointer select-none group"
                       >
-                        <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
                           {isCollapsed ? (
                             <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-amber-400 transition-colors shrink-0" />
                           ) : (
@@ -870,6 +1115,10 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
                           <span className="font-bold text-sm text-amber-300 flex items-center gap-2 truncate">
                             <Folder className="w-4 h-4 text-amber-400 shrink-0" />
                             <span>{fg.folder}</span>
+                          </span>
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1 shrink-0">
+                            <Check className="w-3 h-3" />
+                            <span>対応済み</span>
                           </span>
                           <span className="text-[10px] text-gray-500 font-mono shrink-0">
                             ({folderColumnSource === "N" ? "N列基準" : "D列基準"})
@@ -882,8 +1131,13 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
                             </span>
                           )}
                           <span className="px-2 py-0.5 rounded bg-[#30363d] text-gray-200 font-bold text-[10px]">
-                            全 {fg.totalLinks}件
+                            因果リンク {fg.totalLinks}件
                           </span>
+                          {fg.noteCount > 0 && (
+                            <span className="px-2 py-0.5 rounded bg-blue-950/40 text-blue-300 border border-blue-500/30 font-bold text-[10px]">
+                              ノート {fg.noteCount}件
+                            </span>
+                          )}
                           <span className="text-[11px] text-[var(--muted)] group-hover:text-white transition-colors">
                             {isCollapsed ? "開く ▼" : "畳む ▲"}
                           </span>
@@ -1107,6 +1361,89 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
                 })}
               </div>
             )}
+
+            {/* ⏳ 未対応フォルダ（因果リンク未登録）セクション */}
+            {(folderFilterMode === "all" || folderFilterMode === "uncovered") && unhandledFoldersList.length > 0 && (
+              <div className="bg-[var(--surface)] border border-amber-500/40 rounded-xl p-4 sm:p-5 space-y-3.5 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-amber-300 flex items-center gap-1.5">
+                      <span>⏳</span>
+                      <span>未対応フォルダ ({unhandledFoldersList.length}件)</span>
+                    </span>
+                    <span className="text-xs text-[var(--muted)] hidden sm:inline">
+                      ノートは存在しますが、因果リンクがまだ抽出・登録されていないフォルダです
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-amber-400 font-medium">
+                    「抽出する」を押すと外部AI連携タブで即座にプロンプトを生成します
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {unhandledFoldersList.map(item => {
+                    const previewNotes = getFolderRecentNotes(item.folder, 2);
+                    return (
+                      <div
+                        key={item.folder}
+                        className="bg-[#0d1117] border border-[var(--border2)] rounded-lg p-3.5 flex flex-col justify-between gap-3 hover:border-amber-500/50 transition-colors"
+                      >
+                        <div className="space-y-1.5 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 font-bold text-sm text-[var(--bright)] truncate">
+                              <Folder className="w-4 h-4 text-amber-400 shrink-0" />
+                              <span className="truncate">{item.folder}</span>
+                            </div>
+                            <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold shrink-0 flex items-center gap-1">
+                              <span>⏳</span>
+                              <span>未対応</span>
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-[var(--muted)]">
+                            <span>所属ノート: <b className="text-gray-200">{item.notesCount}件</b></span>
+                            <span>・</span>
+                            <span>因果リンク: <b className="text-amber-400 font-mono">0件</b></span>
+                          </div>
+                          {previewNotes.length > 0 && (
+                            <div className="text-[11px] text-gray-400 bg-[#161b22] p-2 rounded border border-[var(--border2)] space-y-1">
+                              <span className="text-[10px] text-[var(--muted)] block font-semibold">主要ノート:</span>
+                              {previewNotes.map((pn, idx) => (
+                                <div key={pn.id || idx} className="truncate text-gray-300">
+                                  • {pn.title || "（無題）"}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="pt-2 border-t border-[var(--border2)]/60 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => handleSelectFolderForExternalPrompt(item.folder)}
+                            className="px-3.5 py-1.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-bold text-xs rounded-md shadow flex items-center gap-1.5 cursor-pointer transition-all"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>外部AIで因果リンクを抽出する</span>
+                            <ArrowRight className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 未対応フィルター選択時に未対応が0件の場合 */}
+            {folderFilterMode === "uncovered" && unhandledFoldersList.length === 0 && (
+              <div className="bg-[var(--surface)] border border-emerald-500/30 rounded-xl p-8 text-center space-y-2">
+                <span className="text-3xl">🎉</span>
+                <h4 className="text-sm font-bold text-emerald-300">すべてのフォルダが対応済みです！</h4>
+                <p className="text-xs text-[var(--muted)]">
+                  未対応のフォルダはありません。全 {folderCoverageStats.total} フォルダに因果リンクが登録されています。
+                </p>
+              </div>
+            )}
           </div>
         )}
 
@@ -1154,14 +1491,23 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
                 <label className="space-y-1">
-                  <span className="block font-semibold text-[var(--bright)]">フォルダ選択 ({folderColumnSource === "N" ? "N列基準" : "D列基準"})</span>
+                  <span className="block font-semibold text-[var(--bright)] flex items-center justify-between">
+                    <span>フォルダ選択 ({folderColumnSource === "N" ? "N列基準" : "D列基準"})</span>
+                    {folderCoverageStats.uncovered > 0 && (
+                      <span className="text-[10px] text-amber-400 font-normal">未対応 {folderCoverageStats.uncovered}件</span>
+                    )}
+                  </span>
                   <select
                     value={selectedFolder}
                     onChange={e => setSelectedFolder(e.target.value)}
                     className="w-full bg-[#161b22] border border-[var(--border2)] rounded px-2 py-1.5 text-[var(--bright)]"
                   >
                     <option value="all">すべて（全フォルダ）</option>
-                    {availableFolders.map(f => <option key={f} value={f}>{f}</option>)}
+                    {allFolderStatusList.map(st => (
+                      <option key={st.folder} value={st.folder}>
+                        {st.isCovered ? `[✅ 対応済: ${st.linksCount}件]` : `[⏳ 未対応: 0件]`} {st.folder} (ノート{st.notesCount}件)
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <label className="space-y-1">
@@ -1193,6 +1539,74 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
                   <span className="text-[var(--bright)] font-semibold">既存用語を渡して表記を統一</span>
                 </label>
               </div>
+
+              {/* 未対応フォルダのワンタップクイック選択 */}
+              {folderCoverageStats.uncovered > 0 && (
+                <div className="p-3 bg-[#12161c] border border-amber-500/30 rounded-lg space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                      <span>⚡ 未対応フォルダを一発選択:</span>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono">
+                        残り {folderCoverageStats.uncovered} フォルダ
+                      </span>
+                    </span>
+                    <span className="text-[11px] text-[var(--muted)]">タップすると対象フォルダが自動選択されます</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pt-1">
+                    {allFolderStatusList
+                      .filter(st => !st.isCovered)
+                      .map(st => (
+                        <button
+                          key={st.folder}
+                          type="button"
+                          onClick={() => setSelectedFolder(st.folder)}
+                          className={`px-2.5 py-1 rounded text-xs transition cursor-pointer flex items-center gap-1.5 border ${
+                            selectedFolder === st.folder
+                              ? "bg-amber-600 text-white border-amber-400 font-bold shadow-sm"
+                              : "bg-[#1c2128] text-amber-300 border-amber-500/40 hover:bg-amber-500/20"
+                          }`}
+                        >
+                          <span>⏳ {st.folder}</span>
+                          <span className="text-[10px] opacity-80 font-mono">({st.notesCount}件)</span>
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 選択中フォルダの対応状況案内 */}
+              {selectedFolder !== "all" && (
+                <div className="p-3 rounded-lg border border-[var(--border2)] text-xs">
+                  {(() => {
+                    const st = allFolderStatusList.find(f => f.folder === selectedFolder);
+                    if (!st || !st.isCovered) {
+                      return (
+                        <div className="flex items-start sm:items-center gap-2 text-amber-300 bg-amber-950/20 border border-amber-500/40 p-2.5 rounded-md">
+                          <span className="text-base shrink-0">⏳</span>
+                          <div className="min-w-0">
+                            <span className="font-bold">「{selectedFolder}」は因果リンク未登録（未対応）です。</span>
+                            <span className="text-[11px] text-amber-200/80 block sm:inline sm:ml-1">
+                              下のプロンプトを外部AIに貼り付けて因果リンクを生成し、STEP 2で取り込んでください。
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    } else {
+                      return (
+                        <div className="flex items-start sm:items-center gap-2 text-emerald-300 bg-emerald-950/20 border border-emerald-500/40 p-2.5 rounded-md">
+                          <Check className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5 sm:mt-0" />
+                          <div className="min-w-0">
+                            <span className="font-bold">「{selectedFolder}」はすでに対応済みです</span>
+                            <span className="text-[11px] text-emerald-200/80 block sm:inline sm:ml-1">
+                              （登録済み因果リンク: <b>{st.linksCount}件</b> / 所属ノート: <b>{st.notesCount}件</b>）。追加で抽出するか、「📅 週次推移一覧」タブでタイムラインをご確認ください。
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    }
+                  })()}
+                </div>
+              )}
 
               <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--muted)]">
                 <span>対象 {selectedNotes.length} 件</span>
