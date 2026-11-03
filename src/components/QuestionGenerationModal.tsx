@@ -168,6 +168,7 @@ export default function QuestionGenerationModal({
   const [isSyncingBackground, setIsSyncingBackground] = useState<boolean>(false);
   const [lastSyncedTime, setLastSyncedTime] = useState<string>(() => localStorage.getItem("cn_learning_last_synced_at") || "");
   const [currentQuizIndex, setCurrentQuizIndex] = useState<number>(0);
+  const modalBodyRef = useRef<HTMLDivElement>(null);
   const questionDisplayedAtRef = useRef<number>(Date.now());
   const [currentResponseMs, setCurrentResponseMs] = useState<number | null>(null);
 
@@ -176,16 +177,6 @@ export default function QuestionGenerationModal({
   const [retrievalMethods, setRetrievalMethods] = useState<string[]>([]);
   const [retrievalNote, setRetrievalNote] = useState<string>("");
   const [isRetrievalOpen, setIsRetrievalOpen] = useState<boolean>(false);
-
-  useEffect(() => {
-    questionDisplayedAtRef.current = Date.now();
-    setCurrentResponseMs(null);
-    setConfidence(null);
-    setErrorType(null);
-    setRetrievalMethods([]);
-    setRetrievalNote("");
-    setIsRetrievalOpen(false);
-  }, [currentQuizIndex]);
 
   const [selectedQuizChoices, setSelectedQuizChoices] = useState<string[]>([]);
   const [essayAnswer, setEssayAnswer] = useState<string>("");
@@ -622,6 +613,33 @@ export default function QuestionGenerationModal({
     }
     return true;
   }, [sessionQuestions, currentQuizIndex, selectedQuizChoices]);
+
+  const currentQuestionId = sessionQuestions[currentQuizIndex]?.id || null;
+
+  const resetQuizForm = useCallback(() => {
+    questionDisplayedAtRef.current = Date.now();
+    setCurrentResponseMs(null);
+    setConfidence(null);
+    setErrorType(null);
+    setRetrievalMethods([]);
+    setRetrievalNote("");
+    setIsRetrievalOpen(false);
+    setSelectedQuizChoices([]);
+    setEssayAnswer("");
+    setIsQuizAnswerRevealed(false);
+    setShowExternalAiPromptBox(false);
+    setPastedExplanation("");
+    setExternalAiQuestionInput("");
+    setCustomUnknownWordInput("");
+    if (modalBodyRef.current) {
+      modalBodyRef.current.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, []);
+
+  // 問題が切り替わった時（解答後の次問繰り上げ、スワイプ、前後ボタン、フィルタ変更等）にフォーム状態と画面スクロールを完全にリセット
+  useEffect(() => {
+    resetQuizForm();
+  }, [currentQuestionId, resetQuizForm]);
 
   // タッチスワイプ座標追跡用ref（再レンダリングや状態更新時も確実に維持）
   const touchStartXRef = useRef<number | null>(null);
@@ -1176,6 +1194,18 @@ export default function QuestionGenerationModal({
       });
     }
 
+    // ログ保存用の入力値を事前にキャプチャ
+    const savedUserAnswer = currentQ.type === "multiple_choice" ? selectedQuizChoices.join(", ") : (selectedQuizChoices[0] || essayAnswer || "");
+    const savedConfidence = confidence;
+    const savedErrorType = isCorrect ? null : errorType;
+    const savedRetrievalMethods = [...retrievalMethods];
+    const savedRetrievalNote = retrievalNote.trim() ? retrievalNote.trim() : null;
+
+    const lastRevAt = reviewStates[currentQ.id]?.lastReviewedAt;
+    const daysSinceLast = lastRevAt ? Math.floor((Date.now() - lastRevAt) / 86400000) : null;
+    const responseMs = currentResponseMs !== null ? currentResponseMs : (Date.now() - questionDisplayedAtRef.current);
+    const hourOfDay = new Date().getHours();
+
     // 2. 【即時画面遷移 (0ms)】解答済みの問題をキューから即時除外し、次回復習期日まで非表示にする（スワイプ再表示防止）
     const nextSession = sessionQuestions.filter(q => q.id !== currentQ.id);
     setSessionQuestions(nextSession);
@@ -1190,17 +1220,9 @@ export default function QuestionGenerationModal({
         setCurrentQuizIndex(nextSession.length - 1);
       }
     }
-    setSelectedQuizChoices([]);
-    setEssayAnswer("");
-    setIsQuizAnswerRevealed(false);
-    setExternalAiQuestionInput("");
-    setPastedExplanation("");
-    setShowExternalAiPromptBox(false);
 
-    const lastRevAt = reviewStates[currentQ.id]?.lastReviewedAt;
-    const daysSinceLast = lastRevAt ? Math.floor((Date.now() - lastRevAt) / 86400000) : null;
-    const responseMs = currentResponseMs !== null ? currentResponseMs : (Date.now() - questionDisplayedAtRef.current);
-    const hourOfDay = new Date().getHours();
+    // 次の問題へ移行するためフォーム状態（確信度・想起メモ等）と画面スクロールを完全にリセット
+    resetQuizForm();
 
     // 3. 【非同期バックグラウンド同期】SpreadSheetへ裏でログ保存（操作を一切止めない）
     setIsSyncingBackground(true);
@@ -1208,16 +1230,16 @@ export default function QuestionGenerationModal({
       action: "saveReviewLog",
       logData: {
         questionId: currentQ.id,
-        userAnswer: currentQ.type === "multiple_choice" ? selectedQuizChoices.join(", ") : (selectedQuizChoices[0] || essayAnswer || ""),
+        userAnswer: savedUserAnswer,
         isCorrect: isCorrect,
         rating: rating,
         isMastered: isMastered,
         memo: isMastered ? "習得済み・出題停止" : undefined,
         timeSpentSeconds: Math.round(responseMs / 1000) || 10,
-        confidence: confidence,
-        errorType: isCorrect ? null : errorType,
-        retrievalMethods: retrievalMethods,
-        retrievalNote: retrievalNote.trim() ? retrievalNote.trim() : null,
+        confidence: savedConfidence,
+        errorType: savedErrorType,
+        retrievalMethods: savedRetrievalMethods,
+        retrievalNote: savedRetrievalNote,
         responseMs: responseMs,
         daysSinceLast: daysSinceLast,
         hourOfDay: hourOfDay
@@ -1377,7 +1399,7 @@ export default function QuestionGenerationModal({
         </div>
 
         {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden p-3.5 sm:p-5 space-y-4 min-w-0 w-full">
+        <div ref={modalBodyRef} className="flex-1 overflow-y-auto overflow-x-hidden p-3.5 sm:p-5 space-y-4 min-w-0 w-full">
 
           {/* TAB 1: GENERATE */}
           {activeTab === "generate" && (
