@@ -1264,7 +1264,8 @@ const LEARNING_HEADERS = {
     "choice_id", "question_id", "choice_order", "choice_label", "choice_text", "is_correct", "explanation"
   ],
   ReviewLogs: [
-    "log_id", "question_id", "user_answer", "is_correct", "time_spent_seconds", "rating", "memo", "answered_at"
+    "log_id", "question_id", "user_answer", "is_correct", "time_spent_seconds", "rating", "memo", "answered_at",
+    "confidence", "error_type", "retrieval_methods", "retrieval_note", "response_ms", "days_since_last", "hour_of_day"
   ],
   ReviewState: [
     "question_id", "total_reviews", "correct_count", "consecutive_correct", "easiness_factor", "interval_days", "last_reviewed_at", "next_review_date", "mastery_level", "updated_at"
@@ -1601,6 +1602,14 @@ function handleSaveReviewLog(logData, learningSpreadsheetUrl) {
   const rating = Number(logData.rating) || (isCorrect ? 3 : 1);
   const isMasteredExplicit = rating === 5 || logData.isMastered === true || logData.excludeFromReview === true;
 
+  const confidence = logData.confidence !== undefined && logData.confidence !== null ? logData.confidence : "";
+  const errorType = logData.errorType !== undefined && logData.errorType !== null ? logData.errorType : "";
+  const retrievalMethods = Array.isArray(logData.retrievalMethods) ? logData.retrievalMethods.join(",") : (logData.retrievalMethods || "");
+  const retrievalNote = logData.retrievalNote !== undefined && logData.retrievalNote !== null ? logData.retrievalNote : "";
+  const responseMs = logData.responseMs !== undefined && logData.responseMs !== null ? logData.responseMs : "";
+  const daysSinceLast = logData.daysSinceLast !== undefined && logData.daysSinceLast !== null ? logData.daysSinceLast : "";
+  const hourOfDay = logData.hourOfDay !== undefined && logData.hourOfDay !== null ? logData.hourOfDay : new Date().getHours();
+
   logSheet.appendRow([
     logId,
     logData.questionId,
@@ -1609,7 +1618,14 @@ function handleSaveReviewLog(logData, learningSpreadsheetUrl) {
     Number(logData.timeSpentSeconds) || 0,
     rating,
     logData.memo || (isMasteredExplicit ? "習得済み・出題停止" : ""),
-    now
+    now,
+    confidence,
+    errorType,
+    retrievalMethods,
+    retrievalNote,
+    responseMs,
+    daysSinceLast,
+    hourOfDay
   ]);
 
   const sLastRow = stateSheet.getLastRow();

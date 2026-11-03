@@ -168,6 +168,25 @@ export default function QuestionGenerationModal({
   const [isSyncingBackground, setIsSyncingBackground] = useState<boolean>(false);
   const [lastSyncedTime, setLastSyncedTime] = useState<string>(() => localStorage.getItem("cn_learning_last_synced_at") || "");
   const [currentQuizIndex, setCurrentQuizIndex] = useState<number>(0);
+  const questionDisplayedAtRef = useRef<number>(Date.now());
+  const [currentResponseMs, setCurrentResponseMs] = useState<number | null>(null);
+
+  const [confidence, setConfidence] = useState<number | null>(null);
+  const [errorType, setErrorType] = useState<'unknown' | 'recall' | 'misconception' | 'careless' | null>(null);
+  const [retrievalMethods, setRetrievalMethods] = useState<string[]>([]);
+  const [retrievalNote, setRetrievalNote] = useState<string>("");
+  const [isRetrievalOpen, setIsRetrievalOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    questionDisplayedAtRef.current = Date.now();
+    setCurrentResponseMs(null);
+    setConfidence(null);
+    setErrorType(null);
+    setRetrievalMethods([]);
+    setRetrievalNote("");
+    setIsRetrievalOpen(false);
+  }, [currentQuizIndex]);
+
   const [selectedQuizChoices, setSelectedQuizChoices] = useState<string[]>([]);
   const [essayAnswer, setEssayAnswer] = useState<string>("");
   const [isQuizAnswerRevealed, setIsQuizAnswerRevealed] = useState<boolean>(false);
@@ -178,6 +197,8 @@ export default function QuestionGenerationModal({
   const [isSessionCompleted, setIsSessionCompleted] = useState<boolean>(false);
   const [showTopTermsPromptModal, setShowTopTermsPromptModal] = useState<boolean>(false);
   const [customUnknownWordInput, setCustomUnknownWordInput] = useState<string>("");
+
+
 
   // 分野別未理解単語の管理 (localStorage: cn_learning_folder_unmastered_words)
   const [folderUnmasteredWords, setFolderUnmasteredWords] = useState<Record<string, Record<string, boolean>>>(() => {
@@ -587,6 +608,20 @@ export default function QuestionGenerationModal({
   const [sessionQuestions, setSessionQuestions] = useState<LearningQuestion[]>([]);
   const [sessionInitialTotal, setSessionInitialTotal] = useState<number>(0);
   const [sessionCompletedCount, setSessionCompletedCount] = useState<number>(0);
+
+  const isUserCorrect = useMemo(() => {
+    if (!sessionQuestions[currentQuizIndex]) return true;
+    const currentQ = sessionQuestions[currentQuizIndex];
+    if (currentQ.type === "multiple_choice") {
+      const correctLabels = currentQ.choices?.filter(c => c.isCorrect).map(c => c.label) || [];
+      return correctLabels.length === selectedQuizChoices.length && correctLabels.every(l => selectedQuizChoices.includes(l));
+    } else if (currentQ.type === "single_choice" || currentQ.type === "true_false") {
+      const sel = selectedQuizChoices[0] || null;
+      const correctChoice = currentQ.choices?.find(c => c.isCorrect);
+      return sel === correctChoice?.label || sel === correctChoice?.text || sel === currentQ.correctAnswer;
+    }
+    return true;
+  }, [sessionQuestions, currentQuizIndex, selectedQuizChoices]);
 
   // タッチスワイプ座標追跡用ref（再レンダリングや状態更新時も確実に維持）
   const touchStartXRef = useRef<number | null>(null);
@@ -1162,6 +1197,11 @@ export default function QuestionGenerationModal({
     setPastedExplanation("");
     setShowExternalAiPromptBox(false);
 
+    const lastRevAt = reviewStates[currentQ.id]?.lastReviewedAt;
+    const daysSinceLast = lastRevAt ? Math.floor((Date.now() - lastRevAt) / 86400000) : null;
+    const responseMs = currentResponseMs !== null ? currentResponseMs : (Date.now() - questionDisplayedAtRef.current);
+    const hourOfDay = new Date().getHours();
+
     // 3. 【非同期バックグラウンド同期】SpreadSheetへ裏でログ保存（操作を一切止めない）
     setIsSyncingBackground(true);
     learningApiPost({
@@ -1173,7 +1213,14 @@ export default function QuestionGenerationModal({
         rating: rating,
         isMastered: isMastered,
         memo: isMastered ? "習得済み・出題停止" : undefined,
-        timeSpentSeconds: 10
+        timeSpentSeconds: Math.round(responseMs / 1000) || 10,
+        confidence: confidence,
+        errorType: isCorrect ? null : errorType,
+        retrievalMethods: retrievalMethods,
+        retrievalNote: retrievalNote.trim() ? retrievalNote.trim() : null,
+        responseMs: responseMs,
+        daysSinceLast: daysSinceLast,
+        hourOfDay: hourOfDay
       }
     }).then(() => {
       setIsSyncingBackground(false);
@@ -2499,12 +2546,48 @@ export default function QuestionGenerationModal({
                         </div>
                       )}
 
+                      {/* A. 確信度ボタン（回答前・任意） */}
+                      {!isQuizAnswerRevealed && (
+                        <div className="py-2.5 space-y-1">
+                          <div className="text-[11px] font-bold text-gray-300 flex items-center justify-between">
+                            <span>🧠 回答の確信度（任意）:</span>
+                            <span className="text-[10px] text-gray-400">{confidence ? `選択中: ${confidence} (${confidence === 1 ? '勘' : confidence === 5 ? '確実' : ''})` : '未選択'}</span>
+                          </div>
+                          <div className="grid grid-cols-5 gap-1.5">
+                            {[1, 2, 3, 4, 5].map((lvl) => {
+                              const isSelected = confidence === lvl;
+                              return (
+                                <button
+                                  key={lvl}
+                                  type="button"
+                                  onClick={() => setConfidence(isSelected ? null : lvl)}
+                                  className={`py-2 rounded-lg text-xs font-bold border transition cursor-pointer flex flex-col items-center justify-center ${
+                                    isSelected
+                                      ? "bg-sky-600 text-white border-sky-400 shadow-sm"
+                                      : "bg-[#0d1117] text-gray-300 border-[#30363d] hover:border-gray-500 hover:text-white"
+                                  }`}
+                                >
+                                  <span className="text-sm font-mono">{lvl}</span>
+                                  <span className="text-[9px] font-normal opacity-80 truncate">
+                                    {lvl === 1 ? '勘' : lvl === 5 ? '確実' : ''}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
                       {/* Check Answer Button (Directly below choices/input) */}
                       {!isQuizAnswerRevealed && (
                         <div className="pt-2.5 flex justify-end">
                           <button
                             type="button"
-                            onClick={() => setIsQuizAnswerRevealed(true)}
+                            onClick={() => {
+                              const ms = Date.now() - questionDisplayedAtRef.current;
+                              setCurrentResponseMs(ms);
+                              setIsQuizAnswerRevealed(true);
+                            }}
                             className="px-5 py-2 rounded-lg text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white transition cursor-pointer shadow-md"
                           >
                             解答を確認する →
@@ -2919,6 +3002,114 @@ ${externalAiQuestionInput.trim() || "表面的な知識ではなく、この問�
                               </div>
                             )}
                           </div>
+
+                          {/* B. 誤答原因タグ（解答後・誤答のときのみ表示） */}
+                          {!isUserCorrect && (
+                            <div className="bg-red-950/20 border border-red-500/30 rounded-xl p-3.5 space-y-2">
+                              <div className="text-[11px] font-bold text-red-300 flex items-center justify-between">
+                                <span>⚠️ 誤答原因（任意・1つ選択）:</span>
+                                <span className="text-[10px] text-red-400/80">なぜ間違えたか振り返り</span>
+                              </div>
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-xs">
+                                {[
+                                  { key: 'unknown', label: '知らなかった' },
+                                  { key: 'recall', label: '思い出せなかった' },
+                                  { key: 'misconception', label: '勘違い・混同' },
+                                  { key: 'careless', label: 'ケアレスミス' },
+                                ].map((item) => {
+                                  const isSelected = errorType === item.key;
+                                  return (
+                                    <button
+                                      key={item.key}
+                                      type="button"
+                                      onClick={() => setErrorType(isSelected ? null : (item.key as any))}
+                                      className={`py-2 px-2.5 rounded-lg border text-xs font-semibold transition cursor-pointer text-center truncate ${
+                                        isSelected
+                                          ? "bg-red-600 text-white border-red-400 shadow-xs"
+                                          : "bg-[#0d1117] text-gray-300 border-[#30363d] hover:border-gray-500"
+                                      }`}
+                                    >
+                                      {item.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* C. 想起の仕方メモ（解答後・任意） */}
+                          {(() => {
+                            const isOpen = isUserCorrect || isRetrievalOpen;
+                            return (
+                              <div className="bg-[#12161c] border border-[#30363d] rounded-xl p-3.5 space-y-2.5">
+                                <div className="flex items-center justify-between">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (!isUserCorrect) setIsRetrievalOpen(!isRetrievalOpen);
+                                    }}
+                                    className={`text-[11px] font-bold flex items-center gap-1.5 ${!isUserCorrect ? "cursor-pointer text-gray-300 hover:text-white" : "text-gray-300 cursor-default"}`}
+                                  >
+                                    <span>💡 想起の仕方・解法メモ（任意）</span>
+                                    {!isUserCorrect && (
+                                      <span className="text-[10px] text-sky-400 font-normal underline">
+                                        {isRetrievalOpen ? "▲ 折りたたむ" : "▼ 開いて記録する"}
+                                      </span>
+                                    )}
+                                  </button>
+                                  <span className="text-[10px] text-gray-400">
+                                    {retrievalMethods.length > 0 ? `${retrievalMethods.length}個選択中` : "複数選択可"}
+                                  </span>
+                                </div>
+
+                                {isOpen && (
+                                  <div className="space-y-2 pt-1 animate-[fadeIn_0.15s_ease-out]">
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {[
+                                        "語呂",
+                                        "イメージ・図",
+                                        "消去法",
+                                        "文脈から推測",
+                                        "他の知識と関連付け",
+                                        "直感・勘",
+                                        "その他"
+                                      ].map((method) => {
+                                        const isSelected = retrievalMethods.includes(method);
+                                        return (
+                                          <button
+                                            key={method}
+                                            type="button"
+                                            onClick={() => {
+                                              if (isSelected) {
+                                                setRetrievalMethods(retrievalMethods.filter(m => m !== method));
+                                              } else {
+                                                setRetrievalMethods([...retrievalMethods, method]);
+                                              }
+                                            }}
+                                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition cursor-pointer ${
+                                              isSelected
+                                                ? "bg-sky-600 text-white border-sky-400 shadow-xs"
+                                                : "bg-[#0d1117] text-gray-300 border-[#30363d] hover:border-gray-500"
+                                            }`}
+                                          >
+                                            {isSelected ? "✓ " : ""}{method}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+
+                                    <input
+                                      type="text"
+                                      placeholder="補足メモ・一言記入（例: 〇〇の法則とセットで覚えた）..."
+                                      value={retrievalNote}
+                                      onChange={(e) => setRetrievalNote(e.target.value)}
+                                      className="w-full p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-xs text-white outline-none focus:border-sky-500 placeholder:text-gray-600"
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
 
                           {/* Self Evaluation Survey Box */}
                           <div className="bg-[#12161c] p-3.5 rounded-xl border border-[#30363d] space-y-3">

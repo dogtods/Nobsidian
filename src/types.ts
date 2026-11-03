@@ -159,6 +159,13 @@ export interface ReviewLog {
   rating: number; // 1: Again, 2: Hard, 3: Good, 4: Easy, 5: Mastered (出題停止)
   memo?: string;
   answeredAt: number;
+  confidence?: number | null;
+  errorType?: 'unknown' | 'recall' | 'misconception' | 'careless' | null;
+  retrievalMethods?: string[];
+  retrievalNote?: string | null;
+  responseMs?: number | null;
+  daysSinceLast?: number | null;
+  hourOfDay?: number | null;
 }
 
 export interface ReviewState {
