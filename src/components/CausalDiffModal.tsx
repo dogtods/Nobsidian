@@ -964,48 +964,6 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
                   </button>
                 )}
               </div>
-
-              {/* フォルダステータスピル一覧（全体の見取り図） */}
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {allFolderStatusList.map(item => {
-                  const isMatchSearch = !searchQuery || item.folder.toLowerCase().includes(searchQuery.toLowerCase());
-                  if (!isMatchSearch) return null;
-
-                  if (item.isCovered) {
-                    return (
-                      <button
-                        key={item.folder}
-                        type="button"
-                        onClick={() => {
-                          setSearchQuery(item.folder);
-                          setCollapsedFolderMap(prev => ({ ...prev, [`folder-${item.folder}`]: false }));
-                        }}
-                        className="px-2 py-0.5 rounded bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/40 text-emerald-300 text-[11px] font-medium flex items-center gap-1 transition cursor-pointer"
-                        title={`クリックして「${item.folder}」を検索・開く`}
-                      >
-                        <Check className="w-3 h-3 text-emerald-400 shrink-0" />
-                        <span className="truncate max-w-[140px]">{item.folder}</span>
-                        <span className="text-[10px] text-emerald-400/80 font-mono">({item.linksCount}件)</span>
-                      </button>
-                    );
-                  } else {
-                    return (
-                      <button
-                        key={item.folder}
-                        type="button"
-                        onClick={() => handleSelectFolderForExternalPrompt(item.folder)}
-                        className="px-2 py-0.5 rounded bg-amber-950/30 hover:bg-amber-900/50 border border-amber-500/30 text-amber-300/90 text-[11px] font-medium flex items-center gap-1 transition cursor-pointer"
-                        title={`クリックして「${item.folder}」の外部AIプロンプトを作成`}
-                      >
-                        <span className="text-[10px]">⏳</span>
-                        <span className="truncate max-w-[140px]">{item.folder}</span>
-                        <span className="text-[10px] text-amber-400/70 font-mono">(ノート{item.notesCount})</span>
-                        <span className="text-[9px] bg-amber-500/20 px-1 rounded text-amber-300 font-bold">抽出へ</span>
-                      </button>
-                    );
-                  }
-                })}
-              </div>
             </div>
 
             {/* フォルダ基準切り替え & 一括展開/畳み込みバー */}
@@ -1362,8 +1320,8 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
               </div>
             )}
 
-            {/* ⏳ 未対応フォルダ（因果リンク未登録）セクション */}
-            {(folderFilterMode === "all" || folderFilterMode === "uncovered") && unhandledFoldersList.length > 0 && (
+            {/* ⏳ 未対応フォルダ（因果リンク未登録）セクション（「未対応」フィルター選択時のみ表示） */}
+            {folderFilterMode === "uncovered" && unhandledFoldersList.length > 0 && (
               <div className="bg-[var(--surface)] border border-amber-500/40 rounded-xl p-4 sm:p-5 space-y-3.5 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] pb-3">
                   <div className="flex items-center gap-2">
