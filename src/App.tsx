@@ -7506,18 +7506,6 @@ const renderMarkdownToElements = (contentStr: string) => {
           {!isExportCollapsed && (
             <div className="flex flex-col gap-2 animate-[fadeIn_0.15s_ease-out] mt-1">
               <button
-                onClick={downloadSingleMarkdown}
-                className="w-full text-left p-1.5 bg-transparent hover:bg-[var(--border)] border border-[var(--border)] rounded text-[var(--subtle)] hover:text-white hover:border-[var(--border2)] text-[11px] cursor-pointer transition-all flex items-center gap-1.5"
-              >
-                <Download className="w-3 h-3 text-[var(--green)]" /> このノート (.md)
-              </button>
-              <button
-                onClick={exportToHTML}
-                className="w-full text-left p-1.5 bg-transparent hover:bg-[var(--border)] border border-[var(--border)] rounded text-[var(--subtle)] hover:text-white hover:border-[var(--border2)] text-[11px] cursor-pointer transition-all flex items-center gap-1.5"
-              >
-                <FileCode className="w-3 h-3 text-cyan-400" /> このノート (.html)
-              </button>
-              <button
                 onClick={downloadAllMarkdowns}
                 className="w-full text-left p-1.5 bg-transparent hover:bg-[var(--border)] border border-[var(--border)] rounded text-[var(--subtle)] hover:text-white hover:border-[var(--border2)] text-[11px] cursor-pointer transition-all flex items-center gap-1.5"
               >

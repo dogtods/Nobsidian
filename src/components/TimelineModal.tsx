@@ -500,6 +500,44 @@ export default function TimelineModal({
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
+
+            {/* CSVダウンロードボタン (現在のフォルダフィルタ・検索に連動) */}
+            <button
+              onClick={() => {
+                if (filteredItems.length === 0) {
+                  toast("ダウンロードする年表データがありません。");
+                  return;
+                }
+                const csvRows = [
+                  ["日付(表示)", "日付(正規化)", "イベント・内容", "ノートタイトル", "カテゴリ・フォルダ", "種別"]
+                ];
+                filteredItems.forEach(item => {
+                  csvRows.push([
+                    `"${(item.dateStr || "").replace(/"/g, '""')}"`,
+                    `"${(item.normalizedDate || "").replace(/"/g, '""')}"`,
+                    `"${(item.event || "").replace(/"/g, '""')}"`,
+                    `"${(item.noteTitle || "").replace(/"/g, '""')}"`,
+                    `"${(item.category || "").replace(/"/g, '""')}"`,
+                    `"${(item.comment || "").replace(/"/g, '""')}"`
+                  ]);
+                });
+                const csvContent = csvRows.map(e => e.join(",")).join("\n");
+                const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `timeline-export-${selectedFolder !== "all" ? selectedFolder : "all"}-${new Date().toISOString().slice(0, 10)}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                toast(`戦略ナレッジ年表（${filteredItems.length}件）をCSVでダウンロードしました！`);
+              }}
+              className="px-3 py-1 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 transition cursor-pointer shadow-sm"
+              title="現在選択中のフォルダ・検索条件に一致する年表データをCSVでダウンロード"
+            >
+              <span>📥 CSVダウンロード</span>
+              <span className="text-[10px] bg-teal-900/60 px-1 rounded font-mono">({filteredItems.length})</span>
+            </button>
           </div>
         </div>
 
