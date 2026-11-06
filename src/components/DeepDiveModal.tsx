@@ -76,6 +76,58 @@ interface DeepDiveModalProps {
   onToast: (msg: string) => void;
 }
 
+interface AutoResizeTextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
+  minRows?: number;
+}
+
+function AutoResizeTextarea({
+  value,
+  onChange,
+  className = "",
+  minRows = 2,
+  placeholder,
+  style,
+  ...props
+}: AutoResizeTextareaProps) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const resize = () => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const lineBase = minRows * 20 + 16;
+    const targetHeight = Math.max(el.scrollHeight, lineBase);
+    el.style.height = `${targetHeight}px`;
+  };
+
+  useEffect(() => {
+    resize();
+  }, [value]);
+
+  useEffect(() => {
+    resize();
+    const handleResize = () => resize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  return (
+    <textarea
+      ref={textareaRef}
+      value={value}
+      onChange={(e) => {
+        onChange?.(e);
+        resize();
+      }}
+      rows={minRows}
+      placeholder={placeholder}
+      className={`overflow-hidden resize-none transition-[height] duration-75 ${className}`}
+      style={{ fieldSizing: "content", ...(style || {}) } as any}
+      {...props}
+    />
+  );
+}
+
 export default function DeepDiveModal({
   isOpen,
   onClose,
@@ -960,43 +1012,47 @@ export default function DeepDiveModal({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block font-semibold text-[var(--bright)] mb-1">記事の主要な主張</label>
-                    <textarea
+                    <AutoResizeTextarea
                       value={decision.coreClaim}
                       onChange={e => setDecision(prev => ({ ...prev, coreClaim: e.target.value }))}
                       placeholder="この記事が提示している最も核心的な主張..."
-                      className="w-full bg-[#0d1117] border border-[var(--border2)] rounded-lg p-2.5 text-xs text-[var(--bright)] h-20 resize-none focus:outline-none focus:border-sky-500"
+                      minRows={3}
+                      className="w-full bg-[#0d1117] border border-[var(--border2)] rounded-lg p-2.5 text-xs text-[var(--bright)] focus:outline-none focus:border-sky-500 leading-relaxed"
                     />
                   </div>
 
                   <div>
                     <label className="block font-semibold text-[var(--bright)] mb-1">AIの総合判定要約</label>
-                    <textarea
+                    <AutoResizeTextarea
                       value={decision.aiVerdict}
                       onChange={e => setDecision(prev => ({ ...prev, aiVerdict: e.target.value }))}
                       placeholder="AIによる深掘り価値の判定理由..."
-                      className="w-full bg-[#0d1117] border border-[var(--border2)] rounded-lg p-2.5 text-xs text-[var(--bright)] h-20 resize-none focus:outline-none focus:border-sky-500"
+                      minRows={3}
+                      className="w-full bg-[#0d1117] border border-[var(--border2)] rounded-lg p-2.5 text-xs text-[var(--bright)] focus:outline-none focus:border-sky-500 leading-relaxed"
                     />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block font-semibold text-[var(--bright)] mb-1">重要性・影響規模の評価（一時的か長期的か）</label>
-                    <textarea
+                    <label className="block font-semibold text-[var(--bright)] mb-1">重要性・影響規模の評価（構造的か一時的か）</label>
+                    <AutoResizeTextarea
                       value={decision.importanceEval}
                       onChange={e => setDecision(prev => ({ ...prev, importanceEval: e.target.value }))}
-                      placeholder="経済・産業・社会への影響規模と持続性..."
-                      className="w-full bg-[#0d1117] border border-[var(--border2)] rounded-lg p-2.5 text-xs text-[var(--bright)] h-20 resize-none focus:outline-none focus:border-sky-500"
+                      placeholder="産業・経済・社会への影響規模と持続性..."
+                      minRows={3}
+                      className="w-full bg-[#0d1117] border border-[var(--border2)] rounded-lg p-2.5 text-xs text-[var(--bright)] focus:outline-none focus:border-sky-500 leading-relaxed"
                     />
                   </div>
 
                   <div>
-                    <label className="block font-semibold text-[var(--bright)] mb-1">現時点の実現可能性・前提条件</label>
-                    <textarea
+                    <label className="block font-semibold text-[var(--bright)] mb-1">現時点の実現可能性・客観的前提条件</label>
+                    <AutoResizeTextarea
                       value={decision.currentFeasibility}
                       onChange={e => setDecision(prev => ({ ...prev, currentFeasibility: e.target.value }))}
-                      placeholder="何が事実で、何が期待・推測か。前提条件..."
-                      className="w-full bg-[#0d1117] border border-[var(--border2)] rounded-lg p-2.5 text-xs text-[var(--bright)] h-20 resize-none focus:outline-none focus:border-sky-500"
+                      placeholder="何が事実で、何が期待・誇大宣伝か。前提条件..."
+                      minRows={3}
+                      className="w-full bg-[#0d1117] border border-[var(--border2)] rounded-lg p-2.5 text-xs text-[var(--bright)] focus:outline-none focus:border-sky-500 leading-relaxed"
                     />
                   </div>
                 </div>
@@ -1004,28 +1060,41 @@ export default function DeepDiveModal({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block font-semibold text-[var(--bright)] mb-1">
-                      {decision.priority === "low" ? "深掘りしない場合の理由" : "深掘りする意味がある理由"}
+                      {decision.priority === "low" ? "深掘りしない場合の理由（見送り根拠）" : "深掘りする意味がある理由（戦略的価値）"}
                     </label>
-                    <textarea
+                    <AutoResizeTextarea
                       value={decision.priority === "low" ? decision.reasonForSkipping : decision.reasonForDeepDive}
                       onChange={e => setDecision(prev => ({
                         ...prev,
                         [decision.priority === "low" ? "reasonForSkipping" : "reasonForDeepDive"]: e.target.value
                       }))}
-                      placeholder="なぜ追加調査を行う価値があるのか、あるいは無いのか..."
-                      className="w-full bg-[#0d1117] border border-[var(--border2)] rounded-lg p-2.5 text-xs text-[var(--bright)] h-20 resize-none focus:outline-none focus:border-sky-500"
+                      placeholder="なぜ追加調査を行う価値があるのか、あるいは無いのか（PR宣伝、既存技術など）..."
+                      minRows={3}
+                      className="w-full bg-[#0d1117] border border-[var(--border2)] rounded-lg p-2.5 text-xs text-[var(--bright)] focus:outline-none focus:border-sky-500 leading-relaxed"
                     />
                   </div>
 
                   <div>
-                    <label className="block font-semibold text-[var(--bright)] mb-1">現時点で不足している情報 / 再評価すべき条件</label>
-                    <textarea
+                    <label className="block font-semibold text-[var(--bright)] mb-1">現時点で不足している重要な判断材料</label>
+                    <AutoResizeTextarea
                       value={decision.missingInformation}
                       onChange={e => setDecision(prev => ({ ...prev, missingInformation: e.target.value }))}
-                      placeholder="判断のために追加で調べる必要がある事項..."
-                      className="w-full bg-[#0d1117] border border-[var(--border2)] rounded-lg p-2.5 text-xs text-[var(--bright)] h-20 resize-none focus:outline-none focus:border-sky-500"
+                      placeholder="判断のために追加で調べる必要がある重要事項..."
+                      minRows={3}
+                      className="w-full bg-[#0d1117] border border-[var(--border2)] rounded-lg p-2.5 text-xs text-[var(--bright)] focus:outline-none focus:border-sky-500 leading-relaxed"
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-[var(--bright)] mb-1">再評価すべき条件（将来どのような変化が生じたら判断を改めるか）</label>
+                  <AutoResizeTextarea
+                    value={decision.reassessmentConditions || ""}
+                    onChange={e => setDecision(prev => ({ ...prev, reassessmentConditions: e.target.value }))}
+                    placeholder="例: 商用量産化の中止発表、安価な代替技術の登場、法規制の成立..."
+                    minRows={2}
+                    className="w-full bg-[#0d1117] border border-[var(--border2)] rounded-lg p-2.5 text-xs text-[var(--bright)] focus:outline-none focus:border-sky-500 leading-relaxed"
+                  />
                 </div>
 
                 {/* Bottom Control buttons */}
@@ -1189,25 +1258,27 @@ export default function DeepDiveModal({
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                         <div>
                           <label className="block text-[11px] font-semibold text-[var(--muted)] mb-1">なぜ重要なのか</label>
-                          <textarea
+                          <AutoResizeTextarea
                             value={iss.importanceReason}
                             onChange={e => {
                               const val = e.target.value;
                               setIssues(prev => prev.map((item, i) => i === idx ? { ...item, importanceReason: val } : item));
                             }}
-                            className="w-full bg-[#0d1117] border border-[var(--border2)] rounded p-2 text-xs text-[var(--text)] h-16 resize-none"
+                            minRows={2}
+                            className="w-full bg-[#0d1117] border border-[var(--border2)] rounded p-2 text-xs text-[var(--text)] focus:outline-none focus:border-sky-500 leading-relaxed"
                             placeholder="意思決定や実現性においてなぜ決定的なのか..."
                           />
                         </div>
                         <div>
                           <label className="block text-[11px] font-semibold text-[var(--muted)] mb-1">何を調べれば判断できるか</label>
-                          <textarea
+                          <AutoResizeTextarea
                             value={iss.investigationMethod}
                             onChange={e => {
                               const val = e.target.value;
                               setIssues(prev => prev.map((item, i) => i === idx ? { ...item, investigationMethod: val } : item));
                             }}
-                            className="w-full bg-[#0d1117] border border-[var(--border2)] rounded p-2 text-xs text-[var(--text)] h-16 resize-none"
+                            minRows={2}
+                            className="w-full bg-[#0d1117] border border-[var(--border2)] rounded p-2 text-xs text-[var(--text)] focus:outline-none focus:border-sky-500 leading-relaxed"
                             placeholder="具体的な調査方針や検証項目..."
                           />
                         </div>
@@ -1216,40 +1287,40 @@ export default function DeepDiveModal({
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] pt-1">
                         <div>
                           <span className="text-[var(--muted)] font-semibold block mb-0.5">現時点で分かっていること:</span>
-                          <input
-                            type="text"
+                          <AutoResizeTextarea
                             value={iss.knownFacts}
                             onChange={e => {
                               const val = e.target.value;
                               setIssues(prev => prev.map((item, i) => i === idx ? { ...item, knownFacts: val } : item));
                             }}
-                            className="w-full bg-[#0d1117] border border-[var(--border2)] rounded px-2 py-1 text-xs"
+                            minRows={1}
+                            className="w-full bg-[#0d1117] border border-[var(--border2)] rounded px-2 py-1 text-xs text-[var(--text)] focus:outline-none focus:border-sky-500 leading-relaxed"
                             placeholder="記事の事実..."
                           />
                         </div>
                         <div>
                           <span className="text-[var(--muted)] font-semibold block mb-0.5">まだ分かっていないこと:</span>
-                          <input
-                            type="text"
+                          <AutoResizeTextarea
                             value={iss.unknownPoints}
                             onChange={e => {
                               const val = e.target.value;
                               setIssues(prev => prev.map((item, i) => i === idx ? { ...item, unknownPoints: val } : item));
                             }}
-                            className="w-full bg-[#0d1117] border border-[var(--border2)] rounded px-2 py-1 text-xs"
+                            minRows={1}
+                            className="w-full bg-[#0d1117] border border-[var(--border2)] rounded px-2 py-1 text-xs text-[var(--text)] focus:outline-none focus:border-sky-500 leading-relaxed"
                             placeholder="盲点やコスト..."
                           />
                         </div>
                         <div>
                           <span className="text-[var(--muted)] font-semibold block mb-0.5">確認すべき情報源:</span>
-                          <input
-                            type="text"
+                          <AutoResizeTextarea
                             value={iss.sourcesToVerify}
                             onChange={e => {
                               const val = e.target.value;
                               setIssues(prev => prev.map((item, i) => i === idx ? { ...item, sourcesToVerify: val } : item));
                             }}
-                            className="w-full bg-[#0d1117] border border-[var(--border2)] rounded px-2 py-1 text-xs"
+                            minRows={1}
+                            className="w-full bg-[#0d1117] border border-[var(--border2)] rounded px-2 py-1 text-xs text-[var(--text)] focus:outline-none focus:border-sky-500 leading-relaxed"
                             placeholder="IR、特許、論文..."
                           />
                         </div>
@@ -1412,19 +1483,19 @@ export default function DeepDiveModal({
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
                         <div className="p-3 bg-[#0d1117] rounded-lg border border-blue-500/20">
                           <span className="text-[11px] font-bold text-blue-400 block mb-1">✓ 確認できた事実:</span>
-                          <p className="text-[11px] text-[var(--text)] leading-relaxed">
+                          <p className="text-[11px] text-[var(--text)] leading-relaxed whitespace-pre-wrap">
                             {res.verifiedFacts || "特になし"}
                           </p>
                         </div>
                         <div className="p-3 bg-[#0d1117] rounded-lg border border-purple-500/20">
                           <span className="text-[11px] font-bold text-purple-400 block mb-1">💡 推定・作業仮説:</span>
-                          <p className="text-[11px] text-[var(--text)] leading-relaxed">
+                          <p className="text-[11px] text-[var(--text)] leading-relaxed whitespace-pre-wrap">
                             {res.estimatesAndHypotheses || "特になし"}
                           </p>
                         </div>
                         <div className="p-3 bg-[#0d1117] rounded-lg border border-amber-500/20">
                           <span className="text-[11px] font-bold text-amber-400 block mb-1">⚠️ 実現を妨げるボトルネック:</span>
-                          <p className="text-[11px] text-[var(--text)] leading-relaxed">
+                          <p className="text-[11px] text-[var(--text)] leading-relaxed whitespace-pre-wrap">
                             {res.hinderingFactors || "特になし"}
                           </p>
                         </div>
@@ -1434,27 +1505,27 @@ export default function DeepDiveModal({
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                         <div className="p-2.5 bg-[#0d1117] rounded border border-[var(--border2)]">
                           <span className="text-[11px] font-bold text-[var(--muted)] block mb-0.5">根拠・出典（情報源）:</span>
-                          <p className="text-[11px] text-[var(--subtle)]">{res.sourceUrlAndEvidence || "記事本文"}</p>
+                          <p className="text-[11px] text-[var(--subtle)] whitespace-pre-wrap">{res.sourceUrlAndEvidence || "記事本文"}</p>
                         </div>
                         <div className="p-2.5 bg-[#0d1117] rounded border border-[var(--border2)]">
                           <span className="text-[11px] font-bold text-[var(--muted)] block mb-0.5">今後の確認事項・マイルストーン:</span>
-                          <p className="text-[11px] text-[var(--subtle)]">{res.futureCheckpoints || "半年〜1年後の動向"}</p>
+                          <p className="text-[11px] text-[var(--subtle)] whitespace-pre-wrap">{res.futureCheckpoints || "半年〜1年後の動向"}</p>
                         </div>
                       </div>
 
                       {/* User's comment on this issue */}
                       <div>
                         <label className="block text-[11px] font-semibold text-[var(--muted)] mb-1">ユーザーコメント・考察メモ</label>
-                        <input
-                          type="text"
+                        <AutoResizeTextarea
                           value={res.userComment}
                           onChange={e => {
                             const val = e.target.value;
                             setAnalysisResults(prev => prev.map((item, i) => i === idx ? { ...item, userComment: val } : item));
                             saveStoredAnalyses(analysisResults);
                           }}
+                          minRows={2}
                           placeholder="自身の考察や現場の所感をメモ..."
-                          className="w-full bg-[#0d1117] border border-[var(--border2)] rounded px-3 py-1.5 text-xs text-[var(--bright)] focus:outline-none focus:border-sky-500"
+                          className="w-full bg-[#0d1117] border border-[var(--border2)] rounded px-3 py-1.5 text-xs text-[var(--bright)] focus:outline-none focus:border-sky-500 leading-relaxed"
                         />
                       </div>
                     </div>
@@ -1501,11 +1572,12 @@ export default function DeepDiveModal({
 
                 <div>
                   <label className="block font-semibold text-[var(--bright)] mb-1">実際に起きたこと・判明した事実（ニュースや決算など）</label>
-                  <textarea
+                  <AutoResizeTextarea
                     value={newReviewOutcome}
                     onChange={e => setNewReviewOutcome(e.target.value)}
                     placeholder="例: ○○社が商用化の中止を発表した、または予想を上回る量産体制に入った..."
-                    className="w-full bg-[#0d1117] border border-[var(--border2)] rounded-lg p-2.5 text-xs text-[var(--bright)] h-24 resize-none focus:outline-none focus:border-purple-500"
+                    minRows={3}
+                    className="w-full bg-[#0d1117] border border-[var(--border2)] rounded-lg p-2.5 text-xs text-[var(--bright)] focus:outline-none focus:border-purple-500 leading-relaxed"
                   />
                 </div>
 
@@ -1691,53 +1763,57 @@ export default function DeepDiveModal({
               <div className="space-y-4 text-xs">
                 <div>
                   <label className="block font-bold text-[var(--bright)] mb-1">1. 深掘り判断・トリアージ用プロンプト (DECISION)</label>
-                  <textarea
+                  <AutoResizeTextarea
                     value={prompts.DECISION}
                     onChange={e => {
                       const val = e.target.value;
                       setPrompts(prev => ({ ...prev, DECISION: val }));
                       saveCustomDeepDivePrompts({ DECISION: val });
                     }}
-                    className="w-full bg-[#0d1117] border border-[var(--border2)] rounded-lg p-3 text-[11px] font-mono text-[var(--bright)] h-44 resize-y"
+                    minRows={8}
+                    className="w-full bg-[#0d1117] border border-[var(--border2)] rounded-lg p-3 text-[11px] font-mono text-[var(--bright)] focus:outline-none focus:border-amber-500 leading-relaxed"
                   />
                 </div>
 
                 <div>
                   <label className="block font-bold text-[var(--bright)] mb-1">2. 調査論点の設定用プロンプト (ISSUES)</label>
-                  <textarea
+                  <AutoResizeTextarea
                     value={prompts.ISSUES}
                     onChange={e => {
                       const val = e.target.value;
                       setPrompts(prev => ({ ...prev, ISSUES: val }));
                       saveCustomDeepDivePrompts({ ISSUES: val });
                     }}
-                    className="w-full bg-[#0d1117] border border-[var(--border2)] rounded-lg p-3 text-[11px] font-mono text-[var(--bright)] h-40 resize-y"
+                    minRows={6}
+                    className="w-full bg-[#0d1117] border border-[var(--border2)] rounded-lg p-3 text-[11px] font-mono text-[var(--bright)] focus:outline-none focus:border-amber-500 leading-relaxed"
                   />
                 </div>
 
                 <div>
                   <label className="block font-bold text-[var(--bright)] mb-1">3. 論点ごとの深掘り分析用プロンプト (ANALYSIS)</label>
-                  <textarea
+                  <AutoResizeTextarea
                     value={prompts.ANALYSIS}
                     onChange={e => {
                       const val = e.target.value;
                       setPrompts(prev => ({ ...prev, ANALYSIS: val }));
                       saveCustomDeepDivePrompts({ ANALYSIS: val });
                     }}
-                    className="w-full bg-[#0d1117] border border-[var(--border2)] rounded-lg p-3 text-[11px] font-mono text-[var(--bright)] h-44 resize-y"
+                    minRows={8}
+                    className="w-full bg-[#0d1117] border border-[var(--border2)] rounded-lg p-3 text-[11px] font-mono text-[var(--bright)] focus:outline-none focus:border-amber-500 leading-relaxed"
                   />
                 </div>
 
                 <div>
                   <label className="block font-bold text-[var(--bright)] mb-1">4. 予測と実績の振り返り用プロンプト (REVIEW)</label>
-                  <textarea
+                  <AutoResizeTextarea
                     value={prompts.REVIEW}
                     onChange={e => {
                       const val = e.target.value;
                       setPrompts(prev => ({ ...prev, REVIEW: val }));
                       saveCustomDeepDivePrompts({ REVIEW: val });
                     }}
-                    className="w-full bg-[#0d1117] border border-[var(--border2)] rounded-lg p-3 text-[11px] font-mono text-[var(--bright)] h-36 resize-y"
+                    minRows={6}
+                    className="w-full bg-[#0d1117] border border-[var(--border2)] rounded-lg p-3 text-[11px] font-mono text-[var(--bright)] focus:outline-none focus:border-amber-500 leading-relaxed"
                   />
                 </div>
               </div>
@@ -1896,11 +1972,12 @@ export default function DeepDiveModal({
                 <span className="font-semibold text-[var(--bright)] text-xs">外部AIからの返答JSONを貼り付け:</span>
                 <span className="text-[10px] text-[var(--muted)]">（```json ... ``` の囲みがあっても自動抽出されます）</span>
               </div>
-              <textarea
+              <AutoResizeTextarea
                 value={externalJsonInput}
                 onChange={e => setExternalJsonInput(e.target.value)}
                 placeholder={'外部AIが返したJSON（またはコードブロック）をそのままここに貼り付けてください...'}
-                className="w-full h-32 bg-[#0d1117] border border-[var(--border2)] rounded-lg p-2.5 text-[11px] font-mono text-[var(--bright)] resize-y focus:outline-none focus:border-amber-500"
+                minRows={5}
+                className="w-full bg-[#0d1117] border border-[var(--border2)] rounded-lg p-2.5 text-[11px] font-mono text-[var(--bright)] focus:outline-none focus:border-amber-500 leading-relaxed"
               />
             </div>
 
