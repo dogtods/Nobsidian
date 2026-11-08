@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Note, TimelineItem } from "../types";
-import { getFilteredNotes, extractNoteKeywords } from "../utils/graphDataParser";
+import { getFilteredNotes, extractNoteKeywords, parseCategory, getMajorCategory, getMinorCategory } from "../utils/graphDataParser";
 import { 
   Calendar, 
   Clock, 
@@ -11,7 +11,11 @@ import {
   Trash2, 
   ArrowUpDown, 
   FileText,
-  AlertCircle
+  AlertCircle,
+  Sparkles,
+  Copy,
+  Check,
+  Download
 } from "lucide-react";
 
 interface TimelineModalProps {
@@ -42,6 +46,12 @@ export default function TimelineModal({
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
 
+  // 要因分析プロンプト用状態
+  const [promptThemeName, setPromptThemeName] = useState<string>("");
+  const [includeCsvInPrompt, setIncludeCsvInPrompt] = useState<boolean>(true);
+  const [isPromptModalOpen, setIsPromptModalOpen] = useState<boolean>(false);
+  const [isCopiedPrompt, setIsCopiedPrompt] = useState<boolean>(false);
+
   // Extract keywords of the focused note if provided
   const noteKeywords = useMemo(() => {
     return focusNote ? extractNoteKeywords(focusNote) : [];
@@ -59,6 +69,23 @@ export default function TimelineModal({
       setIsFocusedMode(false);
     }
   }, [focusNote]);
+
+  // 選択フォルダや記事に連動してプロンプトのテーマ名初期値を同期
+  useEffect(() => {
+    if (selectedFolder !== "all") {
+      if (selectedFolder.startsWith("major:")) {
+        setPromptThemeName(`【大項目】${selectedFolder.replace("major:", "")}`);
+      } else {
+        setPromptThemeName(selectedFolder);
+      }
+    } else if (focusNote) {
+      setPromptThemeName(focusNote.title);
+    } else if (searchQuery.trim()) {
+      setPromptThemeName(searchQuery.trim());
+    } else {
+      setPromptThemeName("戦略ナレッジ時系列年表");
+    }
+  }, [selectedFolder, focusNote, searchQuery, isOpen]);
 
   // Derive filtered notes based on global date filter
   const filteredNotes = useMemo(() => {
@@ -87,17 +114,62 @@ export default function TimelineModal({
     toast("リストから除外しました");
   };
 
-  // Get list of folders for filter
-  const folders = useMemo(() => {
-    const list = filteredNotes
-      .filter(n => {
-        const folderName = n.keywords || "未分類";
-        return true;
-      })
-      .map(n => {
-        return n.keywords || "未分類";
+  // Build hierarchical folders (Major category -> Minor subcategories) for filter
+  const folderHierarchy = useMemo(() => {
+    const map = new Map<string, { totalCount: number; minors: Map<string, number>; hasDirect: number }>();
+    
+    // Aggregate from notes and current items
+    filteredNotes.forEach(n => {
+      const cat = n.keywords || "未分類";
+      const { major, minor } = parseCategory(cat);
+      if (!map.has(major)) {
+        map.set(major, { totalCount: 0, minors: new Map(), hasDirect: 0 });
+      }
+      const entry = map.get(major)!;
+      entry.totalCount++;
+      if (minor) {
+        entry.minors.set(minor, (entry.minors.get(minor) || 0) + 1);
+      } else {
+        entry.hasDirect++;
+      }
+    });
+
+    const list: Array<{
+      major: string;
+      totalCount: number;
+      minors: Array<{ minor: string; fullName: string; count: number }>;
+      hasDirect: number;
+    }> = [];
+
+    map.forEach((data, major) => {
+      const minorsList: Array<{ minor: string; fullName: string; count: number }> = [];
+      data.minors.forEach((count, minor) => {
+        minorsList.push({
+          minor,
+          fullName: `${major} ${minor}`,
+          count
+        });
       });
-    return ["all", ...new Set(list)].filter(Boolean);
+      minorsList.sort((a, b) => a.minor.localeCompare(b.minor, "ja"));
+      list.push({
+        major,
+        totalCount: data.totalCount,
+        minors: minorsList,
+        hasDirect: data.hasDirect
+      });
+    });
+
+    list.sort((a, b) => {
+      if (a.major === "未分類") return 1;
+      if (b.major === "未分類") return -1;
+      if (a.major === "要確認" && b.major === "未分類") return -1;
+      if (b.major === "要確認" && a.major === "未分類") return 1;
+      if (a.major === "要確認") return 1;
+      if (b.major === "要確認") return -1;
+      return a.major.localeCompare(b.major, "ja");
+    });
+
+    return list;
   }, [filteredNotes]);
 
   // Generate a signature of current notes to track changes and dynamically sync chronological events
@@ -330,9 +402,20 @@ export default function TimelineModal({
       );
     }
 
-    // Folder category filter
+    // Folder category filter (Supports both Major and Minor categories)
     if (selectedFolder !== "all") {
-      result = result.filter(item => item.category === selectedFolder);
+      if (selectedFolder.startsWith("major:")) {
+        const targetMajor = selectedFolder.replace("major:", "");
+        result = result.filter(item => {
+          const { major } = parseCategory(item.category || "");
+          return major === targetMajor;
+        });
+      } else {
+        result = result.filter(item => {
+          const cat = item.category || "未分類";
+          return cat === selectedFolder || parseCategory(cat).full === selectedFolder;
+        });
+      }
     }
 
     // Sorting order
@@ -344,6 +427,82 @@ export default function TimelineModal({
 
     return result;
   }, [items, searchQuery, selectedFolder, sortOrder, hiddenIds, isFocusedMode, focusNote, noteKeywords]);
+
+  // CSVデータ文字列生成
+  const generateTimelineCsv = (itemsList: TimelineItem[]): string => {
+    const csvRows = [
+      ["日付(表示)", "日付(正規化)", "イベント・内容", "ノートタイトル", "カテゴリ・フォルダ", "種別"]
+    ];
+    itemsList.forEach(item => {
+      csvRows.push([
+        `"${(item.dateStr || "").replace(/"/g, '""')}"`,
+        `"${(item.normalizedDate || "").replace(/"/g, '""')}"`,
+        `"${(item.event || "").replace(/"/g, '""')}"`,
+        `"${(item.noteTitle || "").replace(/"/g, '""')}"`,
+        `"${(item.category || "").replace(/"/g, '""')}"`,
+        `"${(item.comment || "").replace(/"/g, '""')}"`
+      ]);
+    });
+    return csvRows.map(e => e.join(",")).join("\n");
+  };
+
+  // CSVダウンロード処理
+  const handleDownloadCsv = () => {
+    if (filteredItems.length === 0) {
+      toast("ダウンロードする年表データがありません。");
+      return;
+    }
+    const csvContent = generateTimelineCsv(filteredItems);
+    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const folderSlug = selectedFolder.startsWith("major:")
+      ? `major-${selectedFolder.replace("major:", "")}`
+      : (selectedFolder !== "all" ? selectedFolder : "all");
+    const safeSlug = folderSlug.replace(/[/\\:*?"<>|]/g, "_");
+    a.download = `timeline-export-${safeSlug}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast(`戦略ナレッジ年表（${filteredItems.length}件）をCSVでダウンロードしました！`);
+  };
+
+  // 外部AI向け「なぜそのように推移したのか」要因分析プロンプトの動的生成
+  const currentPromptText = useMemo(() => {
+    const effectiveTheme = promptThemeName.trim() || (
+      selectedFolder.startsWith("major:")
+        ? `大項目「${selectedFolder.replace("major:", "")}」全体`
+        : (selectedFolder !== "all" ? selectedFolder : (focusNote?.title || "本時系列テーマ"))
+    );
+    let prompt = `【目的】\n[${effectiveTheme}]に関する動きが「なぜそのように推移したのか」を、CSVの内容だけを根拠に説明してください。\n\n`;
+    prompt += `【手順】\n`;
+    prompt += `1. 時系列の整理: 動きを3〜7個のフェーズ（転換点・加速・停滞など）に区切り、各フェーズの期間と特徴を示す\n`;
+    prompt += `2. 転換点の特定: 各転換点の直前・直後のエントリを引用（日付とタイトル）\n`;
+    prompt += `3. 要因仮説: 各転換点について、原因の候補を2〜3個挙げる\n`;
+    prompt += `   - 区分: 【CSVから確認できる事実】/【CSVからの推論】/【CSV外の一般知識】\n`;
+    prompt += `   - 各仮説に根拠エントリ（日付・タイトル）と確信度（高/中/低）を付ける\n`;
+    prompt += `4. 因果の構造: 要因どうしの連鎖を「A → B → C」の形で示す\n`;
+    prompt += `5. 反証と限界: その説明と矛盾するエントリ、データの欠落、別の解釈の可能性\n`;
+    prompt += `6. 追加で確認すべきこと: 仮説を検証するために必要な追加データや調べるべき点\n\n`;
+    prompt += `【制約】\n`;
+    prompt += `- CSVに書かれていないことを事実として断定しない\n`;
+    prompt += `- 時間的な前後関係と因果関係を混同しない（相関の可能性にとどまる場合は明記）\n`;
+    prompt += `- 出力は見出し付きの日本語で、最後に3行の結論を付ける\n`;
+
+    if (includeCsvInPrompt) {
+      const csvData = generateTimelineCsv(filteredItems);
+      prompt += `\n【対象時系列CSVデータ (${filteredItems.length}件)】\n`;
+      prompt += `\`\`\`csv\n`;
+      prompt += csvData;
+      prompt += `\n\`\`\`\n`;
+    } else {
+      prompt += `\n※ダウンロードした時系列CSVファイルを添付して、上記手順に従って分析してください。\n`;
+    }
+
+    return prompt;
+  }, [promptThemeName, selectedFolder, focusNote, filteredItems, includeCsvInPrompt]);
 
   const clearTimelineCache = () => {
     if (window.confirm("抽出した年表キャッシュを消去し、初期化しますか？")) {
@@ -440,17 +599,26 @@ export default function TimelineModal({
               )}
             </div>
 
-            {/* Folder Dropdown Filter */}
+            {/* Folder Dropdown Filter (Major Category & Minor Subcategory) */}
             <div className="relative">
               <select
                 value={selectedFolder}
                 onChange={(e) => setSelectedFolder(e.target.value)}
-                className="bg-[#161b22] border border-[#30363d] rounded-lg text-xs text-gray-300 py-1 px-2 pr-6 outline-none appearance-none cursor-pointer hover:bg-[#21262d] transition-colors"
-                title="フォルダカテゴリでフィルタ"
+                className="bg-[#161b22] border border-[#30363d] rounded-lg text-xs text-gray-300 py-1 px-2 pr-6 outline-none appearance-none cursor-pointer hover:bg-[#21262d] transition-colors max-w-[200px] truncate"
+                title="フォルダカテゴリでフィルタ（大項目／小項目）"
               >
-                <option value="all">📁 すべてのカテゴリ</option>
-                {folders.filter(f => f !== "all").map(f => (
-                  <option key={f} value={f}>📁 {f}</option>
+                <option value="all">📁 すべてのカテゴリ (全体)</option>
+                {folderHierarchy.map(group => (
+                  <optgroup key={group.major} label={`【大項目】${group.major} (${group.totalCount}件)`}>
+                    <option value={`major:${group.major}`}>
+                      📁 {group.major} (大項目すべて・{group.totalCount}件)
+                    </option>
+                    {group.minors.map(m => (
+                      <option key={m.fullName} value={m.fullName}>
+                        　↳ {m.minor} ({m.count}件)
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
               <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[8px] text-gray-400 pointer-events-none">▼</span>
@@ -503,40 +671,28 @@ export default function TimelineModal({
 
             {/* CSVダウンロードボタン (現在のフォルダフィルタ・検索に連動) */}
             <button
-              onClick={() => {
-                if (filteredItems.length === 0) {
-                  toast("ダウンロードする年表データがありません。");
-                  return;
-                }
-                const csvRows = [
-                  ["日付(表示)", "日付(正規化)", "イベント・内容", "ノートタイトル", "カテゴリ・フォルダ", "種別"]
-                ];
-                filteredItems.forEach(item => {
-                  csvRows.push([
-                    `"${(item.dateStr || "").replace(/"/g, '""')}"`,
-                    `"${(item.normalizedDate || "").replace(/"/g, '""')}"`,
-                    `"${(item.event || "").replace(/"/g, '""')}"`,
-                    `"${(item.noteTitle || "").replace(/"/g, '""')}"`,
-                    `"${(item.category || "").replace(/"/g, '""')}"`,
-                    `"${(item.comment || "").replace(/"/g, '""')}"`
-                  ]);
-                });
-                const csvContent = csvRows.map(e => e.join(",")).join("\n");
-                const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `timeline-export-${selectedFolder !== "all" ? selectedFolder : "all"}-${new Date().toISOString().slice(0, 10)}.csv`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                toast(`戦略ナレッジ年表（${filteredItems.length}件）をCSVでダウンロードしました！`);
-              }}
+              onClick={handleDownloadCsv}
               className="px-3 py-1 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 transition cursor-pointer shadow-sm"
               title="現在選択中のフォルダ・検索条件に一致する年表データをCSVでダウンロード"
             >
               <span>📥 CSVダウンロード</span>
               <span className="text-[10px] bg-teal-900/60 px-1 rounded font-mono">({filteredItems.length})</span>
+            </button>
+
+            {/* 要因分析プロンプト出力ボタン */}
+            <button
+              onClick={() => {
+                if (filteredItems.length === 0) {
+                  toast("分析対象の年表データがありません。");
+                  return;
+                }
+                setIsPromptModalOpen(true);
+              }}
+              className="px-3 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 transition cursor-pointer shadow-sm"
+              title="時系列が「なぜそのように推移したのか」を外部AIに分析させるためのプロンプトを出力"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              <span>要因分析プロンプト</span>
             </button>
           </div>
         </div>
@@ -713,6 +869,154 @@ export default function TimelineModal({
             ※各ノートの記事の文章を変更・追加すると、年表も動的に再アップデートされます。
           </p>
         </div>
+
+        {/* 要因分析プロンプト出力モーダル */}
+        {isPromptModalOpen && (
+          <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-150">
+            <div className="bg-[#161b22] border border-[#30363d] rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+              {/* Header */}
+              <div className="p-4 bg-[#1f242c] border-b border-[#30363d] flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-1.5 bg-gradient-to-br from-purple-500/20 to-indigo-500/20 border border-purple-500/30 rounded-lg text-purple-300">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      時系列推移の要因分析プロンプト（外部AI用）
+                    </h3>
+                    <p className="text-[11px] text-gray-400">
+                      ChatGPT, Claude, Gemini 等に貼り付けて「なぜそのように推移したのか」を深掘り分析させます
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsPromptModalOpen(false)}
+                  className="p-1 text-gray-400 hover:text-white rounded-lg hover:bg-[#21262d] transition cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-4 sm:p-5 flex-1 overflow-y-auto space-y-4 text-xs">
+                {/* Theme Name input & Settings */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 bg-[#0d1117] border border-[#30363d] rounded-xl">
+                  <div>
+                    <label className="block text-[11px] font-bold text-gray-300 mb-1">
+                      分析対象のテーマ名（プロンプトの [テーマ名] に反映）:
+                    </label>
+                    <input
+                      type="text"
+                      value={promptThemeName}
+                      onChange={(e) => setPromptThemeName(e.target.value)}
+                      placeholder="例: 生成AIの商用化動向、半導体サプライチェーン..."
+                      className="w-full bg-[#161b22] border border-[#30363d] rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-purple-500 font-semibold"
+                    />
+                  </div>
+                  <div className="flex flex-col justify-end">
+                    <label className="flex items-center gap-2 cursor-pointer select-none py-1">
+                      <input
+                        type="checkbox"
+                        checked={includeCsvInPrompt}
+                        onChange={(e) => setIncludeCsvInPrompt(e.target.checked)}
+                        className="w-4 h-4 text-purple-600 rounded cursor-pointer"
+                      />
+                      <span className="text-xs text-gray-200 font-medium">
+                        プロンプト末尾にCSVデータ（{filteredItems.length}件）を埋め込む
+                      </span>
+                    </label>
+                    <span className="text-[10px] text-gray-400 ml-6">
+                      {includeCsvInPrompt 
+                        ? "✓ AIにファイルを添付せず、そのまま全文コピー＆ペーストで分析できます" 
+                        : "※ CSVファイルをAIに直接アップロード（添付）する場合にチェックを外してください"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Prompt Preview */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-bold text-gray-300 flex items-center gap-1.5">
+                      <span>生成されたプロンプト</span>
+                      <span className="text-gray-500 font-normal">（編集・選択も可能）</span>
+                    </span>
+                    <span className="text-gray-400 font-mono">
+                      約 {currentPromptText.length.toLocaleString()} 文字
+                    </span>
+                  </div>
+                  <textarea
+                    readOnly
+                    value={currentPromptText}
+                    onFocus={(e) => e.currentTarget.select()}
+                    rows={12}
+                    className="w-full bg-[#0d1117] border border-[#30363d] rounded-xl p-3 text-[11.5px] font-mono text-gray-200 leading-relaxed focus:outline-none focus:border-purple-500 resize-y"
+                  />
+                </div>
+
+                {/* Usage Advice */}
+                <div className="p-3 bg-purple-950/20 border border-purple-500/20 rounded-xl text-[11px] text-purple-300 space-y-1">
+                  <div className="font-bold flex items-center gap-1.5 text-purple-200">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                    <span>おすすめの使い方</span>
+                  </div>
+                  <p className="text-gray-300 leading-relaxed">
+                    1. 「プロンプトをコピー」ボタンを押してクリップボードにコピーします。<br/>
+                    2. ChatGPT, Claude, Gemini などのチャット画面を開いてそのまま貼り付けます。<br/>
+                    3. AIが時系列を3〜7個のフェーズに区切り、決定的な「転換点」と「要因仮説（事実/推論/一般知識）」、「因果の連鎖（A → B → C）」を整然と回答してくれます。
+                  </p>
+                </div>
+              </div>
+
+              {/* Footer Buttons */}
+              <div className="p-3.5 bg-[#1f242c] border-t border-[#30363d] flex flex-wrap items-center justify-between gap-3">
+                <span className="text-[11px] text-gray-400">
+                  抽出件数: <strong className="text-teal-300 font-mono">{filteredItems.length}件</strong>
+                  {selectedFolder !== "all" && (
+                    <span> (フォルダ: {selectedFolder.startsWith("major:") ? `大項目「${selectedFolder.replace("major:", "")}」すべて` : selectedFolder})</span>
+                  )}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const blob = new Blob([currentPromptText], { type: "text/plain;charset=utf-8" });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      const safeTheme = (promptThemeName.trim() || "時系列要因分析").replace(/[\\/:*?"<>|]/g, "_");
+                      a.download = `Timeline_Analysis_Prompt_${safeTheme}_${new Date().toISOString().slice(0, 10)}.txt`;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(url);
+                      toast("要因分析プロンプトをテキストファイルとして保存しました ✦");
+                    }}
+                    className="px-3 py-1.5 bg-[#21262d] hover:bg-[#30363d] text-gray-200 hover:text-white rounded-lg text-xs font-semibold border border-[#30363d] transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Download className="w-3.5 h-3.5 text-gray-400" />
+                    <span>.txtでダウンロード</span>
+                  </button>
+                  <button
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(currentPromptText);
+                        setIsCopiedPrompt(true);
+                        toast("要因分析プロンプトをクリップボードにコピーしました！📋");
+                        setTimeout(() => setIsCopiedPrompt(false), 2500);
+                      } catch (e) {
+                        toast("クリップボードへのコピーに失敗しました");
+                      }
+                    }}
+                    className="px-4 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-md flex items-center gap-1.5"
+                  >
+                    {isCopiedPrompt ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{isCopiedPrompt ? "コピー完了！" : "プロンプトをコピー"}</span>
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

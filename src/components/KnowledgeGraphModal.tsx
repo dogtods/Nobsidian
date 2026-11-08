@@ -6,7 +6,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
 import { Note, GraphNode, GraphLink, FolderRelation } from "../types";
-import { getFolderFromKeywords, formatDateStr, extractWikiLinks, getFilteredNotes } from "../utils/graphDataParser";
+import { getFolderFromKeywords, formatDateStr, extractWikiLinks, getFilteredNotes, parseCategory, getMajorCategory, getMinorCategory } from "../utils/graphDataParser";
 import { DEFAULT_PROMPTS, getStoredPrompt } from "./PromptSettingsModal";
 import { MermaidViewer } from "./MermaidViewer";
 
@@ -44,6 +44,7 @@ export default function KnowledgeGraphModal({
 
   const [minStrength, setMinStrength] = useState<number>(0);
   const [graphViewMode, setGraphViewMode] = useState<"note" | "folder">("note");
+  const [folderAggregationMode, setFolderAggregationMode] = useState<"major" | "detail">("major");
   const [folderRelationsAI, setFolderRelationsAI] = useState<FolderRelation[]>([]);
   const [lastGraphAiTime, setLastGraphAiTime] = useState(0);
   const [isFullLabel, setIsFullLabel] = useState(false);
@@ -121,19 +122,31 @@ export default function KnowledgeGraphModal({
       const folderMap: { [key: string]: GraphNode } = {};
       const links: GraphLink[] = [];
 
+      const getNoteFolderKey = (note: Note): string => {
+        const raw = getFolder(note);
+        if (folderAggregationMode === "major") {
+          return getMajorCategory(raw);
+        }
+        return raw;
+      };
+
       list.forEach(note => {
-        const folderName = getFolder(note);
-        if (!folderMap[folderName]) {
-          folderMap[folderName] = {
-            id: folderName,
-            title: folderName,
+        const folderKey = getNoteFolderKey(note);
+        const rawFolder = getFolder(note);
+        const { major } = parseCategory(rawFolder);
+
+        if (!folderMap[folderKey]) {
+          folderMap[folderKey] = {
+            id: folderKey,
+            title: folderKey,
+            folder: major,
             noteCount: 0,
             linkCount: 0,
             notes: []
           };
         }
-        folderMap[folderName].noteCount!++;
-        folderMap[folderName].notes!.push(note);
+        folderMap[folderKey].noteCount!++;
+        folderMap[folderKey].notes!.push(note);
       });
 
       const nodes = Object.values(folderMap);
@@ -141,13 +154,13 @@ export default function KnowledgeGraphModal({
 
       // Links extracted via note content WikiLink mappings
       list.forEach(note => {
-        const srcFolder = getFolder(note);
+        const srcFolder = getNoteFolderKey(note);
         const matches = [...note.content.matchAll(/\[\[(.*?)\]\]/g)];
         matches.forEach(m => {
           const targetTitle = m[1].trim();
           const targetNote = list.find(n => n.title === targetTitle);
           if (targetNote) {
-            const tgtFolder = getFolder(targetNote);
+            const tgtFolder = getNoteFolderKey(targetNote);
             if (srcFolder !== tgtFolder) {
               const existing = links.find(l => l.source === srcFolder && l.target === tgtFolder);
               if (existing) {
@@ -169,14 +182,19 @@ export default function KnowledgeGraphModal({
 
       // AI relationships mapping
       folderRelationsAI.forEach(rel => {
-        if (folderTitles.includes(rel.source) && folderTitles.includes(rel.target)) {
-          links.push({
-            source: rel.source,
-            target: rel.target,
-            value: 2.5,
-            type: "ai",
-            label: rel.reason
-          });
+        const srcKey = folderAggregationMode === "major" ? getMajorCategory(rel.source) : rel.source;
+        const tgtKey = folderAggregationMode === "major" ? getMajorCategory(rel.target) : rel.target;
+        if (srcKey !== tgtKey && folderTitles.includes(srcKey) && folderTitles.includes(tgtKey)) {
+          const existing = links.find(l => (l.source === srcKey && l.target === tgtKey) || (l.source === tgtKey && l.target === srcKey));
+          if (!existing) {
+            links.push({
+              source: srcKey,
+              target: tgtKey,
+              value: 2.5,
+              type: "ai",
+              label: rel.reason
+            });
+          }
         }
       });
 
@@ -807,7 +825,7 @@ applyHighlightRef.current = applyHighlight;
       if (unpinTimer) clearTimeout(unpinTimer);
       simulation.stop();
     };
-  }, [isOpen, graphViewMode, notes, folderRelationsAI, isFullLabel, filterStart, filterEnd, minStrength, initialCenterNodeId]);
+  }, [isOpen, graphViewMode, folderAggregationMode, notes, folderRelationsAI, isFullLabel, filterStart, filterEnd, minStrength, initialCenterNodeId]);
 
 
   const runGraphAiAnalysis = async () => {
@@ -1045,7 +1063,10 @@ applyHighlightRef.current = applyHighlight;
 
     let targetNotes: Note[] = [];
     if (graphViewMode === "folder") {
-      targetNotes = notes.filter(n => adjacentIds.has(getFolderFromKeywords(n.keywords)));
+      targetNotes = notes.filter(n => {
+        const key = folderAggregationMode === "major" ? getMajorCategory(n.keywords) : getFolderFromKeywords(n.keywords);
+        return adjacentIds.has(key);
+      });
     } else {
       targetNotes = notes.filter(n => adjacentIds.has(n.id));
     }
@@ -1648,6 +1669,30 @@ applyHighlightRef.current = applyHighlight;
             </button>
           </div>
 
+          {/* Major / Detail Folder Mode Switcher */}
+          {graphViewMode === "folder" && (
+            <div className="flex bg-[#161b22] border border-amber-500/40 rounded-md p-0.5">
+              <button
+                className={`px-2.5 py-1 text-[10px] font-semibold border-0 rounded cursor-pointer transition-all ${
+                  folderAggregationMode === "major" ? "bg-amber-600 text-white shadow font-bold" : "text-gray-400 hover:text-white"
+                }`}
+                onClick={() => setFolderAggregationMode("major")}
+                title="大項目（半導体・自動車・要確認等）単位でマクロ相関を表示"
+              >
+                📁 大項目でくくる
+              </button>
+              <button
+                className={`px-2.5 py-1 text-[10px] font-semibold border-0 rounded cursor-pointer transition-all ${
+                  folderAggregationMode === "detail" ? "bg-amber-600 text-white shadow font-bold" : "text-gray-400 hover:text-white"
+                }`}
+                onClick={() => setFolderAggregationMode("detail")}
+                title="すべての個別小項目フォルダを表示"
+              >
+                📂 全小項目
+              </button>
+            </div>
+          )}
+
           {graphViewMode === "folder" && (
             <div className="flex gap-1.5 items-center">
               <button
@@ -1753,11 +1798,20 @@ applyHighlightRef.current = applyHighlight;
             style={{ left: popup.x, top: popup.y }}
           >
             <div className="font-bold text-[var(--bright)] text-xs mb-1.5 border-b border-[var(--border)] pb-1 truncate">
-              {graphViewMode === "folder" ? `📁 ${popup.node.title}` : `◈ ${popup.node.title}`}
+              {graphViewMode === "folder" ? (
+                folderAggregationMode === "major"
+                  ? `📁 【大項目】${popup.node.title}`
+                  : `📂 ${popup.node.title}`
+              ) : `◈ ${popup.node.title}`}
             </div>
             
             <div className="text-[10px] text-[var(--blue)] mb-2 flex flex-col gap-0.5">
               <span>{graphViewMode === "folder" ? `📝 ノート数: ${popup.node.noteCount}` : `🔗 被リンク数: ${popup.node.linkCount}`}</span>
+              {graphViewMode === "folder" && folderAggregationMode === "detail" && (
+                <span className="text-[var(--subtle)] text-[9.5px]">
+                  大項目: {parseCategory(popup.node.title).major}
+                </span>
+              )}
               {graphViewMode !== "folder" && (() => {
                 const targetNote = notes.find(n => n.title.toLowerCase() === popup.node!.title.toLowerCase() || n.id === popup.node!.id);
                 return (

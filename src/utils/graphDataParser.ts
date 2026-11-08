@@ -182,9 +182,71 @@ export function getFolderFromKeywords(keywordsStr: string): string {
   let clean = trimmed.replace(/^\[\[|\]\]$/g, '').trim();
   // Strip hashtags: #Category -> Category
   clean = clean.replace(/^#/, '').trim();
-  // If multiple words or tags separated by comma, slash, bullet, or newline, take primary
-  const first = clean.split(/[,、\/\n・]/)[0].trim();
+  // If multiple words or tags separated by comma, bullet, or newline, take primary
+  const first = clean.split(/[,、\n・]/)[0].trim();
   return first || "未分類";
+}
+
+export interface ParsedCategory {
+  major: string;      // e.g. "半導体", "要確認", "未分類"
+  minor: string;      // e.g. "パワー半導体", "バッテリー", or ""
+  full: string;       // e.g. "半導体 パワー半導体", "半導体", "要確認"
+  hasMinor: boolean;
+}
+
+export function parseCategory(keywordsStr: string): ParsedCategory {
+  if (!keywordsStr || typeof keywordsStr !== "string") {
+    return { major: "未分類", minor: "", full: "未分類", hasMinor: false };
+  }
+  const folder = getFolderFromKeywords(keywordsStr);
+  if (!folder || folder === "未分類") {
+    return { major: "未分類", minor: "", full: "未分類", hasMinor: false };
+  }
+
+  // 1. Primary delimiter: half-width space (plus full-width space or multiple whitespace)
+  const parts = folder.split(/[\s\u3000]+/);
+  if (parts.length > 1) {
+    const major = parts[0].trim();
+    const minor = parts.slice(1).join(" ").trim();
+    return {
+      major: major || "未分類",
+      minor,
+      full: minor ? `${major} ${minor}` : (major || "未分類"),
+      hasMinor: Boolean(minor)
+    };
+  }
+
+  // 2. Fallback: slash delimiter if present (e.g. "半導体/パワー半導体")
+  if (folder.includes("/") || folder.includes("／")) {
+    const slashParts = folder.split(/[/／]+/);
+    if (slashParts.length > 1) {
+      const major = slashParts[0].trim();
+      const minor = slashParts.slice(1).join("/").trim();
+      return {
+        major: major || "未分類",
+        minor,
+        full: minor ? `${major} ${minor}` : (major || "未分類"),
+        hasMinor: Boolean(minor)
+      };
+    }
+  }
+
+  // Single token: Only major category (e.g. "半導体" or "要確認")
+  const majorName = parts[0]?.trim() || "未分類";
+  return {
+    major: majorName,
+    minor: "",
+    full: majorName,
+    hasMinor: false
+  };
+}
+
+export function getMajorCategory(keywordsStr: string): string {
+  return parseCategory(keywordsStr).major;
+}
+
+export function getMinorCategory(keywordsStr: string): string {
+  return parseCategory(keywordsStr).minor;
 }
 
 // Extract folder name from Column O (15th column / updated_at / custom info)

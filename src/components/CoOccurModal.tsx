@@ -6,7 +6,7 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import * as d3 from "d3";
 import { Note, CoOccurNode, CoOccurEdge } from "../types";
-import { parseCoOccurData, getFolderFromKeywords, extractWikiLinks, extractNoteKeywords } from "../utils/graphDataParser";
+import { parseCoOccurData, getFolderFromKeywords, extractWikiLinks, extractNoteKeywords, getMajorCategory } from "../utils/graphDataParser";
 
 interface CoOccurModalProps {
   isOpen: boolean;
@@ -65,11 +65,11 @@ export default function CoOccurModal({
     content: ""
   });
 
-  // 1. Calculate folder categorization mapping for each keyword node
+  // 1. Calculate folder categorization mapping for each keyword node (Major Category)
   const keywordFolderRepresentations = useMemo(() => {
     const counts: { [kw: string]: { [folder: string]: number } } = {};
     notes.forEach(note => {
-      const folder = getFolderFromKeywords(note.keywords);
+      const folder = getMajorCategory(note.keywords);
       const wikilinks = Array.from(new Set(extractWikiLinks(note.content)));
       wikilinks.forEach(kw => {
         const cleanKw = kw.trim();
@@ -93,9 +93,9 @@ export default function CoOccurModal({
     return mapping;
   }, [notes]);
 
-  // 2. Setup colors based on folders to group keywords semantically
+  // 2. Setup colors based on Major categories to group keywords semantically
   const folderColors = useMemo(() => {
-    const uniqueFolders = Array.from(new Set(notes.map(n => getFolderFromKeywords(n.keywords))));
+    const uniqueFolders = Array.from(new Set(notes.map(n => getMajorCategory(n.keywords))));
     const colorMap: { [key: string]: string } = {};
     uniqueFolders.forEach((f, i) => {
       const hue = (i * (360 / Math.max(1, uniqueFolders.length))) % 360;

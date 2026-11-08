@@ -56,7 +56,8 @@ import {
   ArrowDownToLine,
   Eye,
   Edit3,
-  Trash2
+  Trash2,
+  AlertCircle
 } from "lucide-react";
 
 import { Note, FolderRelation } from "./types";
@@ -78,7 +79,11 @@ import {
   getNoteDateMillis,
   getNoteDisplayDate,
   getNoteYMD,
-  compareNotesByDate
+  compareNotesByDate,
+  parseCategory,
+  getMajorCategory,
+  getMinorCategory,
+  ParsedCategory
 } from "./utils/graphDataParser";
 import { fetchGasGet, fetchGasPost, sanitizeGasUrl } from "./utils/gasClient";
 import {
@@ -394,6 +399,7 @@ export default function App() {
   const [bulkProgress, setBulkProgress] = useState<{
     isOpen: boolean;
     folderName: string;
+    majorName?: string;
     total: number;
     current: number;
     activeTitle: string;
@@ -586,7 +592,7 @@ export default function App() {
   const suppressImgClickRef = useRef(false);
   const lastEditorSelRef = useRef<{ start: number; end: number } | null>(null);
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
-  const [externalExportTarget, setExternalExportTarget] = useState<{ type: 'single' } | { type: 'folder'; folderName: string } | null>(null);
+  const [externalExportTarget, setExternalExportTarget] = useState<{ type: 'single' } | { type: 'folder'; folderName: string } | { type: 'major'; majorName: string } | null>(null);
   const [showSourceMemo, setShowSourceMemo] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [isExtractingStructure, setIsExtractingStructure] = useState(false);
@@ -3986,6 +3992,12 @@ const renderMarkdownToElements = (contentStr: string) => {
     setExternalExportTarget({ type: 'folder', folderName });
   };
 
+  const copyAIPromptForMajor = (majorName: string) => {
+    const majorNotes = notes.filter(n => parseCategory(getFolder(n)).major === majorName);
+    if (majorNotes.length === 0) return toast("ノートがありません");
+    setExternalExportTarget({ type: 'major', majorName });
+  };
+
   const handleExternalAiExport = async (options: { includeAll: boolean; taskBacklink: boolean; taskAnalysis: boolean; taskStructure: boolean }) => {
     const target = externalExportTarget;
     setExternalExportTarget(null);
@@ -4036,6 +4048,29 @@ const renderMarkdownToElements = (contentStr: string) => {
       URL.revokeObjectURL(url);
       
       await copyToClipboard(prompt, `フォルダ「${target.folderName}」用の一括プロンプトをコピー・ダウンロードしました ✦`);
+    } else if (target.type === 'major') {
+      const majorNotes = notes.filter(n => parseCategory(getFolder(n)).major === target.majorName && n.content.trim().length >= 15);
+      if (majorNotes.length === 0) return toast("出力できるノートがありません（内容が短すぎます）");
+
+      const prompt = buildBulkAnalysisPrompt(majorNotes, {
+        allTitles: options.includeAll,
+        taskBacklink: options.taskBacklink,
+        taskAnalysis: options.taskAnalysis,
+        taskStructure: options.taskStructure
+      });
+
+      const blob = new Blob([prompt], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const safeMajorName = target.majorName.replace(/[\\/:*?"<>|]/g, "_");
+      a.download = `Bulk_Prompt_Major_${safeMajorName}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      await copyToClipboard(prompt, `大項目「${target.majorName}」全体の一括プロンプトをコピー・ダウンロードしました ✦`);
     }
   };
 
@@ -4560,7 +4595,7 @@ const renderMarkdownToElements = (contentStr: string) => {
     toast("関連リンクを末尾にバインドしました");
   };
 
-  // Group notes dynamically based on categorized Folder tags
+  // Group notes dynamically based on categorized Folder tags (Hierarchical: Major Category -> Minor Category -> Notes)
   const getCategorizedNotes = () => {
     const query = searchQuery.toLowerCase().trim();
     
@@ -4577,6 +4612,7 @@ const renderMarkdownToElements = (contentStr: string) => {
       }
       
       const folderName = getFolder(n);
+      const parsed = parseCategory(folderName);
       
       if (!query) {
         return true;
@@ -4585,20 +4621,39 @@ const renderMarkdownToElements = (contentStr: string) => {
       return (
         n.title.toLowerCase().includes(query) ||
         n.content.toLowerCase().includes(query) ||
-        folderName.toLowerCase().includes(query)
+        folderName.toLowerCase().includes(query) ||
+        parsed.major.toLowerCase().includes(query) ||
+        parsed.minor.toLowerCase().includes(query)
       );
     });
 
     const groups: { [folderName: string]: Note[] } = {};
+    const majorMap: { [major: string]: { directNotes: Note[]; subMap: { [minor: string]: Note[] } } } = {};
+
     filtered.forEach(n => {
       const folder = getFolder(n);
+      // Flat grouping (preserved for backward compatibility with quiz/exports)
       if (!groups[folder]) groups[folder] = [];
       groups[folder].push(n);
+
+      // Hierarchical grouping
+      const { major, minor } = parseCategory(folder);
+      if (!majorMap[major]) {
+        majorMap[major] = { directNotes: [], subMap: {} };
+      }
+      if (minor) {
+        if (!majorMap[major].subMap[minor]) {
+          majorMap[major].subMap[minor] = [];
+        }
+        majorMap[major].subMap[minor].push(n);
+      } else {
+        majorMap[major].directNotes.push(n);
+      }
     });
 
     // Sort notes inside each group according to noteSortMode (西暦・月・日単位でソート)
-    Object.keys(groups).forEach(folder => {
-      groups[folder].sort((a, b) => {
+    const sortNoteList = (list: Note[]) => {
+      list.sort((a, b) => {
         if (noteSortMode === "date-desc" || noteSortMode === "date-asc") {
           return compareNotesByDate(a, b, noteSortMode);
         } else if (noteSortMode === "updated-desc") {
@@ -4608,6 +4663,38 @@ const renderMarkdownToElements = (contentStr: string) => {
         }
         return compareNotesByDate(a, b, "date-desc");
       });
+    };
+
+    Object.keys(groups).forEach(folder => {
+      sortNoteList(groups[folder]);
+    });
+
+    const majorGroups: { [major: string]: { major: string; totalCount: number; directNotes: Note[]; subcategories: Array<{ minor: string; fullName: string; notes: Note[] }> } } = {};
+    Object.keys(majorMap).forEach(major => {
+      sortNoteList(majorMap[major].directNotes);
+      const subcategories: Array<{ minor: string; fullName: string; notes: Note[] }> = [];
+      let totalCount = majorMap[major].directNotes.length;
+
+      Object.keys(majorMap[major].subMap).forEach(minor => {
+        const subNotes = majorMap[major].subMap[minor];
+        sortNoteList(subNotes);
+        totalCount += subNotes.length;
+        subcategories.push({
+          minor,
+          fullName: `${major} ${minor}`,
+          notes: subNotes
+        });
+      });
+
+      // Sort subcategories alphabetically
+      subcategories.sort((a, b) => a.minor.localeCompare(b.minor, "ja"));
+
+      majorGroups[major] = {
+        major,
+        totalCount,
+        directNotes: majorMap[major].directNotes,
+        subcategories
+      };
     });
 
     const sortedFolders = Object.keys(groups).sort((a, b) => {
@@ -4616,7 +4703,17 @@ const renderMarkdownToElements = (contentStr: string) => {
       return b.localeCompare(a); // Descending chronological folder naming
     });
 
-    return { groups, sortedFolders };
+    const sortedMajors = Object.keys(majorGroups).sort((a, b) => {
+      if (a === "未分類") return 1;
+      if (b === "未分類") return -1;
+      if (a === "要確認" && b === "未分類") return -1;
+      if (b === "要確認" && a === "未分類") return 1;
+      if (a === "要確認") return 1;
+      if (b === "要確認") return -1;
+      return a.localeCompare(b, "ja");
+    });
+
+    return { groups, sortedFolders, majorGroups, sortedMajors };
   };
 
   const getFilteredAndSortedNotesForQuiz = (): Note[] => {
@@ -4644,13 +4741,14 @@ const renderMarkdownToElements = (contentStr: string) => {
 
   const collapseAllFolders = () => {
     const nextCollapsed: { [f: string]: boolean } = {};
-    // Collect all folders from notes and sortedFolders, marking all as collapsed (true)
-    notes.forEach(n => {
-      const f = getFolder(n);
-      if (f) nextCollapsed[f] = true;
+    const { sortedMajors, majorGroups, sortedFolders } = getCategorizedNotes();
+    sortedMajors.forEach(major => {
+      nextCollapsed[major] = true;
+      majorGroups[major].subcategories.forEach(sub => {
+        nextCollapsed[sub.fullName] = true;
+      });
     });
-    const { sortedFolders: currentFolders } = getCategorizedNotes();
-    currentFolders.forEach(folder => {
+    sortedFolders.forEach(folder => {
       nextCollapsed[folder] = true;
     });
     setCollapsedFolders(nextCollapsed);
@@ -4659,13 +4757,14 @@ const renderMarkdownToElements = (contentStr: string) => {
 
   const expandAllFolders = () => {
     const nextCollapsed: { [f: string]: boolean } = {};
-    // Collect all folders and mark all as expanded (false)
-    notes.forEach(n => {
-      const f = getFolder(n);
-      if (f) nextCollapsed[f] = false;
+    const { sortedMajors, majorGroups, sortedFolders } = getCategorizedNotes();
+    sortedMajors.forEach(major => {
+      nextCollapsed[major] = false;
+      majorGroups[major].subcategories.forEach(sub => {
+        nextCollapsed[sub.fullName] = false;
+      });
     });
-    const { sortedFolders: currentFolders } = getCategorizedNotes();
-    currentFolders.forEach(folder => {
+    sortedFolders.forEach(folder => {
       nextCollapsed[folder] = false;
     });
     setCollapsedFolders(nextCollapsed);
@@ -6576,7 +6675,13 @@ const renderMarkdownToElements = (contentStr: string) => {
       return;
     }
 
-    const trimmedNewName = newName.trim();
+    let trimmedNewName = newName.trim();
+    const parsedOld = parseCategory(oldName);
+    // If renaming a subcategory and user entered just the minor name, ensure major prefix is retained
+    if (parsedOld.hasMinor && !trimmedNewName.includes(" ") && !trimmedNewName.includes("　")) {
+      trimmedNewName = `${parsedOld.major} ${trimmedNewName}`;
+    }
+
     const updatedList = notes.map(n => {
       if (getFolder(n) === oldName) {
         if (folderColumnSource === "N") {
@@ -6605,6 +6710,49 @@ const renderMarkdownToElements = (contentStr: string) => {
         .catch((e) => toast("更新保存エラー: " + e.message));
     } else {
       toast("フォルダ名を変更しました（手動同期モード）");
+    }
+  };
+
+  const handleRenameMajorInline = (oldMajor: string, newMajor: string) => {
+    if (oldMajor === "未分類") return toast("「未分類」は変更できません");
+    if (!newMajor || newMajor.trim() === "" || newMajor.trim() === oldMajor) {
+      setEditingFolder(null);
+      return;
+    }
+
+    const trimmedNewMajor = newMajor.trim();
+    const updatedList = notes.map(n => {
+      const currentFolder = getFolder(n);
+      const parsed = parseCategory(currentFolder);
+      if (parsed.major === oldMajor) {
+        // Keep minor category if present, e.g. "半導体 パワー半導体" -> "エレクトロニクス パワー半導体"
+        const newFolderName = parsed.minor ? `${trimmedNewMajor} ${parsed.minor}` : trimmedNewMajor;
+        if (folderColumnSource === "N") {
+          return {
+            ...n,
+            columnN: newFolderName,
+            updatedAt: Date.now()
+          };
+        } else {
+          return {
+            ...n,
+            keywords: newFolderName,
+            updatedAt: Date.now()
+          };
+        }
+      }
+      return n;
+    });
+
+    setNotes(updatedList);
+    setEditingFolder(null);
+    triggerLocalSave(updatedList, activeId);
+    if (autoSyncRef.current) {
+      apiPost({ action: "saveAll", notes: updatedList })
+        .then(() => toast(`大項目名を「${trimmedNewMajor}」に変更し、クラウドへ同期しました`))
+        .catch((e) => toast("更新保存エラー: " + e.message));
+    } else {
+      toast(`大項目名を「${trimmedNewMajor}」に変更しました（手動同期モード）`);
     }
   };
 
@@ -6717,9 +6865,28 @@ const renderMarkdownToElements = (contentStr: string) => {
     });
   };
 
+  const bulkMajorAiLinkPipeline = (majorName: string) => {
+    const majorNotes = notes.filter(n => parseCategory(getFolder(n)).major === majorName);
+    if (majorNotes.length < 2) {
+      return toast("一括関連リンクを構築するには、大項目内に2つ以上のノートが必要です。");
+    }
+
+    bulkCancelRef.current = false;
+    setBulkProgress({
+      isOpen: true,
+      folderName: `【大項目】${majorName}`,
+      majorName,
+      total: majorNotes.length,
+      current: 0,
+      activeTitle: "",
+      mode: "choosing",
+      logs: [`大項目「${majorName}」全体に ${majorNotes.length} 件のノートがあります。相互リンクの構築方法を設定してください。`]
+    });
+  };
+
   const runBulkLinkingProcess = async (mode: "ai" | "local") => {
     if (!bulkProgress) return;
-    const { folderName } = bulkProgress;
+    const { folderName, majorName } = bulkProgress;
 
     const apiKey = localStorage.getItem("cn_gemini_key");
     if (mode === "ai" && !apiKey) {
@@ -6735,7 +6902,9 @@ const renderMarkdownToElements = (contentStr: string) => {
       logs: [...prev.logs, mode === "ai" ? "【精度最高・AI個別解析バッチ】処理を開始します..." : "【コスト優先・ローカル自動文字照合】処理を開始します..."]
     } : null);
 
-    const folderNotes = notesRef.current.filter(n => getFolder(n) === folderName);
+    const folderNotes = majorName
+      ? notesRef.current.filter(n => parseCategory(getFolder(n)).major === majorName)
+      : notesRef.current.filter(n => getFolder(n) === folderName);
     const allExistingNotes = notesRef.current;
     let updatedNotesState = [...allExistingNotes];
 
@@ -6988,7 +7157,7 @@ const renderMarkdownToElements = (contentStr: string) => {
   };
 
   const activeNote = getActiveNote();
-  const { groups: categorizedGroups, sortedFolders } = getCategorizedNotes();
+  const { groups: categorizedGroups, sortedFolders, majorGroups, sortedMajors } = getCategorizedNotes();
 
   return (
     <div className={`flex h-screen overflow-hidden bg-[#0d1117] text-[var(--text)] text-sm font-sans select-none antialiased print:block print:h-auto print:overflow-visible print:bg-white print:text-black print:p-0 print:m-0 ${
@@ -7266,14 +7435,14 @@ const renderMarkdownToElements = (contentStr: string) => {
           <div className="flex items-center justify-between text-[10px] text-[var(--muted)] font-semibold">
             <span className="flex items-center gap-1.5 text-gray-300 font-bold">
               <Folder className="w-3.5 h-3.5 text-[var(--blue)] shrink-0" />
-              <span>フォルダリスト ({sortedFolders.length}個)</span>
+              <span>フォルダリスト ({sortedMajors.length}大項目 / {sortedFolders.length}カテゴリ)</span>
             </span>
             <div className="flex gap-1.5 items-center text-[10px]">
               <button
                 type="button"
                 onClick={collapseAllFolders}
                 className="text-gray-400 hover:text-white hover:underline transition-colors cursor-pointer bg-transparent border-0 p-0 font-medium"
-                title="全てのフォルダを折りたたむ"
+                title="全てのフォルダ・大項目を折りたたむ"
               >
                 一括たたむ
               </button>
@@ -7282,7 +7451,7 @@ const renderMarkdownToElements = (contentStr: string) => {
                 type="button"
                 onClick={expandAllFolders}
                 className="text-gray-400 hover:text-white hover:underline transition-colors cursor-pointer bg-transparent border-0 p-0 font-medium"
-                title="全てのフォルダを展開する"
+                title="全てのフォルダ・大項目を展開する"
               >
                 一括展開
               </button>
@@ -7325,24 +7494,40 @@ const renderMarkdownToElements = (contentStr: string) => {
           </div>
         </div>
 
+        {/* 2-Level Accordion: Major Category -> Minor Category -> Notes */}
         <div className="flex-1 overflow-y-auto py-2">
-          {sortedFolders.map(folderName => {
-            const groupList = categorizedGroups[folderName] || [];
+          {sortedMajors.map(majorName => {
+            const majorGroup = majorGroups[majorName];
+            if (!majorGroup) return null;
+
             const isSearching = searchQuery.trim().length > 0;
-            const isCollapsed = isSearching ? (collapsedFolders[folderName] ?? false) : (collapsedFolders[folderName] ?? true);
+            const isMajorCollapsed = isSearching ? (collapsedFolders[majorName] ?? false) : (collapsedFolders[majorName] ?? true);
+            const isTriage = majorName === "要確認";
+            const isUncategorized = majorName === "未分類";
 
             return (
-              <div key={folderName} className="mb-0.5">
+              <div key={majorName} className="mb-1">
+                {/* Level 1: 大項目 (Major Category) Accordion Header */}
                 <div
-                  onClick={() => toggleFolderCollapse(folderName)}
-                  className="group p-2 px-3 flex items-center gap-1.5 text-xs text-gray-200 hover:text-[var(--text)] hover:bg-[#1c2128] cursor-pointer font-bold select-none"
+                  onClick={() => toggleFolderCollapse(majorName)}
+                  className={`group p-2 px-3 flex items-center gap-1.5 text-xs cursor-pointer font-bold select-none transition-colors ${
+                    isTriage
+                      ? "text-amber-300 hover:text-amber-100 hover:bg-amber-950/20 border-l-2 border-amber-500/80 bg-amber-950/10"
+                      : isUncategorized
+                      ? "text-gray-400 hover:text-gray-200 hover:bg-[#1c2128]"
+                      : "text-gray-200 hover:text-[var(--text)] hover:bg-[#1c2128]"
+                  }`}
                 >
                   <span className="text-[9px] text-[var(--muted)] scale-90 w-3">
-                    {isCollapsed ? "▶" : "▼"}
+                    {isMajorCollapsed ? "▶" : "▼"}
                   </span>
-                  <Folder className="w-3.5 h-3.5 text-blue-400/80 shrink-0" />
-                  
-                  {editingFolder === folderName ? (
+                  {isTriage ? (
+                    <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  ) : (
+                    <Folder className={`w-3.5 h-3.5 ${isUncategorized ? "text-gray-500" : "text-blue-400/90"} shrink-0`} />
+                  )}
+
+                  {editingFolder === `major:${majorName}` ? (
                     <input
                       type="text"
                       value={editingValue}
@@ -7350,7 +7535,7 @@ const renderMarkdownToElements = (contentStr: string) => {
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           e.stopPropagation();
-                          handleRenameFolderInline(folderName, editingValue);
+                          handleRenameMajorInline(majorName, editingValue);
                         } else if (e.key === "Escape") {
                           e.stopPropagation();
                           setEditingFolder(null);
@@ -7361,47 +7546,57 @@ const renderMarkdownToElements = (contentStr: string) => {
                       className="flex-1 min-w-[50px] bg-[#0d1117] border border-blue-500 rounded text-xs px-1.5 py-0.5 text-white outline-none font-bold"
                     />
                   ) : (
-                    <span className="flex-1 truncate">{folderName}</span>
+                    <span className="flex-1 truncate flex items-center gap-1.5">
+                      <span>{majorName}</span>
+                      {majorGroup.subcategories.length > 0 && (
+                        <span className="text-[9px] font-normal px-1 py-0.5 bg-[#21262d] text-gray-400 rounded">
+                          {majorGroup.subcategories.length}小項目
+                        </span>
+                      )}
+                    </span>
                   )}
 
-                  <span className="text-[10px] font-normal text-[var(--border2)] shrink-0">{groupList.length}</span>
+                  <span className="text-[10px] font-normal text-[var(--border2)] shrink-0">
+                    {majorGroup.totalCount}
+                  </span>
+
                   <div className="flex items-center gap-1.5 shrink-0">
-                    {/* 外部AI用プロンプト一括出力ボタン */}
-                    {!isCollapsed && groupList.length >= 2 && (
+                    {/* 外部AI用プロンプト一括出力ボタン (大項目全体) */}
+                    {!isMajorCollapsed && majorGroup.totalCount >= 2 && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          copyAIPromptForFolder(folderName);
+                          copyAIPromptForMajor(majorName);
                         }}
                         className="bg-green-900/40 border border-green-500/20 hover:bg-green-600 hover:text-white p-1 rounded text-green-400 cursor-pointer flex items-center justify-center gap-1 px-1.5 transition-all text-[9px] shrink-0"
-                        title="外部AI用プロンプト一括出力"
+                        title={`大項目「${majorName}」全体の外部AI用プロンプト一括出力`}
                       >
                         <Download className="w-3 h-3 text-green-300" />
                         <span>AI出力</span>
                       </button>
                     )}
-                    {/* 一括AI相互リンク生成ボタン（2つ以上のノートがあるときに表示） */}
-                    {!isCollapsed && groupList.length >= 2 && (
+                    {/* 一括AI相互リンク生成ボタン (大項目全体) */}
+                    {!isMajorCollapsed && majorGroup.totalCount >= 2 && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          bulkFolderAiLinkPipeline(folderName);
+                          bulkMajorAiLinkPipeline(majorName);
                         }}
                         className="bg-purple-900/40 border border-purple-500/20 hover:bg-purple-600 hover:text-white p-1 rounded text-purple-400 cursor-pointer flex items-center justify-center gap-1 px-1.5 transition-all text-[9px] shrink-0"
-                        title="フォルダ内相互リンク一括構築 (ローカル文字照合 または AI抽出)"
+                        title={`大項目「${majorName}」内の相互リンク一括構築`}
                       >
                         <Link2 className="w-3 h-3 text-purple-300" />
                         <span>リンク一括</span>
                       </button>
                     )}
 
-                    {folderName !== "未分類" ? (
-                      editingFolder === folderName ? (
+                    {!isUncategorized ? (
+                      editingFolder === `major:${majorName}` ? (
                         <>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleRenameFolderInline(folderName, editingValue);
+                              handleRenameMajorInline(majorName, editingValue);
                             }}
                             className="p-0.5 hover:bg-green-500/20 text-green-400 rounded cursor-pointer"
                             title="保存"
@@ -7423,11 +7618,11 @@ const renderMarkdownToElements = (contentStr: string) => {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            setEditingFolder(folderName);
-                            setEditingValue(folderName);
+                            setEditingFolder(`major:${majorName}`);
+                            setEditingValue(majorName);
                           }}
                           className="opacity-0 group-hover:opacity-100 hover:opacity-100 p-0.5 hover:bg-[var(--border2)] rounded text-[var(--muted)] hover:text-white cursor-pointer"
-                          title="フォルダ名変更"
+                          title="大項目名変更"
                         >
                           ✎
                         </button>
@@ -7436,54 +7631,228 @@ const renderMarkdownToElements = (contentStr: string) => {
                   </div>
                 </div>
 
-                {!isCollapsed && (
-                  <div className="flex flex-col pl-6">
-                    {groupList.map(n => {
-                      const isEmpty = !n.content || n.content.trim().length <= n.title.length + 5;
-                      const displayDate = getNoteDisplayDate(n);
+                {/* Level 2: Expanded Content of Major Category */}
+                {!isMajorCollapsed && (
+                  <div className="flex flex-col pl-3 border-l border-[#30363d]/40 ml-3.5 my-0.5 space-y-0.5">
+                    {/* Subcategories (小項目アコーディオン) */}
+                    {majorGroup.subcategories.map(sub => {
+                      const isSubCollapsed = isSearching
+                        ? (collapsedFolders[sub.fullName] ?? false)
+                        : (collapsedFolders[sub.fullName] ?? true);
+
                       return (
-                        <div
-                          key={n.id}
-                          onClick={() => {
-                            selectNote(n.id);
-                          }}
-                          className={`note-item relative group flex items-center gap-2 p-2 px-3 text-xs border-l-2 cursor-pointer transition-all hover:bg-[#1c2128] ${
-                            activeId === n.id ? "bg-[#1f2d3d] border-[var(--blue)] text-[var(--bright)] font-semibold" : "border-transparent text-[var(--subtle)]"
-                          }`}
-                        >
-                          {isEmpty ? (
-                            <BookOpen className="w-3.5 h-3.5 text-[var(--muted)] flex-shrink-0" />
-                          ) : (
-                            <FileText className={`w-3.5 h-3.5 flex-shrink-0 ${activeId === n.id ? "text-[var(--blue)]" : "text-[var(--muted)]"}`} />
-                          )}
-                          <span className={`${isEmpty ? "text-[var(--muted)] italic" : ""} flex-1 min-w-0 truncate`}>{n.title}</span>
-                          {bookmarkedIds.includes(n.id) && (
-                            <Bookmark className="w-3 h-3 text-amber-400 fill-amber-400 shrink-0" />
-                          )}
-                          {displayDate && (
-                            <span className="text-[10px] text-[var(--muted)] font-mono shrink-0 group-hover:opacity-0 transition-opacity">
-                              {displayDate.split(" ")[0]}
+                        <div key={sub.fullName} className="mb-0.5">
+                          <div
+                            onClick={() => toggleFolderCollapse(sub.fullName)}
+                            className="group p-1.5 px-2 flex items-center gap-1.5 text-xs text-gray-300 hover:text-white hover:bg-[#1c2128]/70 rounded cursor-pointer select-none"
+                          >
+                            <span className="text-[8px] text-[var(--muted)] scale-75 w-2.5">
+                              {isSubCollapsed ? "▶" : "▼"}
                             </span>
-                          )}
-                          <div className="absolute right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button
-                              onClick={(e) => toggleBookmark(n.id, e)}
-                              className="border-0 bg-transparent text-[var(--muted)] hover:text-amber-400 p-0.5 cursor-pointer"
-                              title={bookmarkedIds.includes(n.id) ? "しおりを外す" : "しおりを挟む"}
-                            >
-                              <Bookmark className={`w-3.5 h-3.5 ${bookmarkedIds.includes(n.id) ? "fill-amber-400 text-amber-400" : ""}`} />
-                            </button>
-                            <button
-                              onClick={(e) => handleDeleteNote(n.id, e)}
-                              className="border-0 bg-transparent text-[var(--muted)] hover:text-[var(--red)] p-0.5 cursor-pointer"
-                              title="ノートを削除"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            <Folder className="w-3 h-3 text-cyan-400/80 shrink-0" />
+
+                            {editingFolder === sub.fullName ? (
+                              <input
+                                type="text"
+                                value={editingValue}
+                                onChange={(e) => setEditingValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.stopPropagation();
+                                    handleRenameFolderInline(sub.fullName, editingValue);
+                                  } else if (e.key === "Escape") {
+                                    e.stopPropagation();
+                                    setEditingFolder(null);
+                                  }
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                autoFocus
+                                className="flex-1 min-w-[50px] bg-[#0d1117] border border-cyan-500 rounded text-xs px-1 py-0.5 text-white outline-none"
+                              />
+                            ) : (
+                              <span className="flex-1 truncate text-[11.5px] font-medium text-gray-300">
+                                ↳ {sub.minor}
+                              </span>
+                            )}
+
+                            <span className="text-[9.5px] font-normal text-[var(--border2)] shrink-0">
+                              {sub.notes.length}
+                            </span>
+
+                            <div className="flex items-center gap-1 shrink-0">
+                              {!isSubCollapsed && sub.notes.length >= 2 && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    copyAIPromptForFolder(sub.fullName);
+                                  }}
+                                  className="bg-green-900/30 border border-green-500/20 hover:bg-green-600 hover:text-white p-0.5 px-1 rounded text-green-400 text-[8.5px] cursor-pointer"
+                                  title={`小項目「${sub.minor}」のAIプロンプト出力`}
+                                >
+                                  AI
+                                </button>
+                              )}
+                              {!isSubCollapsed && sub.notes.length >= 2 && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    bulkFolderAiLinkPipeline(sub.fullName);
+                                  }}
+                                  className="bg-purple-900/30 border border-purple-500/20 hover:bg-purple-600 hover:text-white p-0.5 px-1 rounded text-purple-400 text-[8.5px] cursor-pointer"
+                                  title={`小項目「${sub.minor}」の相互リンク構築`}
+                                >
+                                  リンク
+                                </button>
+                              )}
+                              {editingFolder === sub.fullName ? (
+                                <>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRenameFolderInline(sub.fullName, editingValue);
+                                    }}
+                                    className="p-0.5 hover:bg-green-500/20 text-green-400 rounded cursor-pointer text-[10px]"
+                                    title="保存"
+                                  >
+                                    ✓
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setEditingFolder(null);
+                                    }}
+                                    className="p-0.5 hover:bg-red-500/20 text-red-400 rounded cursor-pointer text-[10px]"
+                                    title="キャンセル"
+                                  >
+                                    ✕
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingFolder(sub.fullName);
+                                    setEditingValue(sub.minor);
+                                  }}
+                                  className="opacity-0 group-hover:opacity-100 hover:opacity-100 p-0.5 hover:bg-[var(--border2)] rounded text-[var(--muted)] hover:text-white cursor-pointer text-[10px]"
+                                  title="小項目名変更"
+                                >
+                                  ✎
+                                </button>
+                              )}
+                            </div>
                           </div>
+
+                          {/* Notes inside this subcategory */}
+                          {!isSubCollapsed && (
+                            <div className="flex flex-col pl-3 border-l border-[#30363d]/30 ml-2 my-0.5">
+                              {sub.notes.map(n => {
+                                const isEmpty = !n.content || n.content.trim().length <= n.title.length + 5;
+                                const displayDate = getNoteDisplayDate(n);
+                                return (
+                                  <div
+                                    key={n.id}
+                                    onClick={() => selectNote(n.id)}
+                                    className={`note-item relative group flex items-center gap-2 p-1.5 px-2 text-xs border-l-2 cursor-pointer transition-all hover:bg-[#1c2128] rounded-r ${
+                                      activeId === n.id ? "bg-[#1f2d3d] border-[var(--blue)] text-[var(--bright)] font-semibold" : "border-transparent text-[var(--subtle)]"
+                                    }`}
+                                  >
+                                    {isEmpty ? (
+                                      <BookOpen className="w-3.5 h-3.5 text-[var(--muted)] flex-shrink-0" />
+                                    ) : (
+                                      <FileText className={`w-3.5 h-3.5 flex-shrink-0 ${activeId === n.id ? "text-[var(--blue)]" : "text-[var(--muted)]"}`} />
+                                    )}
+                                    <span className={`${isEmpty ? "text-[var(--muted)] italic" : ""} flex-1 min-w-0 truncate`}>{n.title}</span>
+                                    {bookmarkedIds.includes(n.id) && (
+                                      <Bookmark className="w-3 h-3 text-amber-400 fill-amber-400 shrink-0" />
+                                    )}
+                                    {displayDate && (
+                                      <span className="text-[10px] text-[var(--muted)] font-mono shrink-0 group-hover:opacity-0 transition-opacity">
+                                        {displayDate.split(" ")[0]}
+                                      </span>
+                                    )}
+                                    <div className="absolute right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <button
+                                        onClick={(e) => toggleBookmark(n.id, e)}
+                                        className="border-0 bg-transparent text-[var(--muted)] hover:text-amber-400 p-0.5 cursor-pointer"
+                                        title={bookmarkedIds.includes(n.id) ? "しおりを外す" : "しおりを挟む"}
+                                      >
+                                        <Bookmark className={`w-3.5 h-3.5 ${bookmarkedIds.includes(n.id) ? "fill-amber-400 text-amber-400" : ""}`} />
+                                      </button>
+                                      <button
+                                        onClick={(e) => handleDeleteNote(n.id, e)}
+                                        className="border-0 bg-transparent text-[var(--muted)] hover:text-[var(--red)] p-0.5 cursor-pointer"
+                                        title="ノートを削除"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
+
+                    {/* Direct notes (notes directly under major category) */}
+                    {majorGroup.directNotes.length > 0 && (
+                      <div className="flex flex-col">
+                        {majorGroup.subcategories.length > 0 && (
+                          <div className="text-[10px] text-gray-500 font-semibold px-2 py-0.5 flex items-center gap-1">
+                            <span>📁 (大項目直下)</span>
+                            <span className="text-[9px] text-gray-600">({majorGroup.directNotes.length})</span>
+                          </div>
+                        )}
+                        <div className={majorGroup.subcategories.length > 0 ? "pl-2 border-l border-[#30363d]/30 ml-2" : ""}>
+                          {majorGroup.directNotes.map(n => {
+                            const isEmpty = !n.content || n.content.trim().length <= n.title.length + 5;
+                            const displayDate = getNoteDisplayDate(n);
+                            return (
+                              <div
+                                key={n.id}
+                                onClick={() => selectNote(n.id)}
+                                className={`note-item relative group flex items-center gap-2 p-1.5 px-2 text-xs border-l-2 cursor-pointer transition-all hover:bg-[#1c2128] rounded-r ${
+                                  activeId === n.id ? "bg-[#1f2d3d] border-[var(--blue)] text-[var(--bright)] font-semibold" : "border-transparent text-[var(--subtle)]"
+                                }`}
+                              >
+                                {isEmpty ? (
+                                  <BookOpen className="w-3.5 h-3.5 text-[var(--muted)] flex-shrink-0" />
+                                ) : (
+                                  <FileText className={`w-3.5 h-3.5 flex-shrink-0 ${activeId === n.id ? "text-[var(--blue)]" : "text-[var(--muted)]"}`} />
+                                )}
+                                <span className={`${isEmpty ? "text-[var(--muted)] italic" : ""} flex-1 min-w-0 truncate`}>{n.title}</span>
+                                {bookmarkedIds.includes(n.id) && (
+                                  <Bookmark className="w-3 h-3 text-amber-400 fill-amber-400 shrink-0" />
+                                )}
+                                {displayDate && (
+                                  <span className="text-[10px] text-[var(--muted)] font-mono shrink-0 group-hover:opacity-0 transition-opacity">
+                                    {displayDate.split(" ")[0]}
+                                  </span>
+                                )}
+                                <div className="absolute right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button
+                                    onClick={(e) => toggleBookmark(n.id, e)}
+                                    className="border-0 bg-transparent text-[var(--muted)] hover:text-amber-400 p-0.5 cursor-pointer"
+                                    title={bookmarkedIds.includes(n.id) ? "しおりを外す" : "しおりを挟む"}
+                                  >
+                                    <Bookmark className={`w-3.5 h-3.5 ${bookmarkedIds.includes(n.id) ? "fill-amber-400 text-amber-400" : ""}`} />
+                                  </button>
+                                  <button
+                                    onClick={(e) => handleDeleteNote(n.id, e)}
+                                    className="border-0 bg-transparent text-[var(--muted)] hover:text-[var(--red)] p-0.5 cursor-pointer"
+                                    title="ノートを削除"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -7516,20 +7885,6 @@ const renderMarkdownToElements = (contentStr: string) => {
                 className="w-full text-left p-1.5 bg-transparent hover:bg-[var(--border)] border border-[var(--border)] rounded text-[var(--subtle)] hover:text-white hover:border-[var(--border2)] text-[11px] cursor-pointer transition-all flex items-center gap-1.5"
               >
                 <Download className="w-3 h-3 text-[var(--green)]" /> バックアップ (.json)
-              </button>
-              <button
-                onClick={downloadOverallCoOccurCSV}
-                className="w-full text-left p-1.5 bg-transparent hover:bg-[var(--border)] border border-[var(--border)] rounded text-[var(--subtle)] hover:text-white hover:border-[var(--border2)] text-[11px] cursor-pointer transition-all flex items-center gap-1.5"
-                title="全ノートのキーワード共起・相関データをCSVでダウンロード"
-              >
-                <Download className="w-3 h-3 text-cyan-400" /> 全体共起データ (.csv)
-              </button>
-              <button
-                onClick={downloadArticleListCSV}
-                className="w-full text-left p-1.5 bg-transparent hover:bg-[var(--border)] border border-[var(--border)] rounded text-[var(--subtle)] hover:text-white hover:border-[var(--border2)] text-[11px] cursor-pointer transition-all flex items-center gap-1.5"
-                title="全記事ごとの日付・フォルダ・キーワード配列一覧をCSVでダウンロード"
-              >
-                <Download className="w-3 h-3 text-purple-400" /> 記事別キーワード一覧 (.csv)
               </button>
             </div>
           )}
@@ -9581,8 +9936,12 @@ const renderMarkdownToElements = (contentStr: string) => {
           isOpen={externalExportTarget !== null}
           onClose={() => setExternalExportTarget(null)}
           onExport={handleExternalAiExport}
-          isBulk={externalExportTarget.type === 'folder'}
-          targetName={externalExportTarget.type === 'folder' ? externalExportTarget.folderName : undefined}
+          isBulk={externalExportTarget.type === 'folder' || externalExportTarget.type === 'major'}
+          targetName={
+            externalExportTarget.type === 'major'
+              ? `大項目「${externalExportTarget.majorName}」全体`
+              : (externalExportTarget.type === 'folder' ? externalExportTarget.folderName : undefined)
+          }
         />
       )}
 
