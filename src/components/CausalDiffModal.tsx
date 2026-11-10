@@ -118,6 +118,7 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
 
   // フォルダ対応進捗の絞り込みモード: "all" (すべて) | "covered" (対応済み) | "uncovered" (未対応)
   const [folderFilterMode, setFolderFilterMode] = useState<"all" | "covered" | "uncovered">("all");
+  const [folderSortOrder, setFolderSortOrder] = useState<"links-desc" | "name-asc" | "name-desc" | "notes-desc">("links-desc");
 
   // 📅 週次推移一覧（フォルダ別、デフォルトで畳み込み）
   const [collapsedFolderMap, setCollapsedFolderMap] = useState<Record<string, boolean>>({});
@@ -468,8 +469,18 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
         noteCount,
         weeks: wGroups.filter(w => w.links.length > 0)
       };
-    }).sort((a, b) => b.totalLinks - a.totalLinks || a.folder.localeCompare(b.folder));
-  }, [links, searchQuery, getLinkFolder, folderNotesCountMap]);
+    }).sort((a, b) => {
+      if (folderSortOrder === "name-asc") {
+        return a.folder.localeCompare(b.folder, "ja");
+      } else if (folderSortOrder === "name-desc") {
+        return b.folder.localeCompare(a.folder, "ja");
+      } else if (folderSortOrder === "notes-desc") {
+        return b.noteCount - a.noteCount || a.folder.localeCompare(b.folder, "ja");
+      } else {
+        return b.totalLinks - a.totalLinks || a.folder.localeCompare(b.folder, "ja");
+      }
+    });
+  }, [links, searchQuery, getLinkFolder, folderNotesCountMap, folderSortOrder]);
 
   const existingTerms = useMemo(() => collectExistingTerms(links), [links]);
 
@@ -1005,11 +1016,22 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
                   </div>
                 </div>
 
-                {/* 一括折りたたみ / 展開 ボタン */}
-                <div className="flex items-center gap-2">
+                {/* 一括折りたたみ / 展開 ボタン & 並び順選択 */}
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[11px] text-[var(--muted)]">
                     {folderTimelineGroups.length} フォルダ / {links.length} 件
                   </span>
+                  <select
+                    value={folderSortOrder}
+                    onChange={(e) => setFolderSortOrder(e.target.value as any)}
+                    className="bg-[#161b22] border border-[var(--border2)] rounded text-xs text-gray-200 py-1 px-2 outline-none cursor-pointer"
+                    title="フォルダの並び順を変更"
+                  >
+                    <option value="links-desc">📊 リンク数が多い順</option>
+                    <option value="name-asc">あ フォルダ名 昇順 (あいうえお/ABC)</option>
+                    <option value="name-desc">ん フォルダ名 降順</option>
+                    <option value="notes-desc">📝 ノート数が多い順</option>
+                  </select>
                   <button
                     type="button"
                     onClick={handleCollapseAllFolders}
