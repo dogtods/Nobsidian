@@ -42,7 +42,8 @@ import {
   ChevronDown,
   ChevronRight,
   Layers,
-  Filter
+  Filter,
+  ArrowUpDown
 } from "lucide-react";
 
 async function copyText(text: string): Promise<boolean> {
@@ -119,6 +120,22 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
   // フォルダ対応進捗の絞り込みモード: "all" (すべて) | "covered" (対応済み) | "uncovered" (未対応)
   const [folderFilterMode, setFolderFilterMode] = useState<"all" | "covered" | "uncovered">("all");
   const [folderSortOrder, setFolderSortOrder] = useState<"links-desc" | "name-asc" | "name-desc" | "notes-desc">("links-desc");
+
+  // 外部AI向けプロンプト作成タブでのフォルダ並び順（デフォルト: 降順）
+  const [externalFolderSortOrder, setExternalFolderSortOrder] = useState<"name-desc" | "name-asc" | "uncovered-first" | "links-desc">(() => {
+    try {
+      return (localStorage.getItem("cn_external_folder_sort") as any) || "name-desc";
+    } catch {
+      return "name-desc";
+    }
+  });
+
+  const handleExternalFolderSortChange = (order: "name-desc" | "name-asc" | "uncovered-first" | "links-desc") => {
+    setExternalFolderSortOrder(order);
+    try {
+      localStorage.setItem("cn_external_folder_sort", order);
+    } catch {}
+  };
 
   // 📅 週次推移一覧（フォルダ別、デフォルトで畳み込み）
   const [collapsedFolderMap, setCollapsedFolderMap] = useState<Record<string, boolean>>({});
@@ -362,9 +379,29 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
       };
     }).sort((a, b) => {
       // リンク数順、次にノート数順、最後に名前順
-      return b.linksCount - a.linksCount || b.notesCount - a.notesCount || a.folder.localeCompare(b.folder);
+      return b.linksCount - a.linksCount || b.notesCount - a.notesCount || a.folder.localeCompare(b.folder, "ja", { numeric: true });
     });
   }, [allFolderNames, folderLinksCountMap, folderNotesCountMap, links, getLinkFolder]);
+
+  // 4-b. 外部AIプロンプト作成タブ用のソート済みフォルダ一覧（デフォルト: 降順）
+  const sortedExternalFolderList = useMemo(() => {
+    const list = [...allFolderStatusList];
+    switch (externalFolderSortOrder) {
+      case "name-desc":
+        return list.sort((a, b) => b.folder.localeCompare(a.folder, "ja", { numeric: true }));
+      case "name-asc":
+        return list.sort((a, b) => a.folder.localeCompare(b.folder, "ja", { numeric: true }));
+      case "uncovered-first":
+        return list.sort((a, b) => {
+          if (a.isCovered !== b.isCovered) return a.isCovered ? 1 : -1;
+          return b.folder.localeCompare(a.folder, "ja", { numeric: true });
+        });
+      case "links-desc":
+        return list.sort((a, b) => b.linksCount - a.linksCount || b.notesCount - a.notesCount || b.folder.localeCompare(a.folder, "ja", { numeric: true }));
+      default:
+        return list.sort((a, b) => b.folder.localeCompare(a.folder, "ja", { numeric: true }));
+    }
+  }, [allFolderStatusList, externalFolderSortOrder]);
 
   // 5. フォルダ対応カバレッジ統計
   const folderCoverageStats = useMemo(() => {
@@ -380,16 +417,27 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
     };
   }, [allFolderNames, folderLinksCountMap]);
 
-  // 6. 未対応フォルダ一覧（検索クエリにも連動）
+  // 6. 未対応フォルダ一覧（検索クエリ & 並び順に連動）
   const unhandledFoldersList = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return allFolderStatusList
+    const list = allFolderStatusList
       .filter(f => !f.isCovered)
       .filter(f => {
         if (!q) return true;
         return f.folder.toLowerCase().includes(q);
       });
-  }, [allFolderStatusList, searchQuery]);
+    return list.sort((a, b) => {
+      if (folderSortOrder === "name-asc") {
+        return a.folder.localeCompare(b.folder, "ja", { numeric: true });
+      } else if (folderSortOrder === "name-desc") {
+        return b.folder.localeCompare(a.folder, "ja", { numeric: true });
+      } else if (folderSortOrder === "notes-desc") {
+        return b.notesCount - a.notesCount || b.folder.localeCompare(a.folder, "ja", { numeric: true });
+      } else {
+        return b.notesCount - a.notesCount || b.folder.localeCompare(a.folder, "ja", { numeric: true });
+      }
+    });
+  }, [allFolderStatusList, searchQuery, folderSortOrder]);
 
   // 7. フォルダごとのプレビュー用ノート取得ヘルパー
   const getFolderRecentNotes = useCallback((folderName: string, maxNotes: number = 2): Note[] => {
@@ -1470,26 +1518,47 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-                <label className="space-y-1">
-                  <span className="block font-semibold text-[var(--bright)] flex items-center justify-between">
-                    <span>フォルダ選択 ({folderColumnSource === "N" ? "N列基準" : "D列基準"})</span>
-                    {folderCoverageStats.uncovered > 0 && (
-                      <span className="text-[10px] text-amber-400 font-normal">未対応 {folderCoverageStats.uncovered}件</span>
-                    )}
-                  </span>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-[var(--bright)] truncate">
+                      フォルダ選択 ({folderColumnSource === "N" ? "N列" : "D列"})
+                    </span>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <ArrowUpDown className="w-3 h-3 text-amber-400" />
+                      <select
+                        value={externalFolderSortOrder}
+                        onChange={e => handleExternalFolderSortChange(e.target.value as any)}
+                        className="bg-[#12161c] border border-[var(--border2)] text-[10px] text-amber-300 rounded px-1.5 py-0.5 cursor-pointer font-medium focus:outline-none"
+                        title="フォルダ一覧の並び順（デフォルト: 降順）"
+                      >
+                        <option value="name-desc">▼ 降順 (新しい順)</option>
+                        <option value="name-asc">▲ 昇順 (古い順)</option>
+                        <option value="uncovered-first">⚡ 未対応優先</option>
+                        <option value="links-desc">📊 リンク数順</option>
+                      </select>
+                    </div>
+                  </div>
                   <select
                     value={selectedFolder}
                     onChange={e => setSelectedFolder(e.target.value)}
-                    className="w-full bg-[#161b22] border border-[var(--border2)] rounded px-2 py-1.5 text-[var(--bright)]"
+                    className="w-full bg-[#161b22] border border-[var(--border2)] rounded px-2 py-1.5 text-[var(--bright)] text-xs"
                   >
                     <option value="all">すべて（全フォルダ）</option>
-                    {allFolderStatusList.map(st => (
+                    {sortedExternalFolderList.map(st => (
                       <option key={st.folder} value={st.folder}>
                         {st.isCovered ? `[✅ 対応済: ${st.linksCount}件]` : `[⏳ 未対応: 0件]`} {st.folder} (ノート{st.notesCount}件)
                       </option>
                     ))}
                   </select>
-                </label>
+                  {folderCoverageStats.uncovered > 0 && (
+                    <div className="text-[10px] text-amber-400 flex items-center justify-between pt-0.5">
+                      <span>未対応: {folderCoverageStats.uncovered}件</span>
+                      <span className="text-[10px] text-[var(--muted)]">
+                        {externalFolderSortOrder === "name-desc" ? "（降順で表示中）" : externalFolderSortOrder === "name-asc" ? "（昇順で表示中）" : externalFolderSortOrder === "uncovered-first" ? "（未対応優先）" : "（リンク数順）"}
+                      </span>
+                    </div>
+                  )}
+                </div>
                 <label className="space-y-1">
                   <span className="block font-semibold text-[var(--bright)]">対象ノート数（新しい順）</span>
                   <input
@@ -1529,11 +1598,16 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
                       <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono">
                         残り {folderCoverageStats.uncovered} フォルダ
                       </span>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-300 font-sans border border-amber-500/30">
+                        {externalFolderSortOrder === "name-desc" ? "▼ 降順" : externalFolderSortOrder === "name-asc" ? "▲ 昇順" : externalFolderSortOrder === "uncovered-first" ? "⚡ 未対応順" : "📊 リンク順"}
+                      </span>
                     </span>
-                    <span className="text-[11px] text-[var(--muted)]">タップすると対象フォルダが自動選択されます</span>
+                    <span className="text-[11px] text-[var(--muted)]">
+                      {externalFolderSortOrder === "name-desc" ? "降順（新しい順）で並んでいます" : "タップすると対象フォルダが自動選択されます"}
+                    </span>
                   </div>
                   <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pt-1">
-                    {allFolderStatusList
+                    {sortedExternalFolderList
                       .filter(st => !st.isCovered)
                       .map(st => (
                         <button
