@@ -24,6 +24,7 @@ import {
   buildCausalInferencePrompt
 } from "../utils/causalDiffUtils";
 import CausalLagPanel from "./CausalLagPanel";
+import ArticleExportModal from "./ArticleExportModal";
 import { getFolderFromKeywords, getFolderFromColumnN } from "../utils/graphDataParser";
 import {
   ArrowRight,
@@ -194,6 +195,7 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
 
   // 📄 リンク元記事の確認用モーダル State & ヘルパー
   const [selectedArticleLink, setSelectedArticleLink] = useState<CausalLink | null>(null);
+  const [isArticleExportOpen, setIsArticleExportOpen] = useState(false);
 
   const findArticleForLink = useCallback((link: CausalLink): Note | undefined => {
     if (link.articleId) {
@@ -2208,10 +2210,25 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
             </div>
 
             {/* Footer */}
-            <div className="p-3 sm:p-4 bg-[#0d1117] border-t border-[var(--border)] flex items-center justify-between">
-              <span className="text-[11px] text-[var(--muted)]">
-                Esc キーまたは枠外クリックで閉じます
-              </span>
+            <div className="p-3 sm:p-4 bg-[#0d1117] border-t border-[var(--border)] flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                {selectedArticleNote && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Open ArticleExportModal for selectedArticleNote
+                      setIsArticleExportOpen(true);
+                    }}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-xs transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>記事と関連成果物をHTML/PDF出力</span>
+                  </button>
+                )}
+                <span className="text-[11px] text-[var(--muted)]">
+                  Esc キーまたは枠外クリックで閉じます
+                </span>
+              </div>
               <button
                 type="button"
                 onClick={() => setSelectedArticleLink(null)}
@@ -2220,6 +2237,19 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
                 閉じる
               </button>
             </div>
+
+            {/* ArticleExportModal */}
+            {isArticleExportOpen && selectedArticleNote && (
+              <ArticleExportModal
+                isOpen={isArticleExportOpen}
+                onClose={() => setIsArticleExportOpen(false)}
+                note={selectedArticleNote}
+                notes={notes}
+                allCausalLinks={links}
+                allQuestions={[]}
+                onToast={onToast}
+              />
+            )}
           </div>
         </div>
       )}
