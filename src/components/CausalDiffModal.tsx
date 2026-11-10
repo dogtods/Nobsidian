@@ -43,7 +43,11 @@ import {
   ChevronRight,
   Layers,
   Filter,
-  ArrowUpDown
+  ArrowUpDown,
+  FileText,
+  ExternalLink,
+  X,
+  BookOpen
 } from "lucide-react";
 
 async function copyText(text: string): Promise<boolean> {
@@ -187,6 +191,41 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
   const [isSavingInferenceMap, setIsSavingInferenceMap] = useState<Record<string, boolean>>({});
   const [copiedPromptLinkId, setCopiedPromptLinkId] = useState<string | null>(null);
   const [isSyncingWithSs, setIsSyncingWithSs] = useState(false);
+
+  // 📄 リンク元記事の確認用モーダル State & ヘルパー
+  const [selectedArticleLink, setSelectedArticleLink] = useState<CausalLink | null>(null);
+
+  const findArticleForLink = useCallback((link: CausalLink): Note | undefined => {
+    if (link.articleId) {
+      const byId = notes.find(n => String(n.id) === String(link.articleId));
+      if (byId) return byId;
+    }
+    if (link.articleTitle) {
+      const cleanTitle = link.articleTitle.trim().toLowerCase();
+      if (cleanTitle) {
+        const byTitle = notes.find(n => n.title && n.title.trim().toLowerCase() === cleanTitle);
+        if (byTitle) return byTitle;
+        const byPartial = notes.find(n => n.title && (n.title.toLowerCase().includes(cleanTitle) || cleanTitle.includes(n.title.toLowerCase())));
+        if (byPartial) return byPartial;
+      }
+    }
+    return undefined;
+  }, [notes]);
+
+  const selectedArticleNote = useMemo(() => {
+    if (!selectedArticleLink) return null;
+    return findArticleForLink(selectedArticleLink) || null;
+  }, [selectedArticleLink, findArticleForLink]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && selectedArticleLink) {
+        setSelectedArticleLink(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedArticleLink]);
 
   // Google Apps Script (CausalLinks シート) から既存の因果リンク・推論解説を同期
   useEffect(() => {
@@ -1210,62 +1249,107 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
                                       key={link.id}
                                       className="bg-[#0d1117] rounded-lg border border-[var(--border2)] hover:border-gray-600 transition-colors overflow-hidden"
                                     >
-                                      {/* リンク基本情報バー */}
-                                      <div className="p-2.5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                                        <div className="flex items-center gap-2 flex-wrap min-w-0">
-                                          {link.isNew && (
-                                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/25 text-emerald-300 font-bold text-[9px] shrink-0">
-                                              NEW
-                                            </span>
-                                          )}
-                                          <span className="font-bold text-xs text-blue-300 bg-blue-950/40 px-2 py-0.5 rounded border border-blue-500/30">
-                                            {link.source}
-                                          </span>
-                                          <ArrowRight className="w-3.5 h-3.5 text-[var(--muted)] shrink-0" />
-                                          <span className="font-bold text-xs text-emerald-300 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/30">
-                                            {link.target}
-                                          </span>
-                                          <span className="text-xs text-[var(--muted)] truncate max-w-sm">
-                                            ({link.reason})
-                                          </span>
-                                          {hasInference && (
-                                            <span className="px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold text-[9px] shrink-0 flex items-center gap-1">
-                                              <span>💡</span>
-                                              <span>推論解説あり</span>
-                                            </span>
-                                          )}
+                                      {/* リンク基本情報 & アクションバー */}
+                                      <div className="p-3 space-y-2">
+                                        {/* 1. 原因 ➔ 結果（因果の2つ）& 理由 を横スクロールして見切れずに読めるエリア */}
+                                        <div
+                                          className="overflow-x-auto pb-1 max-w-full"
+                                          style={{ scrollbarWidth: "thin" }}
+                                          title="横スクロールで全文を確認できます"
+                                        >
+                                          <div className="flex items-center gap-2 min-w-max">
+                                            {link.isNew && (
+                                              <span className="px-1.5 py-0.5 rounded bg-emerald-500/25 text-emerald-300 font-bold text-[9px] shrink-0 border border-emerald-500/30">
+                                                NEW
+                                              </span>
+                                            )}
+
+                                            {/* 原因 (Source) */}
+                                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-950/60 border border-blue-500/50 text-blue-200 text-xs font-bold shrink-0 shadow-xs">
+                                              <span className="text-[9px] text-blue-400 font-mono uppercase bg-blue-900/60 px-1 py-0.2 rounded border border-blue-500/30">
+                                                原因
+                                              </span>
+                                              <span>{link.source}</span>
+                                            </div>
+
+                                            <ArrowRight className="w-4 h-4 text-emerald-400 shrink-0" />
+
+                                            {/* 結果 (Target) */}
+                                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-950/60 border border-emerald-500/50 text-emerald-200 text-xs font-bold shrink-0 shadow-xs">
+                                              <span className="text-[9px] text-emerald-400 font-mono uppercase bg-emerald-900/60 px-1 py-0.2 rounded border border-emerald-500/30">
+                                                結果
+                                              </span>
+                                              <span>{link.target}</span>
+                                            </div>
+
+                                            {/* 因果の理由 (Reason) */}
+                                            {link.reason && (
+                                              <div className="text-xs text-gray-300 bg-[#161b22] px-2.5 py-1 rounded-md border border-gray-700/60 shrink-0 flex items-center gap-1.5">
+                                                <span className="text-[10px] text-gray-400 font-semibold">理由:</span>
+                                                <span>{link.reason}</span>
+                                              </div>
+                                            )}
+
+                                            {hasInference && (
+                                              <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold text-[10px] shrink-0 flex items-center gap-1">
+                                                <span>💡</span>
+                                                <span>推論解説あり</span>
+                                              </span>
+                                            )}
+                                          </div>
                                         </div>
 
-                                        <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
-                                          <span className="text-[10px] text-[var(--subtle)] truncate max-w-[120px]" title={link.articleTitle}>
-                                            {link.articleTitle}
-                                          </span>
+                                        {/* 2. 記事特定ボタン & アクションバー */}
+                                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-[var(--border2)]/50 text-xs">
+                                          {/* ユーザー要望: リンクごとに何の記事なのか知りたいので、ボタンがほしい */}
+                                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                                            <button
+                                              type="button"
+                                              onClick={() => setSelectedArticleLink(link)}
+                                              className="px-2.5 py-1 rounded-md bg-[#161b22] hover:bg-[#21262d] text-blue-300 hover:text-blue-200 border border-blue-500/40 hover:border-blue-400 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-all max-w-full sm:max-w-md group shadow-xs"
+                                              title="この記事のタイトル・本文・要約・元URLをポップアップで確認"
+                                            >
+                                              <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0 group-hover:scale-110 transition-transform" />
+                                              <span className="text-[11px] text-blue-300 font-bold shrink-0">📄 記事を確認:</span>
+                                              <span className="truncate text-[11px] text-gray-200 group-hover:text-white underline decoration-blue-400/40 underline-offset-2">
+                                                {link.articleTitle || findArticleForLink(link)?.title || "元記事詳細を見る"}
+                                              </span>
+                                            </button>
 
-                                          {/* 因果推論の論理解明トグルボタン */}
-                                          <button
-                                            type="button"
-                                            onClick={() => setActiveInferenceLinkId(prev => prev === link.id ? null : link.id)}
-                                            className={`px-2 py-1 rounded text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors ${
-                                              isInferenceOpen
-                                                ? "bg-purple-600 text-white shadow-sm"
-                                                : hasInference
-                                                ? "bg-purple-950/40 text-purple-300 border border-purple-500/40 hover:bg-purple-900/50"
-                                                : "bg-[#21262d] text-gray-300 hover:text-white border border-[var(--border2)]"
-                                            }`}
-                                            title="なぜこの因果リンクに至るのか、推論の論理ステップ・図解プロンプトを出力し、回答をスプレッドシートに保存します"
-                                          >
-                                            <Sparkles className="w-3 h-3 text-purple-400" />
-                                            <span>{isInferenceOpen ? "閉じる" : hasInference ? "💡 推論を確認・更新" : "💡 推論を解明"}</span>
-                                          </button>
+                                            {findArticleForLink(link)?.dateStr && (
+                                              <span className="text-[10px] text-gray-500 hidden sm:inline shrink-0">
+                                                ({findArticleForLink(link)?.dateStr})
+                                              </span>
+                                            )}
+                                          </div>
 
-                                          <button
-                                            type="button"
-                                            onClick={() => handleDeleteLink(link.id)}
-                                            className="text-[var(--muted)] hover:text-red-400 p-1 cursor-pointer transition-colors"
-                                            title="削除"
-                                          >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                          </button>
+                                          <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                                            {/* 因果推論の論理解明トグルボタン */}
+                                            <button
+                                              type="button"
+                                              onClick={() => setActiveInferenceLinkId(prev => prev === link.id ? null : link.id)}
+                                              className={`px-2.5 py-1 rounded text-[11px] font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                                                isInferenceOpen
+                                                  ? "bg-purple-600 text-white shadow-sm"
+                                                  : hasInference
+                                                  ? "bg-purple-950/40 text-purple-300 border border-purple-500/40 hover:bg-purple-900/50"
+                                                  : "bg-[#21262d] text-gray-300 hover:text-white border border-[var(--border2)]"
+                                              }`}
+                                              title="なぜこの因果リンクに至るのか、推論の論理ステップ・図解プロンプトを出力し、回答をスプレッドシートに保存します"
+                                            >
+                                              <Sparkles className="w-3 h-3 text-purple-400" />
+                                              <span>{isInferenceOpen ? "推論を閉じる" : hasInference ? "💡 推論を確認・更新" : "💡 推論を解明"}</span>
+                                            </button>
+
+                                            <button
+                                              type="button"
+                                              onClick={() => handleDeleteLink(link.id)}
+                                              className="text-[var(--muted)] hover:text-red-400 p-1 rounded hover:bg-red-950/30 cursor-pointer transition-colors"
+                                              title="この因果リンクを削除"
+                                            >
+                                              <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                          </div>
                                         </div>
                                       </div>
 
@@ -1783,13 +1867,21 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
                           className={`p-3 bg-[#161b22] rounded-lg border border-[var(--border2)] space-y-1.5 ${off ? "opacity-40" : ""}`}
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 flex-wrap min-w-0">
-                              {row.status === "new" && <span className="px-1.5 py-0.5 rounded bg-emerald-500/25 text-emerald-300 font-bold text-[9px]">新規エッジ</span>}
-                              {row.status === "known" && <span className="px-1.5 py-0.5 rounded bg-blue-500/25 text-blue-300 font-bold text-[9px]">既存エッジ</span>}
-                              {row.status === "dup" && <span className="px-1.5 py-0.5 rounded bg-[#30363d] text-[var(--muted)] font-bold text-[9px]">取込済み</span>}
-                              <span className="font-bold text-xs text-[var(--bright)]">{row.edge.source}</span>
-                              <ArrowRight className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                              <span className="font-bold text-xs text-[var(--bright)]">{row.edge.target}</span>
+                            <div className="overflow-x-auto pb-0.5 max-w-full" style={{ scrollbarWidth: "thin" }}>
+                              <div className="flex items-center gap-2 min-w-max">
+                                {row.status === "new" && <span className="px-1.5 py-0.5 rounded bg-emerald-500/25 text-emerald-300 font-bold text-[9px] shrink-0 border border-emerald-500/30">新規エッジ</span>}
+                                {row.status === "known" && <span className="px-1.5 py-0.5 rounded bg-blue-500/25 text-blue-300 font-bold text-[9px] shrink-0 border border-blue-500/30">既存エッジ</span>}
+                                {row.status === "dup" && <span className="px-1.5 py-0.5 rounded bg-[#30363d] text-[var(--muted)] font-bold text-[9px] shrink-0">取込済み</span>}
+                                <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-blue-950/60 border border-blue-500/40 text-blue-200 text-xs font-bold shrink-0">
+                                  <span className="text-[9px] text-blue-400 font-mono">原因</span>
+                                  <span>{row.edge.source}</span>
+                                </div>
+                                <ArrowRight className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-emerald-950/60 border border-emerald-500/40 text-emerald-200 text-xs font-bold shrink-0">
+                                  <span className="text-[9px] text-emerald-400 font-mono">結果</span>
+                                  <span>{row.edge.target}</span>
+                                </div>
+                              </div>
                             </div>
                             {row.status !== "dup" && (
                               <label className="flex items-center gap-1 text-[10px] text-[var(--muted)] shrink-0 cursor-pointer">
@@ -1810,11 +1902,34 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
                             )}
                           </div>
                           {row.edge.reason && <p className="text-[11px] text-[var(--text)] leading-relaxed">{row.edge.reason}</p>}
-                          <div className="text-[10px] text-[var(--muted)] flex flex-wrap gap-x-3">
-                            <span>週: {row.p.weekLabel} ({row.p.periodKey})</span>
-                            <span className={row.p.note ? "" : "text-amber-400"}>
-                              参照: {row.p.note ? String((row.p.note as any).title || row.p.note.id) : `ノート未特定${row.edge.articleTitle ? `（${row.edge.articleTitle}）` : ""}`}
-                            </span>
+                          <div className="text-[10px] text-[var(--muted)] flex items-center justify-between gap-2 flex-wrap pt-0.5 border-t border-[var(--border2)]/40">
+                            <div className="flex items-center gap-3">
+                              <span>週: {row.p.weekLabel} ({row.p.periodKey})</span>
+                              <span className={row.p.note ? "" : "text-amber-400"}>
+                                参照: {row.p.note ? String((row.p.note as any).title || row.p.note.id) : `ノート未特定${row.edge.articleTitle ? `（${row.edge.articleTitle}）` : ""}`}
+                              </span>
+                            </div>
+                            {row.p.note && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedArticleLink({
+                                    id: `preview-${row.i}`,
+                                    source: row.edge.source,
+                                    target: row.edge.target,
+                                    periodKey: row.p.periodKey,
+                                    weekLabel: row.p.weekLabel,
+                                    reason: row.edge.reason || "",
+                                    articleTitle: (row.p.note as any).title || row.edge.articleTitle || "",
+                                    articleId: String(row.p.note.id),
+                                  });
+                                }}
+                                className="px-2 py-0.5 rounded bg-blue-950/40 hover:bg-blue-900/60 text-blue-300 border border-blue-500/30 text-[10px] font-semibold flex items-center gap-1 cursor-pointer"
+                              >
+                                <FileText className="w-3 h-3" />
+                                <span>記事を確認</span>
+                              </button>
+                            )}
                           </div>
                         </div>
                       );
@@ -1891,6 +2006,218 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
                 className="px-4 py-1.5 bg-[#238636] hover:bg-[#2ea043] text-white font-bold rounded text-xs cursor-pointer"
               >
                 追加する
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 📄 リンク元記事詳細モーダル */}
+      {selectedArticleLink && (
+        <div
+          className="fixed inset-0 z-[1300] bg-black/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSelectedArticleLink(null);
+          }}
+        >
+          <div className="bg-[#161b22] border border-[var(--border)] rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="p-4 sm:p-5 border-b border-[var(--border)] flex items-start justify-between gap-3 bg-[#0d1117]">
+              <div className="space-y-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[10px] font-bold flex items-center gap-1">
+                    <FileText className="w-3 h-3" />
+                    <span>参照元記事</span>
+                  </span>
+                  {selectedArticleNote?.dateStr && (
+                    <span className="text-xs text-[var(--muted)] flex items-center gap-1 font-mono">
+                      <Calendar className="w-3 h-3 text-gray-400" />
+                      <span>{selectedArticleNote.dateStr}</span>
+                    </span>
+                  )}
+                  {(selectedArticleNote?.columnN || getFolderFromKeywords(selectedArticleNote?.keywords || "")) && (
+                    <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[10px]">
+                      📁 {selectedArticleNote?.columnN || getFolderFromKeywords(selectedArticleNote?.keywords || "")}
+                    </span>
+                  )}
+                  {selectedArticleNote?.rowIndex && (
+                    <span className="text-[10px] text-gray-500 font-mono">
+                      (行 #{selectedArticleNote.rowIndex})
+                    </span>
+                  )}
+                </div>
+                <h2 className="text-sm sm:text-base font-bold text-[var(--bright)] leading-snug break-words">
+                  {selectedArticleNote?.title || selectedArticleLink.articleTitle || "（記事タイトル未設定）"}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedArticleLink(null)}
+                className="text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-[#21262d] transition-colors shrink-0 cursor-pointer"
+                title="閉じる"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body: Scrollable */}
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-4 text-xs">
+              {/* この因果リンクの情報 */}
+              <div className="p-3 bg-[#0d1117] border border-blue-500/30 rounded-xl space-y-1.5">
+                <div className="text-[11px] font-bold text-blue-300 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                  <span>この記事から抽出された因果関係:</span>
+                </div>
+                <div className="overflow-x-auto pb-1 max-w-full" style={{ scrollbarWidth: "thin" }}>
+                  <div className="flex items-center gap-2 min-w-max text-xs pt-0.5">
+                    <span className="font-bold text-blue-300 bg-blue-950/60 px-2.5 py-1 rounded border border-blue-500/40">
+                      【原因】{selectedArticleLink.source}
+                    </span>
+                    <ArrowRight className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span className="font-bold text-emerald-300 bg-emerald-950/60 px-2.5 py-1 rounded border border-emerald-500/40">
+                      【結果】{selectedArticleLink.target}
+                    </span>
+                  </div>
+                </div>
+                {selectedArticleLink.reason && (
+                  <p className="text-[11px] text-gray-300 pt-0.5 leading-relaxed">
+                    <span className="text-gray-400 font-semibold mr-1">因果理由:</span>
+                    {selectedArticleLink.reason}
+                  </p>
+                )}
+                <div className="text-[10px] text-gray-400 flex items-center gap-3 pt-1 border-t border-gray-800">
+                  <span>週: {selectedArticleLink.weekLabel} ({selectedArticleLink.periodKey})</span>
+                  <span>フォルダ: {getLinkFolder(selectedArticleLink)}</span>
+                </div>
+              </div>
+
+              {/* 記事URLリンクがある場合 */}
+              {selectedArticleNote?.sourceUrl && (
+                <div className="flex items-center justify-between gap-2 p-2.5 bg-[#0d1117] border border-[var(--border2)] rounded-lg">
+                  <span className="text-gray-400 truncate text-[11px] font-mono">
+                    {selectedArticleNote.sourceUrl}
+                  </span>
+                  <a
+                    href={selectedArticleNote.sourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded transition flex items-center gap-1 shrink-0"
+                  >
+                    <span>元記事を開く</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              )}
+
+              {/* 記事のAI要約 */}
+              {selectedArticleNote?.summary && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-[var(--bright)] text-xs flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      <span>記事の要約・ポイント:</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        copyText(selectedArticleNote.summary);
+                        onToast?.("要約をクリップボードにコピーしました");
+                      }}
+                      className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Copy className="w-3 h-3" />
+                      <span>要約をコピー</span>
+                    </button>
+                  </div>
+                  <div className="p-3 bg-[#0d1117] border border-[var(--border2)] rounded-xl text-gray-200 text-xs whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto">
+                    {selectedArticleNote.summary}
+                  </div>
+                </div>
+              )}
+
+              {/* 記事本文 / 原文 */}
+              {(selectedArticleNote?.content || selectedArticleNote?.rawContent) && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-[var(--bright)] text-xs flex items-center gap-1.5">
+                      <BookOpen className="w-3.5 h-3.5 text-blue-400" />
+                      <span>記事の本文 / 原文テキスト:</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        copyText(selectedArticleNote.content || selectedArticleNote.rawContent || "");
+                        onToast?.("本文をクリップボードにコピーしました");
+                      }}
+                      className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Copy className="w-3 h-3" />
+                      <span>本文をコピー</span>
+                    </button>
+                  </div>
+                  <div className="p-3 bg-[#0d1117] border border-[var(--border2)] rounded-xl text-gray-300 text-[11px] font-mono whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto">
+                    {selectedArticleNote.content || selectedArticleNote.rawContent}
+                  </div>
+                </div>
+              )}
+
+              {/* ノートが見つからなかった場合 */}
+              {!selectedArticleNote && (
+                <div className="p-4 bg-amber-950/20 border border-amber-500/30 rounded-xl space-y-2 text-amber-300">
+                  <div className="flex items-center gap-1.5 font-bold">
+                    <span>⚠️ ノート詳細がローカルキャッシュにありません</span>
+                  </div>
+                  <p className="text-[11px] text-amber-200/80 leading-relaxed">
+                    因果リンクに記録されているタイトル「{selectedArticleLink.articleTitle || "（不明）"}」
+                    {selectedArticleLink.articleId ? ` (ID: ${selectedArticleLink.articleId})` : ""}
+                    は、現在アプリで読み込まれている直近ノート一覧（{notes.length}件）の中に直接ヒットしませんでした。
+                    スプレッドシートの「CausalLinks」シートまたは取込シートをご確認ください。
+                  </p>
+                </div>
+              )}
+
+              {/* 同じ記事から抽出された他の因果リンク一覧 */}
+              {(() => {
+                const siblingLinks = links.filter(l =>
+                  l.id !== selectedArticleLink.id &&
+                  ((selectedArticleLink.articleId && l.articleId && l.articleId === selectedArticleLink.articleId) ||
+                   (selectedArticleLink.articleTitle && l.articleTitle && l.articleTitle === selectedArticleLink.articleTitle))
+                );
+                if (siblingLinks.length === 0) return null;
+                return (
+                  <div className="space-y-1.5 pt-2 border-t border-[var(--border2)]">
+                    <span className="font-bold text-[var(--bright)] text-xs flex items-center gap-1.5">
+                      <span>この記事から抽出された他の因果リンク ({siblingLinks.length}件):</span>
+                    </span>
+                    <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                      {siblingLinks.map(sl => (
+                        <div key={sl.id} className="p-2 bg-[#0d1117] border border-[var(--border2)] rounded-lg text-[11px] flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                            <span className="text-blue-300 font-bold">{sl.source}</span>
+                            <ArrowRight className="w-3 h-3 text-gray-500 shrink-0" />
+                            <span className="text-emerald-300 font-bold">{sl.target}</span>
+                            <span className="text-gray-400 truncate">({sl.reason})</span>
+                          </div>
+                          <span className="text-[10px] text-gray-500 shrink-0 font-mono">{sl.weekLabel}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Footer */}
+            <div className="p-3 sm:p-4 bg-[#0d1117] border-t border-[var(--border)] flex items-center justify-between">
+              <span className="text-[11px] text-[var(--muted)]">
+                Esc キーまたは枠外クリックで閉じます
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedArticleLink(null)}
+                className="px-4 py-1.5 bg-[#21262d] hover:bg-[#30363d] text-white text-xs font-bold rounded-lg border border-[var(--border2)] cursor-pointer transition"
+              >
+                閉じる
               </button>
             </div>
           </div>
