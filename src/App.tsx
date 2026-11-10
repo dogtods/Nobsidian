@@ -111,6 +111,7 @@ import ConfirmModal from "./components/ConfirmModal";
 import ExternalAiExportModal from "./components/ExternalAiExportModal";
 import SyncManagerModal from "./components/SyncManagerModal";
 import QuestionGenerationModal from "./components/QuestionGenerationModal";
+import ArticleExportModal from "./components/ArticleExportModal";
 import DeepDiveModal from "./components/DeepDiveModal";
 import { MermaidViewer } from "./components/MermaidViewer";
 
@@ -578,6 +579,7 @@ export default function App() {
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isSyncManagerOpen, setIsSyncManagerOpen] = useState(false);
   const [isQuestionModalOpen, setIsQuestionModalOpen] = useState(false);
+  const [isArticleExportModalOpen, setIsArticleExportModalOpen] = useState(false);
   const [isDeepDiveModalOpen, setIsDeepDiveModalOpen] = useState(false);
   const [isImageCropModalOpen, setIsImageCropModalOpen] = useState(false);
   const [cropModalInitialImage, setCropModalInitialImage] = useState<string | null>(null);
@@ -8129,6 +8131,14 @@ const renderMarkdownToElements = (contentStr: string) => {
                       <span className="portrait:hidden">🎓 問題生成</span>
                     </button>
                     <button
+                      onClick={() => setIsArticleExportModalOpen(true)}
+                      className="p-1 px-2 portrait:px-1.5 text-blue-300 hover:bg-blue-500/20 font-semibold text-xs rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all border-l border-[#30363d]"
+                      title="この記事と関連する因果リンク・クイズ・要約をまとめてHTML/PDF出力"
+                    >
+                      <Download className="w-3 h-3 shrink-0 text-blue-400" />
+                      <span className="portrait:hidden">📥 HTML/PDF出力</span>
+                    </button>
+                    <button
                       onClick={() => setIsDeepDiveModalOpen(true)}
                       className="p-1 px-2 portrait:px-1.5 text-sky-300 hover:bg-sky-500/20 font-semibold text-xs rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all border-l border-[#30363d]"
                       title="この記事をさらに深掘りする意味があるか判定・重要論点分析・スプレッドシート蓄積"
@@ -10192,6 +10202,18 @@ const renderMarkdownToElements = (contentStr: string) => {
           setIsSettingsOpen(true);
         }}
       />
+
+      {isArticleExportModalOpen && activeNote && (
+        <ArticleExportModal
+          isOpen={isArticleExportModalOpen}
+          onClose={() => setIsArticleExportModalOpen(false)}
+          note={activeNote}
+          notes={notes}
+          allCausalLinks={[]}
+          allQuestions={[]}
+          onToast={toast}
+        />
+      )}
 
       {isDeepDiveModalOpen && activeNote && (
         <DeepDiveModal
