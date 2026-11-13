@@ -20,6 +20,8 @@ export const PROMPT_KEYS = {
   SYNC_PROMPT: "cn_prompt_sync_prompt",
   WEEKLY_REPORT_PROMPT: "cn_prompt_weekly_report_prompt",
   GRAPH_STRUCTURE: "cn_prompt_graph_structure",
+  NEWS_DRAFT: "cn_prompt_news_draft",
+  NEWS_DRAFT_SINGLE: "cn_prompt_news_draft_single",
 };
 
 export const DEFAULT_PROMPTS = {
@@ -205,6 +207,67 @@ export const DEFAULT_PROMPTS = {
 {notesSummary}
 
 上記の情報を踏まえ、指定キーワードが各タイミングで多く言及された背景と文脈について、見出しや箇条書きを用いて分かりやすく論理的に解説してください。`,
+  NEWS_DRAFT: `あなたはプロのニュース編集長・シニアアナリストです。
+以下の【対象記事一覧】（{targetScope}にまとめられた計{count}件の記事群）を横断的に精読・分析し、全体の潮流と各記事のポイントを完璧に把握できる、完成度の高い『ニュース原稿（総合ダイジェスト）』を作成してください。
+
+【ニュース原稿の構成ルール】
+必ず以下のMarkdown見出し構成に従って、プロのキャスターが読み上げるような自然で洗練された日本語、またはエグゼクティブ向けブリーフィング原稿として出力してください。
+
+# 【ニュース原稿】{targetName} トピックスダイジェスト（{count}件まとめ）
+
+## 【ニュースリード（概要）】
+- 今回収録された記事群全体の最も重要なポイントと、背後にある大きな業界動向・社会的トレンドを、ニュース番組のオープニングやメルマガ・ブリーフィングの冒頭のように、わかりやすく引き込まれる文章（3〜5文程度）で記述してください。
+
+## 【重要キーワード・注目トピックス】
+- 記事群を象徴する重要キーワードやトピックスを箇条書きで3〜5個抽出してください。
+
+## 1. トップニュース・全体トレンド
+- 最も重要度が高い主要トピックと、それらが示唆する全体的な潮流や今後の影響度を詳しく解説してください。
+
+## 2. 各記事のニュースダイジェスト・要点解説
+- 収録されている全{count}件の記事について、漏れなく各記事のポイントを整理してください。
+- 各記事の見出しには必ず記事タイトルを入れ、記事内の重要な用語やコンセプトには [[用語や関連タイトル]] 形式のWikiリンク記法を自然に交えて記述してください：
+
+### ▶ [[記事タイトル]]
+- **要点・キーファクト**: 記事の核心内容を2〜3点で箇条書き
+- **背景・詳細解説**: なぜこのニュースが重要なのか、背景情報や具体的数値、関連動向を交えて解説
+
+## 3. 記事間の横断的つながり・考察
+- 記事同士の共通テーマ、因果関係、相乗効果、または対立する視点・課題を横断的に比較・分析してください。
+
+## 4. 今後の注目ポイント・見通し
+- 今回の動向を受けて、今後どのような変化や次の展開が予想されるか、注視すべきポイントやアクションプランをまとめてください。
+{extraInstructions}
+
+【対象記事一覧】
+{notesText}
+{existingTitlesSection}`,
+  NEWS_DRAFT_SINGLE: `あなたはプロのニュース編集長・キャスターです。
+以下の【対象記事】を精読・分析し、ニュース番組の原稿や解説記事として完成された『ニュース原稿（記事ダイジェスト）』を作成してください。
+
+【ニュース原稿の構成ルール】
+# 【ニュース原稿】{title}
+
+## 【ニュースリード（概要）】
+- キャスターが読み上げるような自然で引き込まれる2〜3文のリード文章で、このニュースの最大のポイントと社会的・業界的インパクトを記述してください。
+
+## 【重要キーワード・キーファクト】
+- 重要な用語や、記事内の具体的な数値・日付・固有名詞を箇条書きで3〜5点抽出してください。
+
+## 1. ニュースの背景・核心詳細解説
+- なぜ今このニュースが重要なのか、背景事情やこれまでの経緯、詳細なファクトをわかりやすく解説してください。
+
+## 2. 今後の注目ポイント・見通し
+- 今後どのような展開や影響が予想されるか、注視すべきポイントをまとめてください。
+{extraInstructions}
+
+【対象記事】
+タイトル: {title}
+本文:
+"""
+{content}
+"""
+{existingTitlesSection}`,
 };
 
 export function getStoredPrompt(key: keyof typeof DEFAULT_PROMPTS): string {
@@ -233,6 +296,7 @@ export default function PromptSettingsModal({ isOpen, onClose, onSettingsClick, 
   const [organizeFolderPrompt, setOrganizeFolderPrompt] = useState("");
   const [findRelatedPrompt, setFindRelatedPrompt] = useState("");
   const [streamAnalysisPrompt, setStreamAnalysisPrompt] = useState("");
+  const [newsDraftPrompt, setNewsDraftPrompt] = useState("");
 
   const [aiOptSummary, setAiOptSummary] = useState(false);
   const [aiOptSkipKeywords, setAiOptSkipKeywords] = useState(true);
@@ -253,6 +317,7 @@ export default function PromptSettingsModal({ isOpen, onClose, onSettingsClick, 
       setOrganizeFolderPrompt(getStoredPrompt("ORGANIZE_FOLDER"));
       setFindRelatedPrompt(getStoredPrompt("FIND_RELATED"));
       setStreamAnalysisPrompt(getStoredPrompt("STREAM_ANALYSIS"));
+      setNewsDraftPrompt(getStoredPrompt("NEWS_DRAFT"));
 
       setAiOptSummary(localStorage.getItem("cn_ai_opt_summary") === "true");
       const skipKw = localStorage.getItem("cn_ai_opt_skip_keywords");
@@ -275,6 +340,7 @@ export default function PromptSettingsModal({ isOpen, onClose, onSettingsClick, 
     localStorage.setItem(PROMPT_KEYS.ORGANIZE_FOLDER, organizeFolderPrompt);
     localStorage.setItem(PROMPT_KEYS.FIND_RELATED, findRelatedPrompt);
     localStorage.setItem(PROMPT_KEYS.STREAM_ANALYSIS, streamAnalysisPrompt);
+    localStorage.setItem(PROMPT_KEYS.NEWS_DRAFT, newsDraftPrompt);
 
     localStorage.setItem("cn_ai_opt_summary", String(aiOptSummary));
     localStorage.setItem("cn_ai_opt_skip_keywords", String(aiOptSkipKeywords));
@@ -306,6 +372,7 @@ export default function PromptSettingsModal({ isOpen, onClose, onSettingsClick, 
     setOrganizeFolderPrompt(DEFAULT_PROMPTS.ORGANIZE_FOLDER);
     setFindRelatedPrompt(DEFAULT_PROMPTS.FIND_RELATED);
     setStreamAnalysisPrompt(DEFAULT_PROMPTS.STREAM_ANALYSIS);
+    setNewsDraftPrompt(DEFAULT_PROMPTS.NEWS_DRAFT);
 
     setAiOptSummary(false);
     setAiOptSkipKeywords(true);
@@ -428,6 +495,25 @@ export default function PromptSettingsModal({ isOpen, onClose, onSettingsClick, 
               rows={8}
               value={analyzeBulkPrompt}
               onChange={(e) => setAnalyzeBulkPrompt(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] text-[var(--subtle)] font-bold">NEWS_DRAFT (外部AI用ニュース原稿作成プロンプト)</label>
+              <button
+                type="button"
+                onClick={() => handleDownloadPrompt("NEWS_DRAFT_PROMPT", newsDraftPrompt)}
+                className="text-[10px] text-[var(--purple)] hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <span>📥 ダウンロード</span>
+              </button>
+            </div>
+            <textarea
+              className="w-full font-mono text-xs p-2 bg-[var(--bg)] border border-[var(--border2)] rounded-md text-[var(--text)] outline-none focus:border-[var(--purple)] transition-all resize-y"
+              rows={8}
+              value={newsDraftPrompt}
+              onChange={(e) => setNewsDraftPrompt(e.target.value)}
             />
           </div>
 

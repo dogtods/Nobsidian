@@ -62,6 +62,8 @@ interface ImportModalProps {
     targetSheetName?: string;
     targetSsUrl?: string;
     autoReloadApp?: boolean;
+    createBatchDigest?: boolean;
+    generateNewsDraft?: boolean;
   }) => Promise<any>;
   onSyncFromServer?: () => Promise<any>;
   syncStatus?: "idle" | "syncing" | "saved" | "error" | "offline" | "synced";
@@ -345,7 +347,7 @@ export default function ImportModal({
       syncPrompt: syncPromptInput || getStoredPrompt("SYNC_PROMPT"),
       weeklyReportPrompt: weeklyReportPromptInput || getStoredPrompt("WEEKLY_REPORT_PROMPT"),
       targetSheetName: targetExtSheet,
-      targetSsUrl: extractSheetUrl.trim()
+      targetSsUrl: extractSheetUrl.trim(),
     };
 
     try {
@@ -468,13 +470,24 @@ export default function ImportModal({
       if (!cleanedUrl || cleanedUrl.includes("YOUR_")) {
         throw new Error("① GAS WebアプリURL を設定してください");
       }
+
+      const currentApiKey = (geminiApiKeyInput.trim() || localStorage.getItem("cn_gemini_key") || "").trim();
+      const currentModel = (geminiModelInput.trim() || localStorage.getItem("cn_gemini_model") || "gemini-2.5-flash").trim();
+
       const res = await fetchGasPost(cleanedUrl, {
         action: "importRawRowsToApp",
         sourceSsId,
         sheetName: extractSheetName.trim(),
         targetSsId,
         targetSheetName,
-        rowIndices
+        rowIndices,
+        options: {
+          geminiApiKey: currentApiKey,
+          geminiModel: currentModel,
+          persona: syncPersonaInput || getStoredPrompt("SYSTEM_PERSONA"),
+          syncPrompt: syncPromptInput || getStoredPrompt("SYNC_PROMPT"),
+          optimizeTitle: optimizeTitle
+        }
       });
 
       if (!res.success) throw new Error(res.error || "インポートに失敗しました");
@@ -485,6 +498,13 @@ export default function ImportModal({
       setPendingSheetItems([]);
       setSelectedIndices([]);
       onClose();
+
+      // 自動でアプリ内の表示データを最新化
+      if (onSyncFromServer) {
+        setTimeout(() => {
+          onSyncFromServer();
+        }, 500);
+      }
     } catch (e: any) {
       onSaveToast("インポートエラー: " + e.message);
     } finally {
@@ -611,7 +631,7 @@ export default function ImportModal({
               });
 
               onNotesUpdateBatch(notes, overwriteBatch);
-              onSaveToast(`${notes.length}件のJSONノートを取り込みました ✦`);
+              onSaveToast(`${notes.length}件のノートを取り込みました ✦`);
               onClose();
               return;
             } else {
@@ -1641,7 +1661,7 @@ export default function ImportModal({
                     </div>
 
                     <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#30363d]">
-                      <div className="flex items-center gap-3">
+                      <div className="flex flex-wrap items-center gap-3">
                         <label className="flex items-center gap-1.5 text-[11px] text-gray-300 cursor-pointer">
                           <input
                             type="checkbox"

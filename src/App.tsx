@@ -1662,11 +1662,16 @@ export default function App() {
   const handleSyncExternalSources = async (options: { 
     raindrop: boolean; 
     drive: boolean; 
+    driveSourceFolder?: string;
+    driveProcessedFolder?: string;
     persona?: string; 
     syncPrompt?: string; 
     weeklyReportPrompt?: string; 
     targetSheetName?: string;
     targetSsUrl?: string;
+    createBatchDigest?: boolean;
+    generateNewsDraft?: boolean;
+    autoReloadApp?: boolean;
   }) => {
     const url = getApiUrl();
     if (!url || url.includes("YOUR_") || url.includes("YOUR_GAS_URL")) {
@@ -3688,8 +3693,8 @@ const renderMarkdownToElements = (contentStr: string) => {
     }
   };
 
-  const buildAnalysisPrompt = (activeNote: Note, options: { allTitles?: boolean; taskBacklink?: boolean; taskAnalysis?: boolean; taskStructure?: boolean } = {}): string => {
-    const { allTitles = false, taskBacklink = true, taskAnalysis = true, taskStructure = false } = options;
+  const buildAnalysisPrompt = (activeNote: Note, options: { allTitles?: boolean; taskBacklink?: boolean; taskAnalysis?: boolean; taskStructure?: boolean; taskNewsDraft?: boolean } = {}): string => {
+    const { allTitles = false, taskBacklink = true, taskAnalysis = true, taskStructure = false, taskNewsDraft = false } = options;
     const optimizeEnabled = localStorage.getItem("cn_optimize_api_tokens") !== "false";
     const maxCandidatesLimit = parseInt(localStorage.getItem("cn_max_candidates_limit") || "20", 10);
     const maxContentLength = parseInt(localStorage.getItem("cn_max_content_length") || "2500", 10);
@@ -3751,6 +3756,26 @@ const renderMarkdownToElements = (contentStr: string) => {
     const skipKw = localStorage.getItem("cn_ai_opt_skip_keywords");
     const optSkipKeywords = skipKw === null ? true : skipKw === "true";
 
+    // ニュース原稿モード（単体ノート）
+    if (options.taskNewsDraft) {
+      let extraInstructions = "";
+      if (taskStructure) {
+        extraInstructions += `\n\n## 3. 構造化図解（Mermaid）\n- 本文の比較・時系列・因果関係を示すMermaid図（flowchart または timeline）を作成してください。`;
+      }
+      let existingTitlesSection = "";
+      if (taskBacklink) {
+        existingTitlesSection = `\n\n【既存ノートのタイトル一覧（関連チェック用）】\n"""\n${existingTitles}\n"""`;
+        extraInstructions += `\n- 解説の中で関連する既存ノートを [[記事タイトル]] 形式で自然にリンクしてください。`;
+      }
+      const template = getStoredPrompt("NEWS_DRAFT_SINGLE") || DEFAULT_PROMPTS.NEWS_DRAFT_SINGLE;
+      return template
+        .replace(/{title}/g, activeNote.title)
+        .replace(/{content}/g, compressedContent)
+        .replace(/{extraInstructions}/g, extraInstructions)
+        .replace(/{existingTitlesSection}/g, existingTitlesSection)
+        .trim();
+    }
+
     let hasKeywords = false;
     if (activeNote.keywords) {
       const clean = activeNote.keywords.replace(/\[folder:(.+?)\]/, "").trim();
@@ -3804,18 +3829,92 @@ const renderMarkdownToElements = (contentStr: string) => {
     if (taskBacklink) {
       prompt = prompt.replace("{existingTitles}", existingTitles || "（まだ他のノートはありません）");
     } else {
-      prompt = prompt.replace("{existingTitles}", "");
+      prompt = prompt
+        .replace(/\n*【既存ノートのタイトル一覧[\s\S]*$/g, "")
+        .replace("{existingTitles}", "")
+        .trim();
     }
     return prompt;
   };
 
-  const buildBulkAnalysisPrompt = (targetNotesList: Note[], options: { allTitles?: boolean; taskBacklink?: boolean; taskAnalysis?: boolean; taskStructure?: boolean } = {}): string => {
-    const { allTitles = false, taskBacklink = true, taskAnalysis = true, taskStructure = false } = options;
+  const buildBulkAnalysisPrompt = (
+    targetNotesList: Note[],
+    options: {
+      allTitles?: boolean;
+      taskBacklink?: boolean;
+      taskAnalysis?: boolean;
+      taskStructure?: boolean;
+      taskNewsDraft?: boolean;
+      targetName?: string;
+    } = {}
+  ): string => {
+    const {
+      allTitles = false,
+      taskBacklink = false,
+      taskAnalysis = false,
+      taskStructure = false,
+      taskNewsDraft = false,
+      targetName = "指定フォルダ"
+    } = options;
     const optimizeEnabled = localStorage.getItem("cn_optimize_api_tokens") !== "false";
     const maxContentLength = parseInt(localStorage.getItem("cn_max_content_length") || "2500", 10);
-    
-    const optSummary = localStorage.getItem("cn_ai_opt_summary") === "true";
 
+    // 1. ニュース原稿モード（当該フォルダ内の記事群を1本に集約した外部AI用プロンプト）
+    if (taskNewsDraft) {
+      let notesText = "";
+      targetNotesList.forEach((activeNote, idx) => {
+        const compressedContent = compressContent(activeNote.content, Math.min(maxContentLength, 1500));
+        const dateStr = activeNote.dateStr ? ` (日付: ${activeNote.dateStr})` : "";
+        const folder = getFolder(activeNote);
+        notesText += `\n---\n[記事${idx + 1}] ID: ${activeNote.id}\nタイトル: ${activeNote.title}${dateStr}\nフォルダ: ${folder}\n本文:\n"""\n${compressedContent}\n"""\n`;
+      });
+
+      let extraInstructions = "";
+      if (taskStructure) {
+        extraInstructions += `\n\n## 5. 記事群の構造化図解（Mermaid）
+- 記事群の相互関係・因果関係や時系列推移を、理解しやすい完全なMermaid記法の図（flowchart または timeline）として出力してください。
+- Mermaidコードブロックの先頭には必ず次のinit行を入れてください:
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#1f6feb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#ffffff', 'lineColor': '#58a6ff', 'textColor': '#ffffff', 'background': '#0d1117', 'mainBkg': '#0d1117', 'nodeBorder': '#ffffff', 'clusterBkg': '#0d1117', 'edgeLabelBackground':'#0d1117', 'fontSize': '16px' }}}%%`;
+      }
+
+      if (taskAnalysis) {
+        extraInstructions += `\n\n## 【付録：システム連携用JSON配列】
+- アプリへの反映・個別メタデータ保存用として、ニュース原稿の後に以下のJSON配列ブロックを出力してください：
+\`\`\`json
+[
+  {
+    "id": "記事のID",
+    "keywords": ["キーワード1", "キーワード2", "キーワード3"],
+    "summary": "この記事の要点を2〜3文で要約"
+  }
+]
+\`\`\``;
+      }
+
+      let existingTitlesSection = "";
+      if (taskBacklink) {
+        const existingTitles = notes
+          .map(n => `- ${n.title}`)
+          .join("\n");
+        existingTitlesSection = `\n\n【既存ノートのタイトル一覧（バックリンク・関連チェック用）】\n"""\n${existingTitles}\n"""`;
+        extraInstructions += `\n- 各記事の要点解説や考察の中で、上記【既存ノートのタイトル一覧】から関連する記事を探し出し、[[記事タイトル]] のWikiリンク記法で自然に言及してください。`;
+      }
+
+      const template = getStoredPrompt("NEWS_DRAFT") || DEFAULT_PROMPTS.NEWS_DRAFT;
+      const prompt = template
+        .replace(/{targetName}/g, targetName)
+        .replace(/{count}/g, String(targetNotesList.length))
+        .replace(/{targetScope}/g, `フォルダ「${targetName}」`)
+        .replace(/{extraInstructions}/g, extraInstructions)
+        .replace(/{notesText}/g, notesText)
+        .replace(/{existingTitlesSection}/g, existingTitlesSection)
+        .trim();
+
+      return prompt;
+    }
+
+    // 2. 従来の個別JSON分析モード
+    const optSummary = localStorage.getItem("cn_ai_opt_summary") === "true";
     const jsonFields: string[] = [];
     const instructions: string[] = [];
 
@@ -3858,26 +3957,34 @@ const renderMarkdownToElements = (contentStr: string) => {
        notesText += `\n---\nID: ${activeNote.id}\nタイトル: ${activeNote.title}\n本文:\n"""\n${compressedContent}\n"""\n`;
     });
 
-    const existingTitles = notes
-      .map(n => {
-        if (optimizeEnabled) {
-          const folder = getFolder(n);
-          let kws = n.keywords || "";
-          kws = kws.replace(/\[folder:(.+?)\]/g, "").trim();
-          const kwStr = kws ? `, キーワード: ${kws}` : "";
-          return `- ${n.title} (フォルダ: ${folder}${kwStr})`;
-        } else {
-          return `- ${n.title}`;
-        }
-      })
-      .join("\n");
-
     const template = getStoredPrompt("ANALYZE_BULK");
-    return template
+    let prompt = template
       .replace("{notesText}", notesText)
-      .replace("{instructions}", instructions.join("\n"))
-      .replace("{jsonFields}", jsonFields.join(",\n"))
-      .replace("{existingTitles}", existingTitles || "（まだ他のノートはありません）");
+      .replace("{instructions}", taskBacklink ? "- 上記の【対象のメモ一覧】と、最後にある【既存ノートのタイトル一覧】を必ず最後まで読み込んでから処理を開始してください。\n" + instructions.join("\n") : instructions.join("\n"))
+      .replace("{jsonFields}", jsonFields.join(",\n"));
+
+    if (taskBacklink) {
+      const existingTitles = notes
+        .map(n => {
+          if (optimizeEnabled) {
+            const folder = getFolder(n);
+            let kws = n.keywords || "";
+            kws = kws.replace(/\[folder:(.+?)\]/g, "").trim();
+            const kwStr = kws ? `, キーワード: ${kws}` : "";
+            return `- ${n.title} (フォルダ: ${folder}${kwStr})`;
+          } else {
+            return `- ${n.title}`;
+          }
+        })
+        .join("\n");
+      prompt = prompt.replace("{existingTitles}", existingTitles || "（まだ他のノートはありません）");
+    } else {
+      prompt = prompt
+        .replace(/\n*【既存ノートのタイトル一覧[\s\S]*$/g, "")
+        .replace("{existingTitles}", "")
+        .trim();
+    }
+    return prompt;
   };
 
   const handleApplyExternalJSON = () => {
@@ -3994,13 +4101,60 @@ const renderMarkdownToElements = (contentStr: string) => {
     setExternalExportTarget({ type: 'folder', folderName });
   };
 
-  const copyAIPromptForMajor = (majorName: string) => {
+
+  // フォルダごとの要約・本文を一括ダウンロードするハンドラー
+  const handleDownloadFolderNotesSidebar = (folderName: string) => {
+    const folderNotes = notes.filter(n => getFolder(n) === folderName);
+    if (folderNotes.length === 0) {
+      toast(`フォルダ「${folderName}」にノートがありません。`);
+      return;
+    }
+    let content = `# フォルダ「${folderName}」 記事・要約まとめ (${folderNotes.length}件)\n`;
+    content += `出力日時: ${new Date().toLocaleString()}\n\n`;
+    content += "==================================================\n\n";
+
+    folderNotes.forEach((n, idx) => {
+      const title = String(n.title || "無題").trim();
+      const dateStr = n.dateStr || "";
+      const summary = String(n.summary || "").trim();
+      const body = String(n.content || n.rawContent || "").trim();
+      const url = n.sourceUrl || "";
+
+      content += `[${idx + 1}] タイトル: ${title}\n`;
+      if (dateStr) content += `日付: ${dateStr}\n`;
+      if (url) content += `URL: ${url}\n`;
+      content += "\n【AI要約・ポイント】\n";
+      content += (summary || "（要約なし）") + "\n\n";
+      content += "【本文 / 原文】\n";
+      content += (body || "（本文なし）") + "\n";
+      content += "\n--------------------------------------------------\n\n";
+    });
+
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const safeName = folderName.replace(/[\/\?%*:|"<>]/g, "_");
+    a.href = url;
+    a.download = `folder_notes_${safeName}_${new Date().toISOString().slice(0, 10)}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    toast(`フォルダ「${folderName}」の要約・本文 (${folderNotes.length}件) をテキストファイルでダウンロードしました！`);
+  };
+
+    const copyAIPromptForMajor = (majorName: string) => {
     const majorNotes = notes.filter(n => parseCategory(getFolder(n)).major === majorName);
     if (majorNotes.length === 0) return toast("ノートがありません");
     setExternalExportTarget({ type: 'major', majorName });
   };
 
-  const handleExternalAiExport = async (options: { includeAll: boolean; taskBacklink: boolean; taskAnalysis: boolean; taskStructure: boolean }) => {
+  const handleExternalAiExport = async (options: {
+    includeAll: boolean;
+    taskBacklink: boolean;
+    taskAnalysis: boolean;
+    taskStructure: boolean;
+    taskNewsDraft?: boolean;
+  }) => {
     const target = externalExportTarget;
     setExternalExportTarget(null);
     if (!target) return;
@@ -4013,20 +4167,25 @@ const renderMarkdownToElements = (contentStr: string) => {
         allTitles: options.includeAll,
         taskBacklink: options.taskBacklink,
         taskAnalysis: options.taskAnalysis,
-        taskStructure: options.taskStructure
+        taskStructure: options.taskStructure,
+        taskNewsDraft: options.taskNewsDraft,
       });
       
       const blob = new Blob([prompt], { type: 'text/plain;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Prompt_AI_Analysis_${active.title.replace(/[\\/:*?"<>|]/g, "_").substring(0, 30)}.txt`;
+      const prefix = options.taskNewsDraft ? "NewsDraft_Prompt_" : "Prompt_AI_Analysis_";
+      a.download = `${prefix}${active.title.replace(/[\\/:*?"<>|]/g, "_").substring(0, 30)}.txt`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      await copyToClipboard(prompt, "プロンプトをコピーし、テキストファイルとしてもダウンロードしました ✦");
+      const msg = options.taskNewsDraft
+        ? "ニュース原稿プロンプトをコピー・ダウンロードしました ✦"
+        : "プロンプトをコピーし、テキストファイルとしてもダウンロードしました ✦";
+      await copyToClipboard(prompt, msg);
     } else if (target.type === 'folder') {
       const folderNotes = notes.filter(n => getFolder(n) === target.folderName && n.content.trim().length >= 15);
       if (folderNotes.length === 0) return toast("出力できるノートがありません（内容が短すぎます）");
@@ -4035,7 +4194,9 @@ const renderMarkdownToElements = (contentStr: string) => {
         allTitles: options.includeAll,
         taskBacklink: options.taskBacklink,
         taskAnalysis: options.taskAnalysis,
-        taskStructure: options.taskStructure
+        taskStructure: options.taskStructure,
+        taskNewsDraft: options.taskNewsDraft,
+        targetName: target.folderName,
       });
 
       const blob = new Blob([prompt], { type: 'text/plain;charset=utf-8' });
@@ -4043,13 +4204,17 @@ const renderMarkdownToElements = (contentStr: string) => {
       const a = document.createElement('a');
       a.href = url;
       const safeFolderName = target.folderName.replace(/[\\/:*?"<>|]/g, "_");
-      a.download = `Bulk_Prompt_${safeFolderName}.txt`;
+      const prefix = options.taskNewsDraft ? "NewsDraft_Prompt_" : "Bulk_Prompt_";
+      a.download = `${prefix}${safeFolderName}.txt`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       
-      await copyToClipboard(prompt, `フォルダ「${target.folderName}」用の一括プロンプトをコピー・ダウンロードしました ✦`);
+      const msg = options.taskNewsDraft
+        ? `フォルダ「${target.folderName}」のニュース原稿プロンプトをコピー・ダウンロードしました ✦`
+        : `フォルダ「${target.folderName}」用の一括プロンプトをコピー・ダウンロードしました ✦`;
+      await copyToClipboard(prompt, msg);
     } else if (target.type === 'major') {
       const majorNotes = notes.filter(n => parseCategory(getFolder(n)).major === target.majorName && n.content.trim().length >= 15);
       if (majorNotes.length === 0) return toast("出力できるノートがありません（内容が短すぎます）");
@@ -4058,7 +4223,9 @@ const renderMarkdownToElements = (contentStr: string) => {
         allTitles: options.includeAll,
         taskBacklink: options.taskBacklink,
         taskAnalysis: options.taskAnalysis,
-        taskStructure: options.taskStructure
+        taskStructure: options.taskStructure,
+        taskNewsDraft: options.taskNewsDraft,
+        targetName: `大項目「${target.majorName}」`,
       });
 
       const blob = new Blob([prompt], { type: 'text/plain;charset=utf-8' });
@@ -4066,13 +4233,17 @@ const renderMarkdownToElements = (contentStr: string) => {
       const a = document.createElement('a');
       a.href = url;
       const safeMajorName = target.majorName.replace(/[\\/:*?"<>|]/g, "_");
-      a.download = `Bulk_Prompt_Major_${safeMajorName}.txt`;
+      const prefix = options.taskNewsDraft ? "NewsDraft_Prompt_Major_" : "Bulk_Prompt_Major_";
+      a.download = `${prefix}${safeMajorName}.txt`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       
-      await copyToClipboard(prompt, `大項目「${target.majorName}」全体の一括プロンプトをコピー・ダウンロードしました ✦`);
+      const msg = options.taskNewsDraft
+        ? `大項目「${target.majorName}」全体のニュース原稿プロンプトをコピー・ダウンロードしました ✦`
+        : `大項目「${target.majorName}」全体の一括プロンプトをコピー・ダウンロードしました ✦`;
+      await copyToClipboard(prompt, msg);
     }
   };
 
@@ -7564,14 +7735,14 @@ const renderMarkdownToElements = (contentStr: string) => {
 
                   <div className="flex items-center gap-1.5 shrink-0">
                     {/* 外部AI用プロンプト一括出力ボタン (大項目全体) */}
-                    {!isMajorCollapsed && majorGroup.totalCount >= 2 && (
+                    {!isMajorCollapsed && majorGroup.totalCount >= 1 && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           copyAIPromptForMajor(majorName);
                         }}
                         className="bg-green-900/40 border border-green-500/20 hover:bg-green-600 hover:text-white p-1 rounded text-green-400 cursor-pointer flex items-center justify-center gap-1 px-1.5 transition-all text-[9px] shrink-0"
-                        title={`大項目「${majorName}」全体の外部AI用プロンプト一括出力`}
+                        title={`大項目「${majorName}」全体の外部AI用プロンプト一括出力（ニュース原稿作成対応）`}
                       >
                         <Download className="w-3 h-3 text-green-300" />
                         <span>AI出力</span>
@@ -7682,16 +7853,17 @@ const renderMarkdownToElements = (contentStr: string) => {
                             </span>
 
                             <div className="flex items-center gap-1 shrink-0">
-                              {!isSubCollapsed && sub.notes.length >= 2 && (
+                              {!isSubCollapsed && sub.notes.length >= 1 && (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     copyAIPromptForFolder(sub.fullName);
                                   }}
-                                  className="bg-green-900/30 border border-green-500/20 hover:bg-green-600 hover:text-white p-0.5 px-1 rounded text-green-400 text-[8.5px] cursor-pointer"
-                                  title={`小項目「${sub.minor}」のAIプロンプト出力`}
+                                  className="bg-green-900/30 border border-green-500/20 hover:bg-green-600 hover:text-white p-0.5 px-1.5 rounded text-green-400 text-[8.5px] cursor-pointer flex items-center gap-0.5 transition-all"
+                                  title={`フォルダ「${sub.minor}」のAI出力（ニュース原稿プロンプト）`}
                                 >
-                                  AI
+                                  <Download className="w-2.5 h-2.5 text-green-300" />
+                                  <span>AI出力</span>
                                 </button>
                               )}
                               {!isSubCollapsed && sub.notes.length >= 2 && (
@@ -9946,11 +10118,25 @@ const renderMarkdownToElements = (contentStr: string) => {
           isOpen={externalExportTarget !== null}
           onClose={() => setExternalExportTarget(null)}
           onExport={handleExternalAiExport}
+          onDownloadTextOnly={
+            externalExportTarget.type === 'folder'
+              ? () => handleDownloadFolderNotesSidebar(externalExportTarget.folderName)
+              : (externalExportTarget.type === 'major'
+                  ? () => handleDownloadFolderNotesSidebar(externalExportTarget.majorName)
+                  : undefined)
+          }
           isBulk={externalExportTarget.type === 'folder' || externalExportTarget.type === 'major'}
           targetName={
             externalExportTarget.type === 'major'
               ? `大項目「${externalExportTarget.majorName}」全体`
               : (externalExportTarget.type === 'folder' ? externalExportTarget.folderName : undefined)
+          }
+          notesCount={
+            externalExportTarget.type === 'folder'
+              ? notes.filter(n => getFolder(n) === externalExportTarget.folderName).length
+              : (externalExportTarget.type === 'major'
+                  ? notes.filter(n => parseCategory(getFolder(n)).major === externalExportTarget.majorName).length
+                  : 1)
           }
         />
       )}

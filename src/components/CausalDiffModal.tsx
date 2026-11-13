@@ -610,7 +610,8 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
     setTimeout(() => setCopyMsg(""), 3000);
   };
 
-  const handleDownloadPrompt = () => {
+
+    const handleDownloadPrompt = () => {
     const blob = new Blob([externalPrompt], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1780,6 +1781,7 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
                 >
                   <Download className="w-3.5 h-3.5 text-blue-400" /> .txt で保存
                 </button>
+
                 {copyMsg && <span className="text-xs text-emerald-400 font-bold flex items-center gap-1"><Check className="w-3.5 h-3.5" />{copyMsg}</span>}
               </div>
               <p className="text-[11px] text-[var(--muted)]">

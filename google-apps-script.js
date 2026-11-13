@@ -2481,7 +2481,8 @@ function processApiRequest(e) {
       result = fetchDriveFile(postData.url);
     } else if (action === "importRawRowsToApp") {
       const rowIndices = typeof postData.rowIndices === "string" ? JSON.parse(postData.rowIndices) : postData.rowIndices;
-      result = importRawRowsToApp(postData.sourceSsId, postData.sheetName, postData.targetSsId, postData.targetSheetName, rowIndices);
+      const options = postData.options || {};
+      result = importRawRowsToApp(postData.sourceSsId, postData.sheetName, postData.targetSsId, postData.targetSheetName, rowIndices, options);
     } else if (action === "fetchUnprocessedHighlights") {
       result = fetchUnprocessedHighlights(postData.sourceSsId, postData.sheetName);
     } else if (action === "markHighlightsProcessed") {
@@ -3967,7 +3968,7 @@ function authorizeDrivePermissions() {
   return "✅ Google Driveの新規フォルダ作成・保存権限の承認が正常に完了しました！";
 }
 
-function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, rowIndices) {
+function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, rowIndices, options) {
   try {
     const srcSs = SpreadsheetApp.openById(sourceSsId);
     const srcSheet = srcSs.getSheetByName(sheetName);
@@ -4041,11 +4042,9 @@ function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, 
     }
 
     if (newRows.length > 0) {
-      // 1回のsetValuesで対象シートへ一括書き込み（50行でも0.3秒で完了）
       const targetStartRow = targetSheet.getLastRow() + 1;
       targetSheet.getRange(targetStartRow, 1, newRows.length, 16).setValues(newRows);
 
-      // 取込元シートのG/H列（nobsidian）をインメモリで更新し、1回のsetValuesで一括反映
       for (const rIdx of updatedRowIndices) {
         srcData[rIdx - 1][nColIdx] = "IMPORTED";
       }
@@ -4054,7 +4053,13 @@ function importRawRowsToApp(sourceSsId, sheetName, targetSsId, targetSheetName, 
       SpreadsheetApp.flush();
     }
 
-    return { success: true, count: newRows.length };
+    return { 
+      success: true, 
+      count: updatedRowIndices.length, 
+      hasDigest: false, 
+      digestTitle: "", 
+      lotName: currentLotName 
+    };
   } catch (err) {
     return { success: false, error: err.message };
   }
