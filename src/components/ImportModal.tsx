@@ -613,8 +613,10 @@ export default function ImportModal({
                 const sourceUrl = item.sourceUrl || item.url || item.link || item.source || "";
                 const rawContentText = item.rawContent || item.raw || item.rawText || item.columnJ || item.fullText || "";
 
+                const uniqueImportId = `imported_${Date.now()}_${Math.random().toString(36).substring(2, 9)}_${idx}`;
+
                 return {
-                  id: String(item.id || item.noteId || item.uuid || `note_json_${Date.now()}_${idx}`),
+                  id: uniqueImportId,
                   title,
                   content,
                   summary,
