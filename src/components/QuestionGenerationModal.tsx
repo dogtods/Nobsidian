@@ -183,6 +183,7 @@ export default function QuestionGenerationModal({
   const [isQuizAnswerRevealed, setIsQuizAnswerRevealed] = useState<boolean>(false);
   const [externalAiQuestionInput, setExternalAiQuestionInput] = useState<string>("");
   const [showExternalAiPromptBox, setShowExternalAiPromptBox] = useState<boolean>(false);
+  const [selectedPromptStyle, setSelectedPromptStyle] = useState<"essence" | "diagram" | "life" | "diagnosis">("essence");
   const [pastedExplanation, setPastedExplanation] = useState<string>("");
   const [isSavingExplanationToSheet, setIsSavingExplanationToSheet] = useState<boolean>(false);
   const [isSessionCompleted, setIsSessionCompleted] = useState<boolean>(false);
@@ -2824,12 +2825,47 @@ export default function QuestionGenerationModal({
                                     placeholder="例: 正解と選択肢Bの概念の違いを対比させてください。矢印を使った因果フローで図解してください。"
                                     className="w-full p-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-xs text-white outline-none focus:border-indigo-500 leading-relaxed placeholder:text-gray-600"
                                   />
-                                  <div className="flex flex-wrap items-center justify-end gap-2">
-                                    {/* Button 1: Visual Diagram Prompt */}
+                                  {/* Target Question Preview Card (What problem is being sent) */}
+                                  <div className="bg-[#0d1117] border border-indigo-500/30 rounded-lg p-3 space-y-1.5 my-1">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider">
+                                        📌 【送信対象の問題】
+                                      </span>
+                                      <span className="text-[10px] text-gray-400 font-mono">
+                                        ID: {currentQ.id}
+                                      </span>
+                                    </div>
+                                    <p className="text-xs font-bold text-white truncate">
+                                      ノート: {currentQ.noteTitle || "学習ノート"}
+                                    </p>
+                                    <p className="text-xs text-gray-200 line-clamp-2 leading-relaxed">
+                                      Q. {currentQ.question}
+                                    </p>
+                                  </div>
+
+                                  {/* Prompt Style Selector */}
+                                  <div className="flex flex-col gap-1.5 pt-1">
+                                    <label className="text-[11px] text-gray-300 font-bold">解説スタイルの選択:</label>
+                                    <select
+                                      value={selectedPromptStyle}
+                                      onChange={(e) => setSelectedPromptStyle(e.target.value as any)}
+                                      className="w-full bg-[#0d1117] border border-[#30363d] rounded-lg p-2 text-xs text-white outline-none focus:border-indigo-500 font-medium cursor-pointer"
+                                    >
+                                      <option value="essence">🎯 本質・着眼点プロンプト (約5行で本質と着眼点を解説)</option>
+                                      <option value="diagram">📊 視覚的図解プロンプト (関係図・矢印フロー・対比マップ)</option>
+                                      <option value="life">🍳 頻出単語TOP5 生活解説プロンプト (日常の例えでわかりやすく)</option>
+                                      <option value="diagnosis">🧩 理解不足・前提概念の欠落診断プロンプト (苦手単語から分析)</option>
+                                    </select>
+                                  </div>
+
+                                  {/* Single Unified Send / Copy Button */}
+                                  <div className="pt-2">
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        const promptText = `あなたは卓越した要約力と図解力を持つプロの教育AIです。
+                                        let promptText = "";
+                                        if (selectedPromptStyle === "diagram") {
+                                          promptText = `あなたは卓越した要約力と図解力を持つプロの教育AIです。
 以下の学習問題について、長文テキストでのダラダラとした説明は避け、
 【一目で構造がわかる視覚的な図解（関係図・矢印フロー・対比マップ・箇条書き）】を中心に分かりやすく解説してください。
 
@@ -2860,27 +2896,11 @@ ${externalAiQuestionInput.trim() || "なぜこの解答になるのかのロジ�
 正解となる決定的な理由を1文でズバリ要約。
 
 2. 📊【視覚的図解（矢印・フロー・対比マップ）】
-テキストで概念の前後関係、因果の流れ、選択肢の対比をアスキーアート・記号（[概念A] ➔ [概念B] ➔ [結果]、▼、├── などのツリー構造）を使ってわかりやすく描いてください。
+テキストで概念の前後関係、因果の流れ、選択肢の対比をアスキーアート・記号を使ってわかりやすく描いてください。
 
-3. 🔍【要点まとめ（箇条書き3点以内）】
-・正解のポイント: ...
-・誤り選択肢との決定的な違い: ...
-・覚えておくべきキーワード: ...`;
-
-                                        navigator.clipboard.writeText(promptText);
-                                        onSaveToast("✓ 外部AI用の視覚的図解プロンプトをコピーしました！ChatGPTやClaudeに貼り付けて解説を生成してください。");
-                                      }}
-                                      className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition cursor-pointer flex items-center gap-1.5 shadow"
-                                      title="関係図や矢印フローを中心とした視覚的図解プロンプトをコピー"
-                                    >
-                                      <span>📊 視覚的図解プロンプトをコピー</span>
-                                    </button>
-
-                                    {/* Button 2: Essence & Viewpoint 5-Line Explanation Prompt */}
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const promptText = `あなたは物事の本質を瞬時に見抜き、鋭い着眼点を的確に伝えるプロの教育メンターです。
+3. 🔍【要点まとめ（箇条書き3点以内）】`;
+                                        } else if (selectedPromptStyle === "essence") {
+                                          promptText = `あなたは物事の本質を瞬時に見抜き、鋭い着眼点を的確に伝えるプロの教育メンターです。
 以下の学習問題について、ありきたりな教科書通りの説明や既存解説の繰り返しは【一切不要】です。
 
 この問題の「本質（なぜこの問いが重要なのか・背後にある核心メカニズム）」と「一瞬で見抜く着眼点（どこに着目すれば解けるのか）」に特化し、
@@ -2911,48 +2931,49 @@ ${externalAiQuestionInput.trim() || "表面的な知識ではなく、この問�
 3行目: 💡【核心ロジック】（正解に至る決定的な因果関係を1行で）
 4行目: ⚡【選択肢の盲点】（誤答選択肢が作られている罠・違いを1行で）
 5行目: 📌【一言要約】（この問題から持ち帰るべき教訓・標語を1行で）`;
+                                        } else if (selectedPromptStyle === "life") {
+                                          promptText = `あなたは身近な日常の比喩を用いて複雑な専門知識を子供でもわかるように解説する天才教育コーチです。
+以下の学習問題と選択肢から頻出する重要単語や専門用語を抽出し、身近な日常生活（料理、スポーツ、学校、買い物など）の比喩に例えてわかりやすく解説してください。
+
+【対象ノート】
+タイトル: ${currentQ.noteTitle || "学習ノート"}
+
+【問題】
+${currentQ.question}
+
+${currentQ.choices ? `【選択肢】\n${currentQ.choices.map(c => `${c.label}: ${c.text}${c.isCorrect ? " (正解)" : ""}`).join("\n")}` : ""}
+
+【模範解答】
+${currentQ.correctAnswer}
+
+【既存の解説】
+${currentQ.explanation}
+
+────────────────────────
+【出力要件】
+1. 問題と選択肢から特に重要なキーワードを最大5個抽出してください。
+2. それぞれのキーワードを「日常生活のたとえ」で解説してください。
+3. 最後にこの問題全体の核心を分かりやすい比喩でまとめてください。`;
+                                        } else {
+                                          const checkedNames = Object.keys(currentFolderUnmastered).filter(w => currentFolderUnmastered[w]);
+                                          promptText = buildMisunderstandingDiagnosisPrompt(
+                                            currentQ.question,
+                                            currentQ.choices,
+                                            currentQ.correctAnswer,
+                                            currentQ.type === "multiple_choice" ? selectedQuizChoices.join(", ") : (selectedQuizChoices[0] || essayAnswer || ""),
+                                            false,
+                                            checkedNames,
+                                            currentQ.noteTitle,
+                                            currentQ.explanation
+                                          );
+                                        }
 
                                         navigator.clipboard.writeText(promptText);
-                                        onSaveToast("✓ 問題の本質・着眼点を5行で解説させるプロンプトをコピーしました！外部AIに貼り付けてください。");
+                                        onSaveToast("✓ 選択したスタイルのプロンプトをコピーしました！外部AIに貼り付けて解説を生成してください。");
                                       }}
-                                      className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white transition cursor-pointer flex items-center gap-1.5 shadow"
-                                      title="既存の解説に頼らず、問題の本質と着眼点を5行程度で解説させるプロンプトをコピー"
+                                      className="w-full py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs rounded-lg transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-95"
                                     >
-                                      <span>🎯 本質・着眼点プロンプト (約5行)</span>
-                                    </button>
-
-                                    {/* Button 3: Top 5 Frequent Terms Life Explanation Prompt */}
-                                    <button
-                                      type="button"
-                                      onClick={() => handleCopyTop5LifeTermsPrompt()}
-                                      className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white transition cursor-pointer flex items-center gap-1.5 shadow active:scale-95"
-                                      title="問題と4つの選択肢から頻出する単語TOP5を抽出し、身近な日常生活に例えてわかりやすく解説させるプロンプトをコピー"
-                                    >
-                                      <span>🍳 頻出単語TOP5 生活解説プロンプト</span>
-                                    </button>
-
-                                    {/* Button 4: Misunderstanding Diagnosis Prompt */}
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const checkedNames = Object.keys(currentFolderUnmastered).filter(w => currentFolderUnmastered[w]);
-                                        const promptText = buildMisunderstandingDiagnosisPrompt(
-                                          currentQ.question,
-                                          currentQ.choices,
-                                          currentQ.correctAnswer,
-                                          currentQ.type === "multiple_choice" ? selectedQuizChoices.join(", ") : (selectedQuizChoices[0] || essayAnswer || ""),
-                                          false,
-                                          checkedNames,
-                                          currentQ.noteTitle,
-                                          currentQ.explanation
-                                        );
-                                        navigator.clipboard.writeText(promptText);
-                                        onSaveToast("✓ 理解不足・前提概念の欠落診断プロンプトをコピーしました！外部AIに貼り付けて分析してもらってください。");
-                                      }}
-                                      className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white transition cursor-pointer flex items-center gap-1.5 shadow active:scale-95"
-                                      title="間違えた理由や、わからないとチェックした単語から何が理解できていないかを外部AIに診断してもらうプロンプトをコピー"
-                                    >
-                                      <span>🧩 理解不足・前提概念の欠落診断プロンプト</span>
+                                      <span>🚀 選択したスタイルのプロンプトをコピーして外部AIに送る</span>
                                     </button>
                                   </div>
                                 </div>

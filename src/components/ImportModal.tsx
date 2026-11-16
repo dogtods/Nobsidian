@@ -492,19 +492,48 @@ export default function ImportModal({
 
       if (!res.success) throw new Error(res.error || "インポートに失敗しました");
 
-      onSaveToast(`${rowIndices.length}件のデータの登録が完了しました ✦`);
+      // Construct Note objects for instant local update without slow full dataset download (syncFromServer)
+      const importedNotes: Note[] = selectedItems.map((item, idx) => {
+        const title = String(item.title || "取り込み記事");
+        const content = String(item.highlights || item.all || item.summary || "");
+        const summary = String(item.highlights || item.summary || "");
+        const tags = String(item.tags || "一般");
+        let keywords = tags;
+        if (tags && !keywords.includes("[folder:")) {
+          keywords = `[folder:${tags}], ${keywords}`;
+        }
+        const sourceUrl = String(item.url || "");
+        const rawContent = String(item.all || "");
+        const timeline = String(item.timeline || "");
+        const dateStr = String(item.date || item.saved_at || formatDateStr(Date.now()));
+        const uniqueId = `sheet_import_${Date.now()}_${Math.random().toString(36).substring(2, 9)}_${idx}`;
+
+        return {
+          id: uniqueId,
+          title,
+          content,
+          summary,
+          keywords,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          sourceUrl,
+          timeline,
+          columnJ: rawContent,
+          rawContent,
+          dateStr,
+          columnN: tags,
+          source: "spreadsheet_import"
+        };
+      });
+
+      onNotesUpdateBatch(importedNotes, false);
+
+      onSaveToast(`${rowIndices.length}件のデータの登録・アプリ反映が完了しました ✦`);
       
       // 成功時に状態をリセット
       setPendingSheetItems([]);
       setSelectedIndices([]);
       onClose();
-
-      // 自動でアプリ内の表示データを最新化
-      if (onSyncFromServer) {
-        setTimeout(() => {
-          onSyncFromServer();
-        }, 500);
-      }
     } catch (e: any) {
       onSaveToast("インポートエラー: " + e.message);
     } finally {

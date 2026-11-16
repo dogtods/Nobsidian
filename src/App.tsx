@@ -568,6 +568,7 @@ export default function App() {
   const [isCoOccurOpen, setIsCoOccurOpen] = useState(false);
   const [isPairHeatmapOpen, setIsPairHeatmapOpen] = useState(false);
   const [isCausalModalOpen, setIsCausalModalOpen] = useState(false);
+  const [causalFocusTitle, setCausalFocusTitle] = useState<string | null>(null);
   const [isStreamOpen, setIsStreamOpen] = useState(false);
   const [isBubbleOpen, setIsBubbleOpen] = useState(false);
   const [isGraphOpen, setIsGraphOpen] = useState(false);
@@ -8742,12 +8743,19 @@ const renderMarkdownToElements = (contentStr: string) => {
                     </button>
 
                     <button
-                      onClick={() => setIsCausalModalOpen(true)}
+                      onClick={() => {
+                        if (activeNote) {
+                          setCausalFocusTitle(activeNote.title);
+                        } else {
+                          setCausalFocusTitle(null);
+                        }
+                        setIsCausalModalOpen(true);
+                      }}
                       className="p-1 px-1.5 text-xs text-[var(--subtle)] hover:text-white hover:bg-[var(--border)] font-medium rounded cursor-pointer flex items-center gap-0.5 portrait:gap-0 transition-all"
-                      title="因果リンクの週次差分表示（AI因果関係抽出）"
+                      title={activeNote ? `この記事（${activeNote.title}）に関連する因果リンク・因果差分を表示` : "因果リンクの週次差分表示（AI因果関係抽出）"}
                     >
                       <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                      <span className="portrait:hidden">因果差分</span>
+                      <span className="portrait:hidden">因果リンク</span>
                     </button>
 
                     <button
@@ -9675,6 +9683,31 @@ const renderMarkdownToElements = (contentStr: string) => {
                 </button>
               </div>
 
+              {/* CARD: Causal Links Hub (col-span-4) */}
+              <div className="md:col-span-4 group hover:border-[#d2992244] bg-[#161b22] border border-[#30363d] rounded-xl p-5 relative overflow-hidden transition-all duration-300 flex flex-col justify-between min-h-[180px]">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="text-[10px] font-bold text-amber-400 tracking-wider uppercase">Causal Links Hub</span>
+                    <h2 className="text-lg font-bold text-white mt-1">因果リンク・推論分析</h2>
+                  </div>
+                  <span className="text-lg opacity-40 group-hover:opacity-100 group-hover:scale-110 transition-all">🔗</span>
+                </div>
+                
+                <div className="my-2.5 text-xs text-[var(--muted)] leading-relaxed">
+                  記事間の方向性のある因果関係（原因 ➔ 結果）やAI因果推論ステップ、週次差分を横断的に分析・管理します。
+                </div>
+
+                <button
+                  onClick={() => {
+                    setCausalFocusTitle(null);
+                    setIsCausalModalOpen(true);
+                  }}
+                  className="w-full text-center py-2 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-xs font-bold rounded-lg cursor-pointer transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+                >
+                  <span>🔗 因果リンク・差分分析を開く</span>
+                </button>
+              </div>
+
               {/* CARD 4: Network preview (col-span-8) */}
               <div
                 onClick={() => {
@@ -10078,6 +10111,7 @@ const renderMarkdownToElements = (contentStr: string) => {
           notes={notes}
           apiPost={apiPost}
           onToast={(msg) => toast(msg)}
+          initialFocusTitle={causalFocusTitle}
         />
       )}
 

@@ -80,9 +80,10 @@ interface CausalDiffModalProps {
   notes: Note[];
   apiPost?: (body: any) => Promise<any>;
   onToast?: (msg: string) => void;
+  initialFocusTitle?: string | null;
 }
 
-export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToast }: CausalDiffModalProps) {
+export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToast, initialFocusTitle }: CausalDiffModalProps) {
   const [links, setLinks] = useState<CausalLink[]>(() => {
     try {
       const saved = localStorage.getItem("cn_causal_links_cache");
@@ -95,7 +96,7 @@ export default function CausalDiffModal({ isOpen, onClose, notes, apiPost, onToa
   });
 
   const [activeTab, setActiveTab] = useState<"all-weeks" | "external" | "lag">("all-weeks");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(() => initialFocusTitle || "");
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractStatus, setExtractStatus] = useState("");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
