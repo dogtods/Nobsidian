@@ -8064,18 +8064,6 @@ const renderMarkdownToElements = (contentStr: string) => {
                                     )}
                                     <span className={`${isEmpty ? "text-[var(--muted)] italic" : ""} flex-1 min-w-0 truncate`}>{n.title}</span>
 
-                                    {deepDivePriorityMap[n.id] && (
-                                      <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded shrink-0 shadow-sm ${
-                                        deepDivePriorityMap[n.id] === 'high' 
-                                          ? 'bg-rose-500/25 text-rose-300 border border-rose-500/40' 
-                                          : deepDivePriorityMap[n.id] === 'medium'
-                                          ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40'
-                                          : 'bg-gray-700/40 text-gray-400 border border-gray-600/40'
-                                      }`} title={`深掘り必要性: ${deepDivePriorityMap[n.id] === 'high' ? '高（深掘り推奨）' : deepDivePriorityMap[n.id] === 'medium' ? '中（条件付き深掘り）' : '低（深掘り見送り）'}`}>
-                                        {deepDivePriorityMap[n.id] === 'high' ? '深掘り:高' : deepDivePriorityMap[n.id] === 'medium' ? '深掘り:中' : '深掘り:低'}
-                                      </span>
-                                    )}
-
                                     {bookmarkedIds.includes(n.id) && (
                                       <Bookmark className="w-3 h-3 text-amber-400 fill-amber-400 shrink-0" />
                                     )}
@@ -8152,18 +8140,6 @@ const renderMarkdownToElements = (contentStr: string) => {
                                   }`} />
                                 )}
                                 <span className={`${isEmpty ? "text-[var(--muted)] italic" : ""} flex-1 min-w-0 truncate`}>{n.title}</span>
-
-                                {deepDivePriorityMap[n.id] && (
-                                  <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded shrink-0 shadow-sm ${
-                                    deepDivePriorityMap[n.id] === 'high' 
-                                      ? 'bg-rose-500/25 text-rose-300 border border-rose-500/40' 
-                                      : deepDivePriorityMap[n.id] === 'medium'
-                                      ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40'
-                                      : 'bg-gray-700/40 text-gray-400 border border-gray-600/40'
-                                  }`} title={`深掘り必要性: ${deepDivePriorityMap[n.id] === 'high' ? '高（深掘り推奨）' : deepDivePriorityMap[n.id] === 'medium' ? '中（条件付き深掘り）' : '低（深掘り見送り）'}`}>
-                                    {deepDivePriorityMap[n.id] === 'high' ? '深掘り:高' : deepDivePriorityMap[n.id] === 'medium' ? '深掘り:中' : '深掘り:低'}
-                                  </span>
-                                )}
 
                                 {bookmarkedIds.includes(n.id) && (
                                   <Bookmark className="w-3 h-3 text-amber-400 fill-amber-400 shrink-0" />
