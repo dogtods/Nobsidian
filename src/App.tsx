@@ -94,6 +94,7 @@ import {
   loadAutoSyncPreferenceAsync,
   LS_KEY
 } from "./utils/storage";
+import { getStoredDecisions } from "./utils/deepDiveUtils";
 
 // Import charts and config modals
 import HeatmapModal from "./components/HeatmapModal";
@@ -582,6 +583,35 @@ export default function App() {
   const [isQuestionModalOpen, setIsQuestionModalOpen] = useState(false);
   const [isArticleExportModalOpen, setIsArticleExportModalOpen] = useState(false);
   const [isDeepDiveModalOpen, setIsDeepDiveModalOpen] = useState(false);
+  const [deepDivePriorityMap, setDeepDivePriorityMap] = useState<{ [noteId: string]: "high" | "medium" | "low" }>({});
+  const [deepDiveFilter, setDeepDiveFilter] = useState<"all" | "high" | "medium" | "low">("all");
+
+  const deepDiveStats = useMemo(() => {
+    let high = 0;
+    let medium = 0;
+    let low = 0;
+    notes.forEach(n => {
+      const p = deepDivePriorityMap[n.id];
+      if (p === "high") high++;
+      else if (p === "medium") medium++;
+      else if (p === "low") low++;
+    });
+    return { high, medium, low, total: high + medium + low };
+  }, [notes, deepDivePriorityMap]);
+
+  useEffect(() => {
+    try {
+      const decisions = getStoredDecisions();
+      const map: { [noteId: string]: "high" | "medium" | "low" } = {};
+      decisions.forEach(d => {
+        if (d.articleId && d.priority) {
+          map[d.articleId] = d.priority;
+        }
+      });
+      setDeepDivePriorityMap(map);
+    } catch (_) {}
+  }, [notes, isDeepDiveModalOpen]);
+
   const [isImageCropModalOpen, setIsImageCropModalOpen] = useState(false);
   const [cropModalInitialImage, setCropModalInitialImage] = useState<string | null>(null);
   const [cropModalInitialAlt, setCropModalInitialAlt] = useState<string>("");
@@ -4784,6 +4814,11 @@ const renderMarkdownToElements = (contentStr: string) => {
         if (startYMD && noteYMD < startYMD) return false;
         if (endYMD && noteYMD > endYMD) return false;
       }
+
+      // 深掘り優先度フィルタ
+      if (deepDiveFilter !== "all") {
+        if (deepDivePriorityMap[n.id] !== deepDiveFilter) return false;
+      }
       
       const folderName = getFolder(n);
       const parsed = parseCategory(folderName);
@@ -7666,6 +7701,80 @@ const renderMarkdownToElements = (contentStr: string) => {
               </button>
             </div>
           </div>
+
+          {/* 深掘りスクリーニング 優先度フィルター（評価済みデータがある場合に表示） */}
+          {deepDiveStats.total > 0 && (
+            <div className="flex flex-col gap-1 pt-1.5 mt-1 border-t border-[#30363d]/40">
+              <div className="flex items-center justify-between text-[10px] text-gray-400">
+                <span className="font-semibold flex items-center gap-1 text-sky-300">
+                  <span>🔍 深掘り評価:</span>
+                  <span className="text-[9px] text-gray-400 font-normal">({deepDiveStats.total}件評価済)</span>
+                </span>
+                {deepDiveFilter !== "all" && (
+                  <button
+                    type="button"
+                    onClick={() => setDeepDiveFilter("all")}
+                    className="text-[9px] text-gray-400 hover:text-white cursor-pointer underline"
+                  >
+                    解除 (全件)
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-1 text-[10px] font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setDeepDiveFilter("all")}
+                  className={`px-1.5 py-0.5 rounded cursor-pointer transition-all ${
+                    deepDiveFilter === "all"
+                      ? "bg-sky-600 text-white font-bold"
+                      : "bg-[#0d1117] text-gray-400 hover:text-gray-200 border border-[#30363d]"
+                  }`}
+                  title="すべてのノートを表示"
+                >
+                  全件
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeepDiveFilter(deepDiveFilter === "high" ? "all" : "high")}
+                  className={`px-2 py-0.5 rounded cursor-pointer transition-all flex items-center gap-1 ${
+                    deepDiveFilter === "high"
+                      ? "bg-rose-500 text-white font-bold shadow-sm"
+                      : "bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 border border-rose-500/30"
+                  }`}
+                  title="高（深掘り推奨）のみ絞り込み"
+                >
+                  <span>高</span>
+                  <span className="text-[8.5px] opacity-80 font-mono">({deepDiveStats.high})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeepDiveFilter(deepDiveFilter === "medium" ? "all" : "medium")}
+                  className={`px-2 py-0.5 rounded cursor-pointer transition-all flex items-center gap-1 ${
+                    deepDiveFilter === "medium"
+                      ? "bg-amber-500 text-white font-bold shadow-sm"
+                      : "bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 border border-amber-500/30"
+                  }`}
+                  title="中（条件付き深掘り）のみ絞り込み"
+                >
+                  <span>中</span>
+                  <span className="text-[8.5px] opacity-80 font-mono">({deepDiveStats.medium})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeepDiveFilter(deepDiveFilter === "low" ? "all" : "low")}
+                  className={`px-2 py-0.5 rounded cursor-pointer transition-all flex items-center gap-1 ${
+                    deepDiveFilter === "low"
+                      ? "bg-gray-600 text-white font-bold shadow-sm"
+                      : "bg-gray-700/20 text-gray-400 hover:bg-gray-700/30 border border-gray-600/30"
+                  }`}
+                  title="低（深掘り見送り）のみ絞り込み"
+                >
+                  <span>低</span>
+                  <span className="text-[8.5px] opacity-80 font-mono">({deepDiveStats.low})</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 2-Level Accordion: Major Category -> Minor Category -> Notes */}
@@ -7929,15 +8038,44 @@ const renderMarkdownToElements = (contentStr: string) => {
                                     key={n.id}
                                     onClick={() => selectNote(n.id)}
                                     className={`note-item relative group flex items-center gap-2 p-1.5 px-2 text-xs border-l-2 cursor-pointer transition-all hover:bg-[#1c2128] rounded-r ${
-                                      activeId === n.id ? "bg-[#1f2d3d] border-[var(--blue)] text-[var(--bright)] font-semibold" : "border-transparent text-[var(--subtle)]"
+                                      activeId === n.id 
+                                        ? "bg-[#1f2d3d] border-[var(--blue)] text-[var(--bright)] font-semibold" 
+                                        : deepDivePriorityMap[n.id] === "high"
+                                        ? "border-rose-500 bg-rose-950/20 text-rose-200"
+                                        : deepDivePriorityMap[n.id] === "medium"
+                                        ? "border-amber-500/80 bg-amber-950/15 text-amber-200"
+                                        : deepDivePriorityMap[n.id] === "low"
+                                        ? "border-gray-600/40 text-[var(--subtle)]"
+                                        : "border-transparent text-[var(--subtle)]"
                                     }`}
                                   >
                                     {isEmpty ? (
                                       <BookOpen className="w-3.5 h-3.5 text-[var(--muted)] flex-shrink-0" />
                                     ) : (
-                                      <FileText className={`w-3.5 h-3.5 flex-shrink-0 ${activeId === n.id ? "text-[var(--blue)]" : "text-[var(--muted)]"}`} />
+                                      <FileText className={`w-3.5 h-3.5 flex-shrink-0 ${
+                                        activeId === n.id 
+                                          ? "text-[var(--blue)]" 
+                                          : deepDivePriorityMap[n.id] === "high"
+                                          ? "text-rose-400"
+                                          : deepDivePriorityMap[n.id] === "medium"
+                                          ? "text-amber-400"
+                                          : "text-[var(--muted)]"
+                                      }`} />
                                     )}
                                     <span className={`${isEmpty ? "text-[var(--muted)] italic" : ""} flex-1 min-w-0 truncate`}>{n.title}</span>
+
+                                    {deepDivePriorityMap[n.id] && (
+                                      <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded shrink-0 shadow-sm ${
+                                        deepDivePriorityMap[n.id] === 'high' 
+                                          ? 'bg-rose-500/25 text-rose-300 border border-rose-500/40' 
+                                          : deepDivePriorityMap[n.id] === 'medium'
+                                          ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40'
+                                          : 'bg-gray-700/40 text-gray-400 border border-gray-600/40'
+                                      }`} title={`深掘り必要性: ${deepDivePriorityMap[n.id] === 'high' ? '高（深掘り推奨）' : deepDivePriorityMap[n.id] === 'medium' ? '中（条件付き深掘り）' : '低（深掘り見送り）'}`}>
+                                        {deepDivePriorityMap[n.id] === 'high' ? '深掘り:高' : deepDivePriorityMap[n.id] === 'medium' ? '深掘り:中' : '深掘り:低'}
+                                      </span>
+                                    )}
+
                                     {bookmarkedIds.includes(n.id) && (
                                       <Bookmark className="w-3 h-3 text-amber-400 fill-amber-400 shrink-0" />
                                     )}
@@ -7989,15 +8127,44 @@ const renderMarkdownToElements = (contentStr: string) => {
                                 key={n.id}
                                 onClick={() => selectNote(n.id)}
                                 className={`note-item relative group flex items-center gap-2 p-1.5 px-2 text-xs border-l-2 cursor-pointer transition-all hover:bg-[#1c2128] rounded-r ${
-                                  activeId === n.id ? "bg-[#1f2d3d] border-[var(--blue)] text-[var(--bright)] font-semibold" : "border-transparent text-[var(--subtle)]"
+                                  activeId === n.id 
+                                    ? "bg-[#1f2d3d] border-[var(--blue)] text-[var(--bright)] font-semibold" 
+                                    : deepDivePriorityMap[n.id] === "high"
+                                    ? "border-rose-500 bg-rose-950/20 text-rose-200"
+                                    : deepDivePriorityMap[n.id] === "medium"
+                                    ? "border-amber-500/80 bg-amber-950/15 text-amber-200"
+                                    : deepDivePriorityMap[n.id] === "low"
+                                    ? "border-gray-600/40 text-[var(--subtle)]"
+                                    : "border-transparent text-[var(--subtle)]"
                                 }`}
                               >
                                 {isEmpty ? (
                                   <BookOpen className="w-3.5 h-3.5 text-[var(--muted)] flex-shrink-0" />
                                 ) : (
-                                  <FileText className={`w-3.5 h-3.5 flex-shrink-0 ${activeId === n.id ? "text-[var(--blue)]" : "text-[var(--muted)]"}`} />
+                                  <FileText className={`w-3.5 h-3.5 flex-shrink-0 ${
+                                    activeId === n.id 
+                                      ? "text-[var(--blue)]" 
+                                      : deepDivePriorityMap[n.id] === "high"
+                                      ? "text-rose-400"
+                                      : deepDivePriorityMap[n.id] === "medium"
+                                      ? "text-amber-400"
+                                      : "text-[var(--muted)]"
+                                  }`} />
                                 )}
                                 <span className={`${isEmpty ? "text-[var(--muted)] italic" : ""} flex-1 min-w-0 truncate`}>{n.title}</span>
+
+                                {deepDivePriorityMap[n.id] && (
+                                  <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded shrink-0 shadow-sm ${
+                                    deepDivePriorityMap[n.id] === 'high' 
+                                      ? 'bg-rose-500/25 text-rose-300 border border-rose-500/40' 
+                                      : deepDivePriorityMap[n.id] === 'medium'
+                                      ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40'
+                                      : 'bg-gray-700/40 text-gray-400 border border-gray-600/40'
+                                  }`} title={`深掘り必要性: ${deepDivePriorityMap[n.id] === 'high' ? '高（深掘り推奨）' : deepDivePriorityMap[n.id] === 'medium' ? '中（条件付き深掘り）' : '低（深掘り見送り）'}`}>
+                                    {deepDivePriorityMap[n.id] === 'high' ? '深掘り:高' : deepDivePriorityMap[n.id] === 'medium' ? '深掘り:中' : '深掘り:低'}
+                                  </span>
+                                )}
+
                                 {bookmarkedIds.includes(n.id) && (
                                   <Bookmark className="w-3 h-3 text-amber-400 fill-amber-400 shrink-0" />
                                 )}
@@ -8313,11 +8480,31 @@ const renderMarkdownToElements = (contentStr: string) => {
                     </button>
                     <button
                       onClick={() => setIsDeepDiveModalOpen(true)}
-                      className="p-1 px-2 portrait:px-1.5 text-sky-300 hover:bg-sky-500/20 font-semibold text-xs rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all border-l border-[#30363d]"
+                      className={`p-1 px-2 portrait:px-1.5 font-semibold text-xs rounded cursor-pointer flex items-center gap-1 portrait:gap-0 transition-all border-l border-[#30363d] ${
+                        activeNote && deepDivePriorityMap[activeNote.id] === "high"
+                          ? "text-rose-300 bg-rose-500/20 hover:bg-rose-500/30 border-rose-500/40"
+                          : activeNote && deepDivePriorityMap[activeNote.id] === "medium"
+                          ? "text-amber-300 bg-amber-500/20 hover:bg-amber-500/30 border-amber-500/40"
+                          : activeNote && deepDivePriorityMap[activeNote.id] === "low"
+                          ? "text-gray-400 bg-gray-700/20 hover:bg-gray-700/30 border-gray-600/40"
+                          : "text-sky-300 hover:bg-sky-500/20"
+                      }`}
                       title="この記事をさらに深掘りする意味があるか判定・重要論点分析・スプレッドシート蓄積"
                     >
-                      <Search className="w-3 h-3 shrink-0 text-sky-400" />
-                      <span className="portrait:hidden">🔍 深掘り判断</span>
+                      <Search className={`w-3 h-3 shrink-0 ${
+                        activeNote && deepDivePriorityMap[activeNote.id] === "high"
+                          ? "text-rose-400"
+                          : activeNote && deepDivePriorityMap[activeNote.id] === "medium"
+                          ? "text-amber-400"
+                          : activeNote && deepDivePriorityMap[activeNote.id] === "low"
+                          ? "text-gray-400"
+                          : "text-sky-400"
+                      }`} />
+                      <span className="portrait:hidden">
+                        {activeNote && deepDivePriorityMap[activeNote.id]
+                          ? `🔍 深掘り: ${deepDivePriorityMap[activeNote.id] === 'high' ? '高' : deepDivePriorityMap[activeNote.id] === 'medium' ? '中' : '低'}`
+                          : "🔍 深掘り判断"}
+                      </span>
                     </button>
                   </div>
 
