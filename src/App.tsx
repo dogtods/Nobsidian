@@ -3923,9 +3923,19 @@ const renderMarkdownToElements = (contentStr: string) => {
       }
 
       let existingTitlesSection = "";
-      if (taskBacklink) {
+      if (taskBacklink && allTitles) {
         const existingTitles = notes
-          .map(n => `- ${n.title}`)
+          .map(n => {
+            if (optimizeEnabled) {
+              const folder = getFolder(n);
+              let kws = n.keywords || "";
+              kws = kws.replace(/\[folder:(.+?)\]/g, "").trim();
+              const kwStr = kws ? `, キーワード: ${kws}` : "";
+              return `- ${n.title} (フォルダ: ${folder}${kwStr})`;
+            } else {
+              return `- ${n.title}`;
+            }
+          })
           .join("\n");
         existingTitlesSection = `\n\n【既存ノートのタイトル一覧（バックリンク・関連チェック用）】\n"""\n${existingTitles}\n"""`;
         extraInstructions += `\n- 各記事の要点解説や考察の中で、上記【既存ノートのタイトル一覧】から関連する記事を探し出し、[[記事タイトル]] のWikiリンク記法で自然に言及してください。`;
@@ -3994,7 +4004,7 @@ const renderMarkdownToElements = (contentStr: string) => {
       .replace("{instructions}", taskBacklink ? "- 上記の【対象のメモ一覧】と、最後にある【既存ノートのタイトル一覧】を必ず最後まで読み込んでから処理を開始してください。\n" + instructions.join("\n") : instructions.join("\n"))
       .replace("{jsonFields}", jsonFields.join(",\n"));
 
-    if (taskBacklink) {
+    if (taskBacklink && allTitles) {
       const existingTitles = notes
         .map(n => {
           if (optimizeEnabled) {
